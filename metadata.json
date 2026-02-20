@@ -1,0 +1,5 @@
+{
+  "name": "OB Order Entry System",
+  "description": "Single-screen order booking application for distributors with real-time totals and draft saving.",
+  "requestFramePermissions": []
+}
