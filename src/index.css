@@ -1,15 +1,36 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --color-seablue: #006994;
+  --color-seablue-light: #0084ba;
+  --color-seablue-dark: #004d6d;
 }
 
 @layer base {
+  body {
+    @apply bg-slate-50 text-slate-900 antialiased;
+  }
+  
   input[type="number"]::-webkit-inner-spin-button,
   input[type="number"]::-webkit-outer-spin-button {
     -webkit-appearance: none;
     margin: 0;
+  }
+}
+
+@layer components {
+  .card-clean {
+    @apply bg-white border border-slate-200 shadow-sm rounded-2xl transition-all;
+  }
+  
+  .input-clean {
+    @apply bg-white border border-slate-200 px-3 py-2 outline-none focus:border-seablue focus:ring-1 focus:ring-seablue transition-all rounded-xl text-sm;
+  }
+
+  .btn-seablue {
+    @apply bg-seablue text-white font-semibold px-4 py-2 rounded-xl hover:bg-seablue-light active:scale-95 transition-all shadow-sm;
   }
 }
 
