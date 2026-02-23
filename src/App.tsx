@@ -51,6 +51,9 @@ const WhatsAppIcon = () => (
 export default function App() {
   const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin'>('entry');
   const [history, setHistory] = useState<any[]>([]);
+  const [historyFilters, setHistoryFilters] = useState({ ob: '', route: '', from: '', to: '' });
+  const [historyPage, setHistoryPage] = useState(1);
+  const itemsPerPage = 10;
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [obAssignments, setObAssignments] = useState<OBAssignment[]>([]);
   const [obSearch, setObSearch] = useState('');
@@ -259,7 +262,13 @@ export default function App() {
   const fetchHistory = async () => {
     setIsLoadingHistory(true);
     try {
-      const response = await fetch('/api/orders');
+      const params = new URLSearchParams();
+      if (historyFilters.ob) params.append('ob', historyFilters.ob);
+      if (historyFilters.route) params.append('route', historyFilters.route);
+      if (historyFilters.from) params.append('from', historyFilters.from);
+      if (historyFilters.to) params.append('to', historyFilters.to);
+
+      const response = await fetch(`/api/orders?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         setHistory(data.map((h: any) => ({
@@ -269,6 +278,26 @@ export default function App() {
       }
     } catch (err) { console.error(err); }
     finally { setIsLoadingHistory(false); }
+  };
+
+  const getTimeGone = () => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const totalDays = new Date(year, month + 1, 0).getDate();
+    let workingDays = 0;
+    for (let d = 1; d <= totalDays; d++) {
+      const day = new Date(year, month, d).getDay();
+      if (day !== 0) workingDays++; // Not Sunday
+    }
+    
+    let daysGone = 0;
+    for (let d = 1; d <= now.getDate(); d++) {
+      const day = new Date(year, month, d).getDay();
+      if (day !== 0) daysGone++;
+    }
+    
+    return workingDays > 0 ? (daysGone / workingDays) * 100 : 0;
   };
 
   const fetchAdminData = async () => {
@@ -467,7 +496,7 @@ export default function App() {
     const globalTargets = (() => {
       const totals: Record<string, number> = {};
       CATEGORIES.forEach(cat => {
-        totals[cat] = obAssignments.reduce((sum, ob) => sum + (ob.targets[cat] || 0), 0);
+        totals[cat] = obAssignments.reduce((sum, ob) => sum + (ob.targets?.[cat] || 0), 0);
       });
       return totals;
     })();
@@ -479,12 +508,46 @@ export default function App() {
       MTD: globalMtd[cat] || 0
     }));
 
+    // OB Sales Analysis
+    const obAnalysis = obAssignments.map(ob => {
+      const obOrders = mtdOrders.filter(h => h.ob_contact === ob.contact);
+      const totals: Record<string, number> = {};
+      CATEGORIES.forEach(cat => {
+        totals[cat] = obOrders.reduce((sum, h) => {
+          const items = h.order_data || {};
+          const catAch = SKUS
+            .filter(sku => sku.category === cat)
+            .reduce((s, sku) => {
+              const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+              const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+              return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+            }, 0);
+          return sum + catAch;
+        }, 0);
+      });
+      
+      const totalVisited = obOrders.reduce((sum, h) => sum + (h.visited_shops || 0), 0);
+      const totalProductive = obOrders.reduce((sum, h) => sum + (h.productive_shops || 0), 0);
+      const totalShops = obOrders.length * (ob.totalShops || 0);
+
+      return {
+        name: ob.name,
+        contact: ob.contact,
+        totals,
+        totalAch: Object.values(totals).reduce((a: number, b: number) => a + b, 0),
+        target: Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0),
+        shops: { t: totalShops, v: totalVisited, p: totalProductive }
+      };
+    }).sort((a, b) => b.totalAch - a.totalAch);
+
     return (
-      <div className="min-h-screen bg-slate-50 pb-20">
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-20">
+      <div className="min-h-screen bg-slate-50 pb-32">
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
           <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <button onClick={() => setView('entry')} className="p-2 hover:bg-slate-100 rounded-full"><ArrowLeft className="w-5 h-5 text-seablue" /></button>
+              <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
+                <LayoutDashboard className="w-5 h-5" />
+              </div>
               <h1 className="text-lg font-bold text-seablue">Dashboard</h1>
             </div>
             <div className="flex items-center gap-2">
@@ -498,34 +561,31 @@ export default function App() {
                     `*Total MTD:* ${(Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}\n` +
                     `*Total Target:* ${(Object.values(globalTargets) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}`;
                   
-                  navigator.clipboard.writeText(summary);
-                  setMessage({ text: 'Global Summary Copied!', type: 'success' });
-                  setTimeout(() => setMessage(null), 2000);
+                  const encodedMsg = encodeURIComponent(summary);
+                  window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
                 }}
                 className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
-                title="Copy Global Summary"
+                title="Share Global Summary"
               >
                 <Send className="w-5 h-5" />
               </button>
-              <button onClick={() => setView('entry')} className="btn-seablue text-sm">Back</button>
             </div>
           </div>
         </header>
 
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="card-clean p-4 bg-seablue text-white">
+            <div className="card-clean p-4 bg-seablue text-white shadow-blue-200 shadow-lg">
               <div className="text-[10px] uppercase font-bold text-white/60">Today Total Sales</div>
               <div className="text-3xl font-black">{(Object.values(globalToday) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}</div>
             </div>
-            <div className="card-clean p-4 bg-emerald-600 text-white">
+            <div className="card-clean p-4 bg-emerald-600 text-white shadow-emerald-200 shadow-lg">
               <div className="text-[10px] uppercase font-bold text-white/60">MTD Total Sales</div>
               <div className="text-3xl font-black">{(Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}</div>
             </div>
-            <div className="card-clean p-4 bg-slate-800 text-white">
+            <div className="card-clean p-4 bg-slate-800 text-white shadow-slate-200 shadow-lg">
               <div className="text-[10px] uppercase font-bold text-white/60">Time Gone</div>
               <div className="text-3xl font-black">{timeGone.percentage.toFixed(1)}%</div>
-              <div className="text-[10px] text-white/40 mt-1 uppercase">Working Days: {timeGone.passed}/{timeGone.total}</div>
             </div>
           </div>
 
@@ -547,6 +607,37 @@ export default function App() {
                   <Bar dataKey="MTD" name="MTD" fill="#10b981" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="card-clean p-4">
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">OB Sales Analysis (MTD)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[10px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                    <th className="py-2">OB Name</th>
+                    <th className="py-2 text-center">T/V/P</th>
+                    {CATEGORIES.map(cat => <th key={cat} className="py-2 text-center">{cat}</th>)}
+                    <th className="py-2 text-right">Ach/Tgt</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {obAnalysis.map(ob => (
+                    <tr key={ob.contact} className="hover:bg-slate-50">
+                      <td className="py-2 font-bold text-slate-700">{ob.name}</td>
+                      <td className="py-2 text-center text-slate-500">{ob.shops.t}/{ob.shops.v}/{ob.shops.p}</td>
+                      {CATEGORIES.map(cat => (
+                        <td key={cat} className="py-2 text-center font-mono">{ob.totals[cat].toFixed(1)}</td>
+                      ))}
+                      <td className="py-2 text-right">
+                        <div className="font-bold text-seablue">{ob.totalAch.toFixed(1)}</div>
+                        <div className="text-[8px] text-slate-400">{ob.target.toFixed(1)}</div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
         </main>
@@ -572,11 +663,13 @@ export default function App() {
     }
 
     return (
-      <div className="min-h-screen bg-slate-50 pb-20">
-        <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-20">
+      <div className="min-h-screen bg-slate-50 pb-32">
+        <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-20 shadow-sm">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
             <div className="flex items-center gap-3">
-              <button onClick={() => setView('entry')} className="p-2 hover:bg-slate-100 rounded-full"><ArrowLeft className="w-5 h-5 text-seablue" /></button>
+              <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
+                <Settings className="w-5 h-5" />
+              </div>
               <h1 className="text-lg font-bold text-seablue">Admin Panel</h1>
             </div>
             <div className="flex gap-2">
@@ -714,177 +807,185 @@ export default function App() {
   }, [history]);
 
   if (view === 'history') {
+    const paginatedHistory = history.slice((historyPage - 1) * itemsPerPage, historyPage * itemsPerPage);
+    const totalPages = Math.ceil(history.length / itemsPerPage);
+
     return (
-      <div className="min-h-screen bg-slate-50 pb-20">
-        <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-20">
-          <div className="max-w-3xl mx-auto flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <button onClick={() => setView('entry')} className="p-2 hover:bg-slate-100 rounded-full"><ArrowLeft className="w-5 h-5 text-seablue" /></button>
-              <h1 className="text-lg font-bold text-seablue">History</h1>
-            </div>
-            <button onClick={() => {
-              const headers = [
-                'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
-                'Total Shops', 'Visited Shops', 'Productive Shops',
-                'Kite Glow (Bag)', 'Burq Action (Bag)', 'Vero (Bag)', 'DWB (Ctn)', 'Match (Ctn)',
-                'Total Washing Powder (Bag)', 'Total Achievement',
-                'Kite Glow (Prod)', 'Burq Action (Prod)', 'Vero (Prod)', 'DWB (Prod)', 'Match (Prod)'
-              ];
-              
-              const rows = history.map(h => {
-                const items = h.order_data || {};
-                const prodData = h.category_productive_data || {};
+      <div className="min-h-screen bg-slate-50 pb-32">
+        <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-20 shadow-sm">
+          <div className="max-w-4xl mx-auto flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
+                  <History className="w-5 h-5" />
+                </div>
+                <h1 className="text-lg font-bold text-seablue">History</h1>
+              </div>
+              <button onClick={() => {
+                const headers = [
+                  'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
+                  'Total Shops', 'Visited Shops', 'Productive Shops',
+                  'Kite Glow (Bag)', 'Burq Action (Bag)', 'Vero (Bag)', 'DWB (Ctn)', 'Match (Ctn)',
+                  'Total Washing Powder (Bag)', 'Total Achievement',
+                  'Kite Glow (Prod)', 'Burq Action (Prod)', 'Vero (Prod)', 'DWB (Prod)', 'Match (Prod)'
+                ];
                 
-                const totals: Record<string, number> = {};
-                CATEGORIES.forEach(cat => {
-                  totals[cat] = SKUS
-                    .filter(sku => sku.category === cat)
-                    .reduce((sum, sku) => {
-                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                      const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                      return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                    }, 0);
+                const rows = history.map(h => {
+                  const items = h.order_data || {};
+                  const prodData = h.category_productive_data || {};
+                  
+                  const totals: Record<string, number> = {};
+                  CATEGORIES.forEach(cat => {
+                    totals[cat] = SKUS
+                      .filter(sku => sku.category === cat)
+                      .reduce((sum, sku) => {
+                        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                        const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                        return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                      }, 0);
+                  });
+
+                  const totalWP = totals['Kite Glow'] + totals['Burq Action'] + totals['Vero'];
+                  const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
+
+                  return [
+                    h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
+                    h.total_shops, h.visited_shops, h.productive_shops,
+                    totals['Kite Glow'].toFixed(3), totals['Burq Action'].toFixed(3), totals['Vero'].toFixed(3), totals['DWB'].toFixed(3), totals['Match'].toFixed(3),
+                    totalWP.toFixed(3), totalAch.toFixed(3),
+                    prodData['Kite Glow'] || 0, prodData['Burq Action'] || 0, prodData['Vero'] || 0, prodData['DWB'] || 0, prodData['Match'] || 0
+                  ].join(",");
                 });
 
-                const totalWP = totals['Kite Glow'] + totals['Burq Action'] + totals['Vero'];
-                const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
+                const csvContent = [headers.join(","), ...rows].join("\n");
+                const blob = new Blob([csvContent], { type: 'text/csv' });
+                const fileName = `sales_history_${new Date().toISOString().split('T')[0]}.csv`;
+                
+                if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'text/csv' })] })) {
+                  navigator.share({
+                    files: [new File([blob], fileName, { type: 'text/csv' })],
+                    title: 'Sales History Export',
+                    text: 'Complete Sales History Export'
+                  }).catch(err => console.error('Share failed:', err));
+                } else {
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = fileName;
+                  a.click();
+                  setMessage({ text: 'History Exported! Share it via WhatsApp.', type: 'success' });
+                  setTimeout(() => setMessage(null), 3000);
+                }
+              }} className="btn-seablue text-xs">Export Data</button>
+            </div>
 
-                return [
-                  h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
-                  h.total_shops, h.visited_shops, h.productive_shops,
-                  totals['Kite Glow'].toFixed(3), totals['Burq Action'].toFixed(3), totals['Vero'].toFixed(3), totals['DWB'].toFixed(3), totals['Match'].toFixed(3),
-                  totalWP.toFixed(3), totalAch.toFixed(3),
-                  prodData['Kite Glow'] || 0, prodData['Burq Action'] || 0, prodData['Vero'] || 0, prodData['DWB'] || 0, prodData['Match'] || 0
-                ].join(",");
-              });
-
-              const csvContent = [headers.join(","), ...rows].join("\n");
-              const blob = new Blob([csvContent], { type: 'text/csv' });
-              const fileName = `sales_history_${new Date().toISOString().split('T')[0]}.csv`;
-              
-              if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'text/csv' })] })) {
-                navigator.share({
-                  files: [new File([blob], fileName, { type: 'text/csv' })],
-                  title: 'Sales History Export',
-                  text: 'Complete Sales History Export'
-                }).catch(err => console.error('Share failed:', err));
-              } else {
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = fileName;
-                a.click();
-                setMessage({ text: 'History Exported! Share it via WhatsApp.', type: 'success' });
-                setTimeout(() => setMessage(null), 3000);
-              }
-            }} className="btn-seablue text-xs">Export Data</button>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+              <input 
+                type="text" 
+                placeholder="OB Name" 
+                value={historyFilters.ob} 
+                onChange={(e) => setHistoryFilters(prev => ({ ...prev, ob: e.target.value }))}
+                className="input-clean text-xs py-1.5"
+              />
+              <input 
+                type="text" 
+                placeholder="Route" 
+                value={historyFilters.route} 
+                onChange={(e) => setHistoryFilters(prev => ({ ...prev, route: e.target.value }))}
+                className="input-clean text-xs py-1.5"
+              />
+              <input 
+                type="date" 
+                value={historyFilters.from} 
+                onChange={(e) => setHistoryFilters(prev => ({ ...prev, from: e.target.value }))}
+                className="input-clean text-xs py-1.5"
+              />
+              <input 
+                type="date" 
+                value={historyFilters.to} 
+                onChange={(e) => setHistoryFilters(prev => ({ ...prev, to: e.target.value }))}
+                className="input-clean text-xs py-1.5"
+              />
+              <button onClick={() => { setHistoryPage(1); fetchHistory(); }} className="btn-seablue text-xs py-1.5 col-span-2 md:col-span-4">Apply Filters</button>
+            </div>
           </div>
         </header>
-        <main className="max-w-4xl mx-auto px-4 py-6 space-y-10">
-          {groupedHistory.map(group => {
-            const obTotals: Record<string, number> = {};
-            const obTargets: Record<string, number> = {};
-            const obAssignment = obAssignments.find(a => a.name === group.obName);
-            CATEGORIES.forEach(cat => {
-              obTargets[cat] = obAssignment?.targets?.[cat] || 0;
-              obTotals[cat] = group.entries.reduce((sum, h) => {
-                const items = h.order_data || {};
-                const catAch = SKUS
-                  .filter(sku => sku.category === cat)
-                  .reduce((s, sku) => {
-                    const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                    const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                    return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                  }, 0);
-                return sum + catAch;
-              }, 0);
-            });
-            const obTotalAch = Object.values(obTotals).reduce((a, b) => a + b, 0);
 
-            return (
-              <div key={group.obName} className="space-y-4">
-                <div className="flex items-center justify-between border-b-2 border-seablue/10 pb-2">
-                  <h2 className="text-sm font-black text-seablue uppercase tracking-[0.2em] flex items-center gap-2">
-                    <div className="w-2 h-2 bg-seablue rounded-full"></div>
-                    {group.obName}
-                  </h2>
-                  <div className="flex gap-4 text-[10px] font-bold uppercase text-slate-400">
-                    <span>MTD: <span className="text-seablue font-black">{obTotalAch.toFixed(2)}</span></span>
-                    <span>Tgt: <span className="text-slate-600 font-black">{Object.values(obTargets).reduce((a, b) => a + b, 0).toFixed(2)}</span></span>
-                  </div>
-                </div>
+        <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+          <div className="card-clean overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50/50 text-[9px] uppercase font-black text-slate-400 border-b border-slate-100">
+                    <th className="px-4 py-3">Date / OB</th>
+                    <th className="px-4 py-3">Route</th>
+                    <th className="px-4 py-3 text-center">T/V/P</th>
+                    {CATEGORIES.map(cat => <th key={cat} className="px-4 py-3 text-center">{cat}</th>)}
+                    <th className="px-4 py-3 text-right">Total</th>
+                    <th className="px-4 py-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {paginatedHistory.map(h => {
+                    const items = h.order_data || {};
+                    const totals: Record<string, number> = {};
+                    CATEGORIES.forEach(cat => {
+                      totals[cat] = SKUS
+                        .filter(sku => sku.category === cat)
+                        .reduce((sum, sku) => {
+                          const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                          const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                          return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                        }, 0);
+                    });
+                    const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
 
-                <div className="card-clean overflow-hidden">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50/50 text-[9px] uppercase font-black text-slate-400 border-b border-slate-100">
-                          <th className="py-3 px-4">Date</th>
-                          <th className="py-3 px-2">Route</th>
-                          <th className="py-3 px-2 text-center">Shops (T/V/P)</th>
-                          {CATEGORIES.map(cat => (
-                            <th key={cat} className="py-3 px-2 text-center">{cat}</th>
-                          ))}
-                          <th className="py-3 px-4 text-right">Total</th>
-                          <th className="py-3 px-2 text-center"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-50">
-                        {group.entries.map(h => {
-                          const items = h.order_data || {};
-                          const totals: Record<string, number> = {};
-                          CATEGORIES.forEach(cat => {
-                            totals[cat] = SKUS
-                              .filter(sku => sku.category === cat)
-                              .reduce((sum, sku) => {
-                                const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                                return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                              }, 0);
-                          });
-                          
-                          const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
+                    return (
+                      <tr key={h.id} className="hover:bg-slate-50/50 transition-colors group">
+                        <td className="px-4 py-3">
+                          <div className="text-[10px] font-bold text-slate-700">{h.date}</div>
+                          <div className="text-[9px] text-slate-400">{h.order_booker}</div>
+                        </td>
+                        <td className="px-4 py-3 text-[10px] font-medium text-slate-600">{h.route}</td>
+                        <td className="px-4 py-3 text-center text-[10px] text-slate-500">{h.total_shops}/{h.visited_shops}/{h.productive_shops}</td>
+                        {CATEGORIES.map(cat => (
+                          <td key={cat} className="px-4 py-3 text-center font-mono text-[10px]">{totals[cat].toFixed(1)}</td>
+                        ))}
+                        <td className="px-4 py-3 text-right font-black text-seablue text-[10px]">{totalAch.toFixed(2)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <button 
+                            onClick={() => {
+                              const summary = `*Sales Summary - ${h.date}*\n` +
+                                `*OB:* ${h.order_booker}\n` +
+                                `*Route:* ${h.route}\n` +
+                                `*Shops (T/V/P):* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
+                                `------------------\n` +
+                                CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)}`).join('\n') +
+                                `\n------------------\n` +
+                                `*Total Achievement:* ${totalAch.toFixed(2)}`;
+                              const encodedMsg = encodeURIComponent(summary);
+                              window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
+                            }}
+                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                          >
+                            <WhatsAppIcon />
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
 
-                          return (
-                            <tr key={h.id} className="hover:bg-slate-50/50 transition-colors group">
-                              <td className="py-3 px-4 text-[10px] font-bold text-slate-400">{h.date}</td>
-                              <td className="py-3 px-2 text-[11px] font-black text-seablue uppercase">{h.route}</td>
-                              <td className="py-3 px-2 text-center text-[11px] font-bold text-slate-600">{h.total_shops}/{h.visited_shops}/{h.productive_shops}</td>
-                              {CATEGORIES.map(cat => (
-                                <td key={cat} className="py-3 px-2 text-center text-[11px] font-black text-seablue">{totals[cat].toFixed(2)}</td>
-                              ))}
-                              <td className="py-3 px-4 text-right text-[11px] font-black text-seablue">{totalAch.toFixed(2)}</td>
-                              <td className="py-3 px-2 text-center">
-                                <button 
-                                  onClick={() => {
-                                    const summary = `*Sales Summary - ${h.date}*\n` +
-                                      `*OB:* ${h.order_booker}\n` +
-                                      `*Route:* ${h.route}\n` +
-                                      `*Shops (T/V/P):* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
-                                      `------------------\n` +
-                                      CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} ${["Kite Glow", "Burq Action", "Vero"].includes(cat) ? 'Bags' : 'Ctns'}`).join('\n') +
-                                      `\n------------------\n` +
-                                      `*Total Achievement:* ${totalAch.toFixed(2)}`;
-                                    
-                                    const encodedSummary = encodeURIComponent(summary);
-                                    window.open(`https://wa.me/?text=${encodedSummary}`, '_blank');
-                                  }}
-                                  className="p-1.5 text-emerald-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-md transition-all opacity-0 group-hover:opacity-100 flex items-center gap-1"
-                                  title="Share via WhatsApp"
-                                >
-                                  <WhatsAppIcon />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
+          {totalPages > 1 && (
+            <div className="flex justify-center gap-2">
+              <button disabled={historyPage === 1} onClick={() => setHistoryPage(p => p - 1)} className="btn-seablue px-3 py-1 text-xs disabled:opacity-50">Prev</button>
+              <span className="text-xs font-bold flex items-center">Page {historyPage} of {totalPages}</span>
+              <button disabled={historyPage === totalPages} onClick={() => setHistoryPage(p => p + 1)} className="btn-seablue px-3 py-1 text-xs disabled:opacity-50">Next</button>
+            </div>
+          )}
         </main>
       </div>
     );
@@ -923,14 +1024,12 @@ export default function App() {
                   const encodedSummary = encodeURIComponent(summary);
                   window.open(`https://wa.me/?text=${encodedSummary}`, '_blank');
                 }}
-                className="flex items-center gap-2 px-3 py-2 bg-emerald-500 hover:bg-emerald-600 text-white rounded-xl transition-all shadow-sm"
+                className="flex items-center gap-2 px-3 py-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"
                 title="Share via WhatsApp"
               >
                 <WhatsAppIcon />
                 <span className="text-[10px] font-black uppercase tracking-wider hidden sm:inline">Share WhatsApp</span>
               </button>
-              <button onClick={saveDraft} className="p-2 text-seablue hover:bg-seablue/5 rounded-xl transition-colors"><Save className="w-5 h-5" /></button>
-              <button onClick={submitOrder} className="btn-seablue flex items-center gap-2"><Send className="w-4 h-4" /> <span>Submit</span></button>
             </div>
           </div>
         </div>
@@ -1104,6 +1203,30 @@ export default function App() {
         <button onClick={() => setView('history')} className={`p-2 flex flex-col items-center gap-1 ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}><History className="w-5 h-5" /><span className="text-[9px] font-bold uppercase">History</span></button>
         <button onClick={() => setView('admin')} className={`p-2 flex flex-col items-center gap-1 ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}><Settings className="w-5 h-5" /><span className="text-[9px] font-bold uppercase">Admin</span></button>
       </nav>
+
+      {/* Action Buttons Footer (Entry View Only) */}
+      {view === 'entry' && (
+        <div className="fixed bottom-20 left-0 right-0 px-4 pb-4 flex justify-center gap-3 z-30">
+          <div className="max-w-md w-full flex gap-3 bg-white/80 backdrop-blur-md p-3 rounded-2xl border border-slate-200 shadow-2xl">
+            <button 
+              onClick={saveDraft} 
+              disabled={isSaving}
+              className="flex-1 flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50"
+            >
+              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+              <span>Save Draft</span>
+            </button>
+            <button 
+              onClick={submitOrder} 
+              disabled={isSubmitting}
+              className="flex-[1.5] flex items-center justify-center gap-2 bg-seablue text-white py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-200 hover:bg-seablue-dark transition-all active:scale-95 disabled:opacity-50"
+            >
+              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              <span>Submit Report</span>
+            </button>
+          </div>
+        </div>
+      )}
 
       <AnimatePresence>
         {isConfirming && (

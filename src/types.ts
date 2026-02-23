@@ -43,45 +43,45 @@ export interface OBAssignment {
 
 export const OB_ASSIGNMENTS: OBAssignment[] = [
   // Peshawar - TSM: Muhammad Shoaib
-  { name: "Muhammad Bilal", contact: "P-01", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1"], tsm: "Muhammad Shoaib", totalShops: 45 },
-  { name: "Khizar Hayat", contact: "P-02", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1"], tsm: "Muhammad Shoaib", totalShops: 40 },
-  { name: "Adil Khan", contact: "P-03", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1"], tsm: "Muhammad Shoaib", totalShops: 50 },
-  { name: "Baidar Khan", contact: "P-04", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1"], tsm: "Muhammad Shoaib", totalShops: 42 },
-  { name: "Muhammad Usman", contact: "P-05", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1"], tsm: "Muhammad Shoaib", totalShops: 48 },
-  { name: "Ghulam Rasool", contact: "P-06", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1"], tsm: "Muhammad Shoaib", totalShops: 44 },
-  { name: "Khalid Awan", contact: "P-07", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1"], tsm: "Muhammad Shoaib", totalShops: 46 },
+  { name: "Muhammad Bilal", contact: "P-01", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Shoaib", totalShops: 45 },
+  { name: "Khizar Hayat", contact: "P-02", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Shoaib", totalShops: 40 },
+  { name: "Adil Khan", contact: "P-03", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Shoaib", totalShops: 50 },
+  { name: "Baidar Khan", contact: "P-04", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Shoaib", totalShops: 42 },
+  { name: "Muhammad Usman", contact: "P-05", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Shoaib", totalShops: 48 },
+  { name: "Ghulam Rasool", contact: "P-06", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Shoaib", totalShops: 44 },
+  { name: "Khalid Awan", contact: "P-07", town: "Peshawar", distributor: "Peshawar Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Shoaib", totalShops: 46 },
 
   // Haripur - TSM: Muhammad Yousaf
-  { name: "Shahid", contact: "H-01", town: "Haripur", distributor: "Haripur Dist", routes: ["Route 1"], tsm: "Muhammad Yousaf", totalShops: 35 },
-  { name: "Shahrukh", contact: "H-02", town: "Haripur", distributor: "Haripur Dist", routes: ["Route 1"], tsm: "Muhammad Yousaf", totalShops: 38 },
+  { name: "Shahid", contact: "H-01", town: "Haripur", distributor: "Haripur Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Yousaf", totalShops: 35 },
+  { name: "Shahrukh", contact: "H-02", town: "Haripur", distributor: "Haripur Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Yousaf", totalShops: 38 },
 
   // Taxila - TSM: Muhammad Yousaf
-  { name: "Bilal", contact: "T-01", town: "Taxila", distributor: "Taxila Dist", routes: ["Route 1"], tsm: "Muhammad Yousaf", totalShops: 40 },
-  { name: "Muneeb", contact: "T-02", town: "Taxila", distributor: "Taxila Dist", routes: ["Route 1"], tsm: "Muhammad Yousaf", totalShops: 42 },
+  { name: "Bilal", contact: "T-01", town: "Taxila", distributor: "Taxila Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Yousaf", totalShops: 40 },
+  { name: "Muneeb", contact: "T-02", town: "Taxila", distributor: "Taxila Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Yousaf", totalShops: 42 },
 
   // Kohat - TSM: Noman Paracha
-  { name: "Kashif", contact: "K-01", town: "Kohat", distributor: "Kohat Dist", routes: ["Route 1"], tsm: "Noman Paracha", totalShops: 55 },
+  { name: "Kashif", contact: "K-01", town: "Kohat", distributor: "Kohat Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Noman Paracha", totalShops: 55 },
 
   // Hangu - TSM: Noman Paracha
-  { name: "Bilal", contact: "HG-01", town: "Hangu", distributor: "Hangu Dist", routes: ["Route 1"], tsm: "Noman Paracha", totalShops: 50 },
+  { name: "Bilal", contact: "HG-01", town: "Hangu", distributor: "Hangu Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Noman Paracha", totalShops: 50 },
 
   // Attock - TSM: Noman Paracha
-  { name: "Usama", contact: "A-01", town: "Attock", distributor: "Attock Dist", routes: ["Route 1"], tsm: "Noman Paracha", totalShops: 45 },
+  { name: "Usama", contact: "A-01", town: "Attock", distributor: "Attock Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Noman Paracha", totalShops: 45 },
 
   // Charsadda - TSM: Waheed Jamal
-  { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", routes: ["Route 1"], tsm: "Waheed Jamal", totalShops: 48 },
+  { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Waheed Jamal", totalShops: 48 },
 
   // Mardan - TSM: Muhammad Zeeshan
-  { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", routes: ["Route 1"], tsm: "Muhammad Zeeshan", totalShops: 52 },
+  { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Zeeshan", totalShops: 52 },
 
   // DI Khan & Bannu - TSM: Ikramullah
-  { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", routes: ["Route 1"], tsm: "Ikramullah", totalShops: 48 },
-  { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", routes: ["Route 1"], tsm: "Ikramullah", totalShops: 45 },
-  { name: "OB Bannu", contact: "BAN-01", town: "Bannu", distributor: "Bannu Dist", routes: ["Route 1"], tsm: "Ikramullah", totalShops: 40 },
+  { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Ikramullah", totalShops: 48 },
+  { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Ikramullah", totalShops: 45 },
+  { name: "OB Bannu", contact: "BAN-01", town: "Bannu", distributor: "Bannu Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Ikramullah", totalShops: 40 },
 
   // Muzaffarabad & Mansehra - TSM: Qaisar Yousaf
-  { name: "Ghulam Hussain", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", routes: ["Route 1"], tsm: "Qaisar Yousaf", totalShops: 40 },
-  { name: "Hashim", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", routes: ["Route 1"], tsm: "Qaisar Yousaf", totalShops: 40 }
+  { name: "Ghulam Hussain", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Qaisar Yousaf", totalShops: 40 },
+  { name: "Hashim", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Qaisar Yousaf", totalShops: 40 }
 ];
 
 export const CATEGORIES = [

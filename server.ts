@@ -98,26 +98,26 @@ async function startServer() {
   const obCount = db.prepare("SELECT COUNT(*) as count FROM ob_assignments").get() as any;
   if (obCount.count === 0) {
     const seedOBs = [
-      { name: "Muhammad Bilal", contact: "P-01", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Khizar Hayat", contact: "P-02", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Adil Khan", contact: "P-03", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Baidar Khan", contact: "P-04", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 42, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Muhammad Usman", contact: "P-05", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Ghulam Rasool", contact: "P-06", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 44, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Khalid Awan", contact: "P-07", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 46, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Shahid", contact: "H-01", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 35, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Shahrukh", contact: "H-02", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 38, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Bilal", contact: "T-01", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Muneeb", contact: "T-02", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 42, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Kashif", contact: "K-01", town: "Kohat", distributor: "Kohat Dist", tsm: "Noman Paracha", totalShops: 55, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Bilal", contact: "HG-01", town: "Hangu", distributor: "Hangu Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Usama", contact: "A-01", town: "Attock", distributor: "Attock Dist", tsm: "Noman Paracha", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah & Muntazir", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah & Muntazir", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", tsm: "Muhammad Zeeshan", totalShops: 52, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", tsm: "Waheed Jamal", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2"]) },
-      { name: "OB Muzaffarabad", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1"]) },
-      { name: "OB Mansehra", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1"]) }
+      { name: "Muhammad Bilal", contact: "P-01", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Khizar Hayat", contact: "P-02", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Adil Khan", contact: "P-03", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Baidar Khan", contact: "P-04", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 42, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Muhammad Usman", contact: "P-05", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Ghulam Rasool", contact: "P-06", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 44, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Khalid Awan", contact: "P-07", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 46, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Shahid", contact: "H-01", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 35, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Shahrukh", contact: "H-02", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 38, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Bilal", contact: "T-01", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Muneeb", contact: "T-02", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 42, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Kashif", contact: "K-01", town: "Kohat", distributor: "Kohat Dist", tsm: "Noman Paracha", totalShops: 55, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Bilal", contact: "HG-01", town: "Hangu", distributor: "Hangu Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Usama", contact: "A-01", town: "Attock", distributor: "Attock Dist", tsm: "Noman Paracha", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", tsm: "Muhammad Zeeshan", totalShops: 52, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", tsm: "Waheed Jamal", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Ghulam Hussain", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Hashim", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) }
     ];
     const insertOB = db.prepare("INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?)");
     seedOBs.forEach(ob => insertOB.run(ob.name, ob.contact, ob.town, ob.distributor, ob.tsm, ob.totalShops, ob.routes));
@@ -196,45 +196,45 @@ async function startServer() {
       db.prepare("DELETE FROM ob_assignments").run();
       const seedOBs = [
         // Peshawar - TSM: Muhammad Shoaib
-        { name: "Muhammad Bilal", contact: "P-01", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 45, routes: JSON.stringify(["Route 1"]) },
-        { name: "Khizar Hayat", contact: "P-02", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 40, routes: JSON.stringify(["Route 1"]) },
-        { name: "Adil Khan", contact: "P-03", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1"]) },
-        { name: "Baidar Khan", contact: "P-04", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 42, routes: JSON.stringify(["Route 1"]) },
-        { name: "Muhammad Usman", contact: "P-05", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 48, routes: JSON.stringify(["Route 1"]) },
-        { name: "Ghulam Rasool", contact: "P-06", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 44, routes: JSON.stringify(["Route 1"]) },
-        { name: "Khalid Awan", contact: "P-07", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 46, routes: JSON.stringify(["Route 1"]) },
+        { name: "Muhammad Bilal", contact: "P-01", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Khizar Hayat", contact: "P-02", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Adil Khan", contact: "P-03", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Baidar Khan", contact: "P-04", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 42, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Muhammad Usman", contact: "P-05", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Ghulam Rasool", contact: "P-06", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 44, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Khalid Awan", contact: "P-07", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 46, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // Haripur - TSM: Muhammad Yousaf
-        { name: "Shahid", contact: "H-01", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 35, routes: JSON.stringify(["Route 1"]) },
-        { name: "Shahrukh", contact: "H-02", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 38, routes: JSON.stringify(["Route 1"]) },
+        { name: "Shahid", contact: "H-01", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 35, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Shahrukh", contact: "H-02", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 38, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // Taxila - TSM: Muhammad Yousaf
-        { name: "Bilal", contact: "T-01", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1"]) },
-        { name: "Muneeb", contact: "T-02", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 42, routes: JSON.stringify(["Route 1"]) },
+        { name: "Bilal", contact: "T-01", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Muneeb", contact: "T-02", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 42, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // Kohat - TSM: Noman Paracha
-        { name: "Kashif", contact: "K-01", town: "Kohat", distributor: "Kohat Dist", tsm: "Noman Paracha", totalShops: 55, routes: JSON.stringify(["Route 1"]) },
+        { name: "Kashif", contact: "K-01", town: "Kohat", distributor: "Kohat Dist", tsm: "Noman Paracha", totalShops: 55, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // Hangu - TSM: Noman Paracha
-        { name: "Bilal", contact: "HG-01", town: "Hangu", distributor: "Hangu Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Route 1"]) },
+        { name: "Bilal", contact: "HG-01", town: "Hangu", distributor: "Hangu Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // Attock - TSM: Noman Paracha
-        { name: "Usama", contact: "A-01", town: "Attock", distributor: "Attock Dist", tsm: "Noman Paracha", totalShops: 45, routes: JSON.stringify(["Route 1"]) },
+        { name: "Usama", contact: "A-01", town: "Attock", distributor: "Attock Dist", tsm: "Noman Paracha", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // Charsadda - TSM: Waheed Jamal
-        { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", tsm: "Waheed Jamal", totalShops: 48, routes: JSON.stringify(["Route 1"]) },
+        { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", tsm: "Waheed Jamal", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // Mardan - TSM: Muhammad Zeeshan
-        { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", tsm: "Muhammad Zeeshan", totalShops: 52, routes: JSON.stringify(["Route 1"]) },
+        { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", tsm: "Muhammad Zeeshan", totalShops: 52, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // DI Khan & Bannu - TSM: Ikramullah
-        { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 48, routes: JSON.stringify(["Route 1"]) },
-        { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 45, routes: JSON.stringify(["Route 1"]) },
-        { name: "OB Bannu", contact: "BAN-01", town: "Bannu", distributor: "Bannu Dist", tsm: "Ikramullah", totalShops: 40, routes: JSON.stringify(["Route 1"]) },
+        { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "OB Bannu", contact: "BAN-01", town: "Bannu", distributor: "Bannu Dist", tsm: "Ikramullah", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // Muzaffarabad & Mansehra - TSM: Qaisar Yousaf
-        { name: "OB Muzaffarabad", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1"]) },
-        { name: "OB Mansehra", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1"]) }
+        { name: "Ghulam Hussain", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Hashim", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) }
       ];
       const insertOB = db.prepare("INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?)");
       seedOBs.forEach(ob => insertOB.run(ob.name, ob.contact, ob.town, ob.distributor, ob.tsm, ob.totalShops, ob.routes));
@@ -262,7 +262,30 @@ async function startServer() {
   });
 
   app.get("/api/orders", (req, res) => {
-    const rows = db.prepare("SELECT * FROM submitted_orders ORDER BY submitted_at DESC").all();
+    const { ob, route, from, to } = req.query;
+    let query = "SELECT * FROM submitted_orders WHERE 1=1";
+    const params: any[] = [];
+
+    if (ob) {
+      query += " AND order_booker LIKE ?";
+      params.push(`%${ob}%`);
+    }
+    if (route) {
+      query += " AND route LIKE ?";
+      params.push(`%${route}%`);
+    }
+    if (from) {
+      query += " AND date >= ?";
+      params.push(from);
+    }
+    if (to) {
+      query += " AND date <= ?";
+      params.push(to);
+    }
+
+    query += " ORDER BY date DESC, submitted_at DESC";
+    
+    const rows = db.prepare(query).all(...params);
     res.json(rows.map((row: any) => ({
       ...row,
       order_data: JSON.parse(row.order_data)
