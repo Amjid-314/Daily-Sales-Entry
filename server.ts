@@ -115,6 +115,7 @@ async function startServer() {
       { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
       { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
       { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", tsm: "Muhammad Zeeshan", totalShops: 52, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+      { name: "Farhan Zeb", contact: "NOW-01", town: "Nowshera", distributor: "Nowshera Dist", tsm: "Muhammad Zeeshan", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
       { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", tsm: "Waheed Jamal", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
       { name: "Ghulam Hussain", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
       { name: "Hashim", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) }
@@ -138,16 +139,29 @@ async function startServer() {
 
   app.get("/api/admin/obs", (req, res) => {
     const obs = db.prepare("SELECT * FROM ob_assignments").all();
-    res.json(obs.map((ob: any) => ({ 
-      id: ob.id,
-      name: ob.name,
-      contact: ob.contact,
-      town: ob.town,
-      distributor: ob.distributor,
-      tsm: ob.tsm,
-      totalShops: ob.total_shops,
-      routes: JSON.parse(ob.routes) 
-    })));
+    const targets = db.prepare("SELECT * FROM brand_targets").all();
+    
+    const obsWithTargets = obs.map((ob: any) => {
+      const obTargets: Record<string, number> = {};
+      targets
+        .filter((t: any) => t.ob_contact === ob.contact)
+        .forEach((t: any) => {
+          obTargets[t.brand_name] = t.target_ctn;
+        });
+        
+      return { 
+        id: ob.id,
+        name: ob.name,
+        contact: ob.contact,
+        town: ob.town,
+        distributor: ob.distributor,
+        tsm: ob.tsm,
+        totalShops: ob.total_shops,
+        routes: JSON.parse(ob.routes),
+        targets: obTargets
+      };
+    });
+    res.json(obsWithTargets);
   });
 
   app.post("/api/admin/obs", (req, res) => {
@@ -226,6 +240,7 @@ async function startServer() {
 
         // Mardan - TSM: Muhammad Zeeshan
         { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", tsm: "Muhammad Zeeshan", totalShops: 52, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
+        { name: "Farhan Zeb", contact: "NOW-01", town: "Nowshera", distributor: "Nowshera Dist", tsm: "Muhammad Zeeshan", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
 
         // DI Khan & Bannu - TSM: Ikramullah
         { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
@@ -262,17 +277,14 @@ async function startServer() {
   });
 
   app.get("/api/orders", (req, res) => {
-    const { ob, route, from, to } = req.query;
+    const { ob, from, to } = req.query;
     let query = "SELECT * FROM submitted_orders WHERE 1=1";
     const params: any[] = [];
 
     if (ob) {
-      query += " AND order_booker LIKE ?";
-      params.push(`%${ob}%`);
-    }
-    if (route) {
-      query += " AND route LIKE ?";
-      params.push(`%${route}%`);
+      // Use exact match for OB name if it's from a dropdown
+      query += " AND order_booker = ?";
+      params.push(ob);
     }
     if (from) {
       query += " AND date >= ?";

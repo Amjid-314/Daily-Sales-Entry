@@ -73,6 +73,7 @@ export const OB_ASSIGNMENTS: OBAssignment[] = [
 
   // Mardan - TSM: Muhammad Zeeshan
   { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Zeeshan", totalShops: 52 },
+  { name: "Farhan Zeb", contact: "NOW-01", town: "Nowshera", distributor: "Nowshera Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Muhammad Zeeshan", totalShops: 45 },
 
   // DI Khan & Bannu - TSM: Ikramullah
   { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", routes: ["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"], tsm: "Ikramullah", totalShops: 48 },

@@ -51,7 +51,7 @@ const WhatsAppIcon = () => (
 export default function App() {
   const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin'>('entry');
   const [history, setHistory] = useState<any[]>([]);
-  const [historyFilters, setHistoryFilters] = useState({ ob: '', route: '', from: '', to: '' });
+  const [historyFilters, setHistoryFilters] = useState({ ob: '', from: '', to: '' });
   const [historyPage, setHistoryPage] = useState(1);
   const itemsPerPage = 10;
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -259,14 +259,15 @@ export default function App() {
     }
   };
 
-  const fetchHistory = async () => {
+  const fetchHistory = async (ignoreFilters = false) => {
     setIsLoadingHistory(true);
     try {
       const params = new URLSearchParams();
-      if (historyFilters.ob) params.append('ob', historyFilters.ob);
-      if (historyFilters.route) params.append('route', historyFilters.route);
-      if (historyFilters.from) params.append('from', historyFilters.from);
-      if (historyFilters.to) params.append('to', historyFilters.to);
+      if (!ignoreFilters) {
+        if (historyFilters.ob) params.append('ob', historyFilters.ob);
+        if (historyFilters.from) params.append('from', historyFilters.from);
+        if (historyFilters.to) params.append('to', historyFilters.to);
+      }
 
       const response = await fetch(`/api/orders?${params.toString()}`);
       if (response.ok) {
@@ -380,9 +381,35 @@ export default function App() {
 
   useEffect(() => { fetchAdminData(); }, []);
   useEffect(() => {
-    if (view === 'history' || view === 'dashboard') fetchHistory();
-    if (view === 'admin') fetchAdminData();
+    if (view === 'history') fetchHistory();
+    if (view === 'dashboard') fetchHistory(true);
+    if (view === 'admin' || view === 'dashboard') fetchAdminData();
   }, [view]);
+
+  const MainNav = () => (
+    <nav className="bg-white border-b border-slate-200 px-4 h-12 flex justify-around items-center sticky top-0 z-40 shadow-sm">
+      <button onClick={() => setView('entry')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
+        <ClipboardList className="w-5 h-5" />
+        <span className="text-[8px] font-black uppercase tracking-tighter">Entry</span>
+        {view === 'entry' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+      </button>
+      <button onClick={() => setView('dashboard')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'dashboard' ? 'text-seablue' : 'text-slate-400'}`}>
+        <LayoutDashboard className="w-5 h-5" />
+        <span className="text-[8px] font-black uppercase tracking-tighter">Stats</span>
+        {view === 'dashboard' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+      </button>
+      <button onClick={() => setView('history')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
+        <History className="w-5 h-5" />
+        <span className="text-[8px] font-black uppercase tracking-tighter">History</span>
+        {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+      </button>
+      <button onClick={() => setView('admin')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
+        <Settings className="w-5 h-5" />
+        <span className="text-[8px] font-black uppercase tracking-tighter">Admin</span>
+        {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+      </button>
+    </nav>
+  );
 
   const calculateTimeGone = () => {
     const now = new Date();
@@ -540,9 +567,24 @@ export default function App() {
       };
     }).sort((a, b) => b.totalAch - a.totalAch);
 
+    if (isLoadingHistory || isLoadingAdmin) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col">
+          <MainNav />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Stats...</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="min-h-screen bg-slate-50 pb-32">
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-20 shadow-sm">
+      <div className="min-h-screen bg-slate-50 pb-10">
+        <MainNav />
+        <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
@@ -551,6 +593,13 @@ export default function App() {
               <h1 className="text-lg font-bold text-seablue">Dashboard</h1>
             </div>
             <div className="flex items-center gap-2">
+              <button 
+                onClick={() => { fetchHistory(true); fetchAdminData(); }}
+                className="p-2 hover:bg-slate-100 rounded-full text-seablue transition-colors"
+                title="Refresh Stats"
+              >
+                <RefreshCw className={`w-5 h-5 ${(isLoadingHistory || isLoadingAdmin) ? 'animate-spin' : ''}`} />
+              </button>
               <button 
                 onClick={() => {
                   const summary = `*Global Sales Dashboard - ${today}*\n` +
@@ -574,7 +623,20 @@ export default function App() {
         </header>
 
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {history.length === 0 ? (
+            <div className="card-clean p-12 text-center space-y-4">
+              <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                <LayoutDashboard className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-slate-700">No Sales Data Yet</h3>
+                <p className="text-sm text-slate-400">Submit some reports to see your performance stats here.</p>
+              </div>
+              <button onClick={() => setView('entry')} className="btn-seablue px-6 py-2">Go to Entry</button>
+            </div>
+          ) : (
+            <>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="card-clean p-4 bg-seablue text-white shadow-blue-200 shadow-lg">
               <div className="text-[10px] uppercase font-bold text-white/60">Today Total Sales</div>
               <div className="text-3xl font-black">{(Object.values(globalToday) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}</div>
@@ -640,31 +702,51 @@ export default function App() {
               </table>
             </div>
           </div>
+          </>
+          )}
         </main>
       </div>
     );
   }
 
   if (view === 'admin') {
+    if (isLoadingAdmin) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col">
+          <MainNav />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Admin...</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (!adminAuthenticated) {
       return (
-        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
-          <div className="card-clean p-8 max-w-sm w-full space-y-6 text-center">
-            <Lock className="w-12 h-12 text-seablue mx-auto" />
-            <h2 className="text-xl font-bold text-seablue">Admin Login</h2>
-            <form onSubmit={(e) => { e.preventDefault(); if (adminPassInput.toLowerCase() === ADMIN_PASSWORD) setAdminAuthenticated(true); else setMessage({ text: 'Wrong Pass', type: 'error' }); }} className="space-y-4">
-              <input type="password" placeholder="Enter Password" value={adminPassInput} onChange={(e) => setAdminPassInput(e.target.value)} className="input-clean w-full text-center" autoFocus />
-              <button type="submit" className="btn-seablue w-full">Login to Admin</button>
-              <button type="button" onClick={() => setView('entry')} className="text-xs text-slate-400 font-bold hover:underline">Cancel</button>
-            </form>
+        <div className="min-h-screen bg-slate-50">
+          <MainNav />
+          <div className="flex items-center justify-center p-4 pt-20">
+            <div className="card-clean p-8 max-w-sm w-full space-y-6 text-center">
+              <Lock className="w-12 h-12 text-seablue mx-auto" />
+              <h2 className="text-xl font-bold text-seablue">Admin Login</h2>
+              <form onSubmit={(e) => { e.preventDefault(); if (adminPassInput.toLowerCase() === ADMIN_PASSWORD) setAdminAuthenticated(true); else setMessage({ text: 'Wrong Pass', type: 'error' }); }} className="space-y-4">
+                <input type="password" placeholder="Enter Password" value={adminPassInput} onChange={(e) => setAdminPassInput(e.target.value)} className="input-clean w-full text-center" autoFocus />
+                <button type="submit" className="btn-seablue w-full">Login to Admin</button>
+                <button type="button" onClick={() => setView('entry')} className="text-xs text-slate-400 font-bold hover:underline">Cancel</button>
+              </form>
+            </div>
           </div>
         </div>
       );
     }
 
     return (
-      <div className="min-h-screen bg-slate-50 pb-32">
-        <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-20 shadow-sm">
+      <div className="min-h-screen bg-slate-50 pb-10">
+        <MainNav />
+        <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
@@ -807,12 +889,27 @@ export default function App() {
   }, [history]);
 
   if (view === 'history') {
+    if (isLoadingHistory) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col">
+          <MainNav />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading History...</p>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const paginatedHistory = history.slice((historyPage - 1) * itemsPerPage, historyPage * itemsPerPage);
     const totalPages = Math.ceil(history.length / itemsPerPage);
 
     return (
-      <div className="min-h-screen bg-slate-50 pb-32">
-        <header className="bg-white border-b border-slate-200 p-4 sticky top-0 z-20 shadow-sm">
+      <div className="min-h-screen bg-slate-50 pb-10">
+        <MainNav />
+        <header className="bg-white border-b border-slate-200 p-4 sticky top-12 z-20 shadow-sm">
           <div className="max-w-4xl mx-auto flex flex-col gap-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
@@ -825,35 +922,26 @@ export default function App() {
                 const headers = [
                   'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
                   'Total Shops', 'Visited Shops', 'Productive Shops',
-                  'Kite Glow (Bag)', 'Burq Action (Bag)', 'Vero (Bag)', 'DWB (Ctn)', 'Match (Ctn)',
-                  'Total Washing Powder (Bag)', 'Total Achievement',
-                  'Kite Glow (Prod)', 'Burq Action (Prod)', 'Vero (Prod)', 'DWB (Prod)', 'Match (Prod)'
+                  ...SKUS.map(sku => `${sku.name} (${sku.category})`),
+                  'Total Achievement'
                 ];
                 
                 const rows = history.map(h => {
                   const items = h.order_data || {};
-                  const prodData = h.category_productive_data || {};
                   
-                  const totals: Record<string, number> = {};
-                  CATEGORIES.forEach(cat => {
-                    totals[cat] = SKUS
-                      .filter(sku => sku.category === cat)
-                      .reduce((sum, sku) => {
-                        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                        const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                        return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                      }, 0);
+                  const skuValues = SKUS.map(sku => {
+                    const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                    const total = (item.ctn * sku.unitsPerCarton + item.dzn * sku.unitsPerDozen + item.pks) / (sku.unitsPerCarton || 1);
+                    return total.toFixed(3);
                   });
 
-                  const totalWP = totals['Kite Glow'] + totals['Burq Action'] + totals['Vero'];
-                  const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
+                  const totalAch = skuValues.reduce((a, b) => a + parseFloat(b), 0);
 
                   return [
                     h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
                     h.total_shops, h.visited_shops, h.productive_shops,
-                    totals['Kite Glow'].toFixed(3), totals['Burq Action'].toFixed(3), totals['Vero'].toFixed(3), totals['DWB'].toFixed(3), totals['Match'].toFixed(3),
-                    totalWP.toFixed(3), totalAch.toFixed(3),
-                    prodData['Kite Glow'] || 0, prodData['Burq Action'] || 0, prodData['Vero'] || 0, prodData['DWB'] || 0, prodData['Match'] || 0
+                    ...skuValues,
+                    totalAch.toFixed(3)
                   ].join(",");
                 });
 
@@ -879,21 +967,15 @@ export default function App() {
               }} className="btn-seablue text-xs">Export Data</button>
             </div>
 
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <input 
-                type="text" 
-                placeholder="OB Name" 
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+              <select 
                 value={historyFilters.ob} 
                 onChange={(e) => setHistoryFilters(prev => ({ ...prev, ob: e.target.value }))}
                 className="input-clean text-xs py-1.5"
-              />
-              <input 
-                type="text" 
-                placeholder="Route" 
-                value={historyFilters.route} 
-                onChange={(e) => setHistoryFilters(prev => ({ ...prev, route: e.target.value }))}
-                className="input-clean text-xs py-1.5"
-              />
+              >
+                <option value="">All OBs</option>
+                {obAssignments.map(ob => <option key={ob.contact} value={ob.name}>{ob.name}</option>)}
+              </select>
               <input 
                 type="date" 
                 value={historyFilters.from} 
@@ -906,7 +988,7 @@ export default function App() {
                 onChange={(e) => setHistoryFilters(prev => ({ ...prev, to: e.target.value }))}
                 className="input-clean text-xs py-1.5"
               />
-              <button onClick={() => { setHistoryPage(1); fetchHistory(); }} className="btn-seablue text-xs py-1.5 col-span-2 md:col-span-4">Apply Filters</button>
+              <button onClick={() => { setHistoryPage(1); fetchHistory(); }} className="btn-seablue text-xs py-1.5 col-span-1 md:col-span-3">Apply Filters</button>
             </div>
           </div>
         </header>
@@ -955,10 +1037,24 @@ export default function App() {
                         <td className="px-4 py-3 text-center">
                           <button 
                             onClick={() => {
+                              const items = h.order_data || {};
+                              const skuDetails = SKUS.map(sku => {
+                                const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                                if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
+                                let detail = `*${sku.name}:* `;
+                                const parts = [];
+                                if (item.ctn > 0) parts.push(`${item.ctn} Ctn`);
+                                if (item.dzn > 0) parts.push(`${item.dzn} Dzn`);
+                                if (item.pks > 0) parts.push(`${item.pks} Pks`);
+                                return detail + parts.join(", ");
+                              }).filter(Boolean).join('\n');
+
                               const summary = `*Sales Summary - ${h.date}*\n` +
                                 `*OB:* ${h.order_booker}\n` +
                                 `*Route:* ${h.route}\n` +
                                 `*Shops (T/V/P):* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
+                                `------------------\n` +
+                                `*SKU Details:*\n${skuDetails}\n` +
                                 `------------------\n` +
                                 CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)}`).join('\n') +
                                 `\n------------------\n` +
@@ -992,8 +1088,9 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-20">
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div className="min-h-screen bg-slate-50 pb-80">
+      <MainNav />
+      <header className="bg-white border-b border-slate-200 sticky top-12 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -1011,11 +1108,41 @@ export default function App() {
             </div>
             <div className="flex gap-2">
               <button 
+                onClick={saveDraft} 
+                disabled={isSaving}
+                className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50"
+              >
+                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                <span className="hidden sm:inline">Save Draft</span>
+              </button>
+              <button 
+                onClick={submitOrder} 
+                disabled={isSubmitting}
+                className="flex items-center gap-2 px-3 py-2 bg-seablue text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-200 hover:bg-seablue-dark transition-all disabled:opacity-50"
+              >
+                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                <span className="hidden sm:inline">Submit Report</span>
+              </button>
+              <button 
                 onClick={() => {
+                  const items = order.items || {};
+                  const skuDetails = SKUS.map(sku => {
+                    const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                    if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
+                    let detail = `*${sku.name}:* `;
+                    const parts = [];
+                    if (item.ctn > 0) parts.push(`${item.ctn} Ctn`);
+                    if (item.dzn > 0) parts.push(`${item.dzn} Dzn`);
+                    if (item.pks > 0) parts.push(`${item.pks} Pks`);
+                    return detail + parts.join(", ");
+                  }).filter(Boolean).join('\n');
+
                   const summary = `*Sales Entry - ${order.date}*\n` +
                     `*OB:* ${order.orderBooker}\n` +
                     `*Route:* ${order.route}\n` +
                     `*Shops (T/V/P):* ${order.totalShops}/${order.visitedShops}/${order.productiveShops}\n` +
+                    `------------------\n` +
+                    `*SKU Details:*\n${skuDetails}\n` +
                     `------------------\n` +
                     CATEGORIES.map(cat => `*${cat}:* ${categoryTotals[cat].toFixed(2)} ${["Kite Glow", "Burq Action", "Vero"].includes(cat) ? 'Bags' : 'Ctns'}`).join('\n') +
                     `\n------------------\n` +
@@ -1196,38 +1323,6 @@ export default function App() {
         </div>
       </main>
 
-      {/* Navigation Bar */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 py-2 flex justify-around items-center z-40 shadow-lg">
-        <button onClick={() => setView('entry')} className={`p-2 flex flex-col items-center gap-1 ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}><ClipboardList className="w-5 h-5" /><span className="text-[9px] font-bold uppercase">Entry</span></button>
-        <button onClick={() => setView('dashboard')} className={`p-2 flex flex-col items-center gap-1 ${view === 'dashboard' ? 'text-seablue' : 'text-slate-400'}`}><LayoutDashboard className="w-5 h-5" /><span className="text-[9px] font-bold uppercase">Stats</span></button>
-        <button onClick={() => setView('history')} className={`p-2 flex flex-col items-center gap-1 ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}><History className="w-5 h-5" /><span className="text-[9px] font-bold uppercase">History</span></button>
-        <button onClick={() => setView('admin')} className={`p-2 flex flex-col items-center gap-1 ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}><Settings className="w-5 h-5" /><span className="text-[9px] font-bold uppercase">Admin</span></button>
-      </nav>
-
-      {/* Action Buttons Footer (Entry View Only) */}
-      {view === 'entry' && (
-        <div className="fixed bottom-20 left-0 right-0 px-4 pb-4 flex justify-center gap-3 z-30">
-          <div className="max-w-md w-full flex gap-3 bg-white/80 backdrop-blur-md p-3 rounded-2xl border border-slate-200 shadow-2xl">
-            <button 
-              onClick={saveDraft} 
-              disabled={isSaving}
-              className="flex-1 flex items-center justify-center gap-2 bg-slate-100 text-slate-700 py-3 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all active:scale-95 disabled:opacity-50"
-            >
-              {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              <span>Save Draft</span>
-            </button>
-            <button 
-              onClick={submitOrder} 
-              disabled={isSubmitting}
-              className="flex-[1.5] flex items-center justify-center gap-2 bg-seablue text-white py-3 rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-200 hover:bg-seablue-dark transition-all active:scale-95 disabled:opacity-50"
-            >
-              {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              <span>Submit Report</span>
-            </button>
-          </div>
-        </div>
-      )}
-
       <AnimatePresence>
         {isConfirming && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm">
@@ -1268,10 +1363,23 @@ export default function App() {
                     });
                     
                     const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
+                    const skuDetails = SKUS.map(sku => {
+                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                      if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
+                      let detail = `*${sku.name}:* `;
+                      const parts = [];
+                      if (item.ctn > 0) parts.push(`${item.ctn} Ctn`);
+                      if (item.dzn > 0) parts.push(`${item.dzn} Dzn`);
+                      if (item.pks > 0) parts.push(`${item.pks} Pks`);
+                      return detail + parts.join(", ");
+                    }).filter(Boolean).join('\n');
+
                     const summary = `*Sales Summary - ${lastSubmittedOrder.date}*\n` +
                       `*OB:* ${lastSubmittedOrder.orderBooker}\n` +
                       `*Route:* ${lastSubmittedOrder.route}\n` +
                       `*Shops:* ${lastSubmittedOrder.productiveShops}/${lastSubmittedOrder.visitedShops}/${lastSubmittedOrder.totalShops}\n` +
+                      `------------------\n` +
+                      `*SKU Details:*\n${skuDetails}\n` +
                       `------------------\n` +
                       CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} ${["Kite Glow", "Burq Action", "Vero"].includes(cat) ? 'Bags' : 'Ctns'}`).join('\n') +
                       `\n------------------\n` +
