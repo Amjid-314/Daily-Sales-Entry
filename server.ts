@@ -40,11 +40,15 @@ async function startServer() {
 
   // API Routes
   app.get("/api/draft/:id", (req, res) => {
-    const row = db.prepare("SELECT data FROM drafts WHERE id = ?").get(req.params.id);
-    if (row) {
-      res.json(JSON.parse(row.data));
-    } else {
-      res.status(404).json({ error: "Draft not found" });
+    try {
+      const row = db.prepare("SELECT data FROM drafts WHERE id = ?").get(req.params.id);
+      if (row) {
+        res.json(JSON.parse(row.data));
+      } else {
+        res.status(404).json({ error: "Draft not found" });
+      }
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch draft" });
     }
   });
 
@@ -138,30 +142,41 @@ async function startServer() {
   });
 
   app.get("/api/admin/obs", (req, res) => {
-    const obs = db.prepare("SELECT * FROM ob_assignments").all();
-    const targets = db.prepare("SELECT * FROM brand_targets").all();
-    
-    const obsWithTargets = obs.map((ob: any) => {
-      const obTargets: Record<string, number> = {};
-      targets
-        .filter((t: any) => t.ob_contact === ob.contact)
-        .forEach((t: any) => {
-          obTargets[t.brand_name] = t.target_ctn;
-        });
-        
-      return { 
-        id: ob.id,
-        name: ob.name,
-        contact: ob.contact,
-        town: ob.town,
-        distributor: ob.distributor,
-        tsm: ob.tsm,
-        totalShops: ob.total_shops,
-        routes: JSON.parse(ob.routes),
-        targets: obTargets
-      };
-    });
-    res.json(obsWithTargets);
+    try {
+      const obs = db.prepare("SELECT * FROM ob_assignments").all();
+      const targets = db.prepare("SELECT * FROM brand_targets").all();
+      
+      const obsWithTargets = obs.map((ob: any) => {
+        const obTargets: Record<string, number> = {};
+        targets
+          .filter((t: any) => t.ob_contact === ob.contact)
+          .forEach((t: any) => {
+            obTargets[t.brand_name] = t.target_ctn;
+          });
+          
+        let routes = [];
+        try {
+          routes = JSON.parse(ob.routes || '[]');
+        } catch (e) {
+          routes = [];
+        }
+
+        return { 
+          id: ob.id,
+          name: ob.name,
+          contact: ob.contact,
+          town: ob.town,
+          distributor: ob.distributor,
+          tsm: ob.tsm,
+          totalShops: ob.total_shops,
+          routes: Array.isArray(routes) ? routes : [],
+          targets: obTargets
+        };
+      });
+      res.json(obsWithTargets);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch OBs" });
+    }
   });
 
   app.post("/api/admin/obs", (req, res) => {
@@ -277,31 +292,42 @@ async function startServer() {
   });
 
   app.get("/api/orders", (req, res) => {
-    const { ob, from, to } = req.query;
-    let query = "SELECT * FROM submitted_orders WHERE 1=1";
-    const params: any[] = [];
+    try {
+      const { ob, from, to } = req.query;
+      let query = "SELECT * FROM submitted_orders WHERE 1=1";
+      const params: any[] = [];
 
-    if (ob) {
-      // Use exact match for OB name if it's from a dropdown
-      query += " AND order_booker = ?";
-      params.push(ob);
-    }
-    if (from) {
-      query += " AND date >= ?";
-      params.push(from);
-    }
-    if (to) {
-      query += " AND date <= ?";
-      params.push(to);
-    }
+      if (ob) {
+        query += " AND order_booker = ?";
+        params.push(ob);
+      }
+      if (from) {
+        query += " AND date >= ?";
+        params.push(from);
+      }
+      if (to) {
+        query += " AND date <= ?";
+        params.push(to);
+      }
 
-    query += " ORDER BY date DESC, submitted_at DESC";
-    
-    const rows = db.prepare(query).all(...params);
-    res.json(rows.map((row: any) => ({
-      ...row,
-      order_data: JSON.parse(row.order_data)
-    })));
+      query += " ORDER BY date DESC, submitted_at DESC";
+      
+      const rows = db.prepare(query).all(...params);
+      res.json(rows.map((row: any) => {
+        let orderData = {};
+        try {
+          orderData = JSON.parse(row.order_data || '{}');
+        } catch (e) {
+          orderData = {};
+        }
+        return {
+          ...row,
+          order_data: orderData
+        };
+      }));
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch orders" });
+    }
   });
 
   app.post("/api/submit", (req, res) => {

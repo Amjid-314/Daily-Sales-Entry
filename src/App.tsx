@@ -48,6 +48,31 @@ const WhatsAppIcon = () => (
   </svg>
 );
 
+const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void }) => (
+  <nav className="bg-white border-b border-slate-200 px-4 h-12 flex justify-around items-center sticky top-0 z-40 shadow-sm">
+    <button onClick={() => setView('entry')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
+      <ClipboardList className="w-5 h-5" />
+      <span className="text-[8px] font-black uppercase tracking-tighter">Entry</span>
+      {view === 'entry' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+    </button>
+    <button onClick={() => setView('dashboard')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'dashboard' ? 'text-seablue' : 'text-slate-400'}`}>
+      <LayoutDashboard className="w-5 h-5" />
+      <span className="text-[8px] font-black uppercase tracking-tighter">Stats</span>
+      {view === 'dashboard' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+    </button>
+    <button onClick={() => setView('history')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
+      <History className="w-5 h-5" />
+      <span className="text-[8px] font-black uppercase tracking-tighter">History</span>
+      {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+    </button>
+    <button onClick={() => setView('admin')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
+      <Settings className="w-5 h-5" />
+      <span className="text-[8px] font-black uppercase tracking-tighter">Admin</span>
+      {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+    </button>
+  </nav>
+);
+
 export default function App() {
   const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin'>('entry');
   const [history, setHistory] = useState<any[]>([]);
@@ -386,31 +411,6 @@ export default function App() {
     if (view === 'admin' || view === 'dashboard') fetchAdminData();
   }, [view]);
 
-  const MainNav = () => (
-    <nav className="bg-white border-b border-slate-200 px-4 h-12 flex justify-around items-center sticky top-0 z-40 shadow-sm">
-      <button onClick={() => setView('entry')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
-        <ClipboardList className="w-5 h-5" />
-        <span className="text-[8px] font-black uppercase tracking-tighter">Entry</span>
-        {view === 'entry' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
-      </button>
-      <button onClick={() => setView('dashboard')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'dashboard' ? 'text-seablue' : 'text-slate-400'}`}>
-        <LayoutDashboard className="w-5 h-5" />
-        <span className="text-[8px] font-black uppercase tracking-tighter">Stats</span>
-        {view === 'dashboard' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
-      </button>
-      <button onClick={() => setView('history')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
-        <History className="w-5 h-5" />
-        <span className="text-[8px] font-black uppercase tracking-tighter">History</span>
-        {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
-      </button>
-      <button onClick={() => setView('admin')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
-        <Settings className="w-5 h-5" />
-        <span className="text-[8px] font-black uppercase tracking-tighter">Admin</span>
-        {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
-      </button>
-    </nav>
-  );
-
   const calculateTimeGone = () => {
     const now = new Date();
     const year = now.getFullYear();
@@ -570,11 +570,12 @@ export default function App() {
     if (isLoadingHistory || isLoadingAdmin) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav />
+          <MainNav view={view} setView={setView} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Stats...</p>
+              <button onClick={() => { fetchHistory(true); fetchAdminData(); }} className="text-[10px] font-bold text-seablue underline">Retry</button>
             </div>
           </div>
         </div>
@@ -583,7 +584,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav />
+        <MainNav view={view} setView={setView} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -713,11 +714,12 @@ export default function App() {
     if (isLoadingAdmin) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav />
+          <MainNav view={view} setView={setView} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Admin...</p>
+              <button onClick={fetchAdminData} className="text-[10px] font-bold text-seablue underline">Retry</button>
             </div>
           </div>
         </div>
@@ -727,7 +729,7 @@ export default function App() {
     if (!adminAuthenticated) {
       return (
         <div className="min-h-screen bg-slate-50">
-          <MainNav />
+          <MainNav view={view} setView={setView} />
           <div className="flex items-center justify-center p-4 pt-20">
             <div className="card-clean p-8 max-w-sm w-full space-y-6 text-center">
               <Lock className="w-12 h-12 text-seablue mx-auto" />
@@ -745,7 +747,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav />
+        <MainNav view={view} setView={setView} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -892,11 +894,12 @@ export default function App() {
     if (isLoadingHistory) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav />
+          <MainNav view={view} setView={setView} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading History...</p>
+              <button onClick={() => fetchHistory()} className="text-[10px] font-bold text-seablue underline">Retry</button>
             </div>
           </div>
         </div>
@@ -908,7 +911,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav />
+        <MainNav view={view} setView={setView} />
         <header className="bg-white border-b border-slate-200 p-4 sticky top-12 z-20 shadow-sm">
           <div className="max-w-4xl mx-auto flex flex-col gap-4">
             <div className="flex justify-between items-center">
@@ -1089,7 +1092,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-80">
-      <MainNav />
+      <MainNav view={view} setView={setView} />
       <header className="bg-white border-b border-slate-200 sticky top-12 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-4 py-3">
           <div className="flex justify-between items-center">
