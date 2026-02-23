@@ -88,12 +88,17 @@ export default function App() {
   const [adminPassInput, setAdminPassInput] = useState('');
   const [selectedTSM, setSelectedTSM] = useState<string>('');
   const [mtdAchievement, setMtdAchievement] = useState<Record<string, number>>({});
-  const [appLogo, setAppLogo] = useState<string | null>(localStorage.getItem(LOGO_STORAGE_KEY));
+  const [appLogo, setAppLogo] = useState<string | null>(() => {
+    try {
+      return localStorage.getItem(LOGO_STORAGE_KEY);
+    } catch (e) {
+      return null;
+    }
+  });
   const [selectedOBForTargets, setSelectedOBForTargets] = useState<string | null>(null);
   const [obTargetsEdit, setObTargetsEdit] = useState<Record<string, number>>({});
 
   const [order, setOrder] = useState<OrderState>(() => {
-    const saved = localStorage.getItem(STORAGE_KEY);
     const defaultState: OrderState = {
       date: new Date().toISOString().split('T')[0],
       tsm: '',
@@ -110,8 +115,9 @@ export default function App() {
       targets: {}
     };
 
-    if (saved) {
-      try {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
         const parsed = JSON.parse(saved);
         return {
           ...defaultState,
@@ -120,9 +126,9 @@ export default function App() {
           targets: parsed.targets || {},
           categoryProductiveShops: parsed.categoryProductiveShops || {}
         };
-      } catch (e) {
-        return defaultState;
       }
+    } catch (e) {
+      console.error("Error loading from localStorage", e);
     }
     return defaultState;
   });
@@ -145,7 +151,11 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(order));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(order));
+    } catch (e) {
+      console.error("Error saving to localStorage", e);
+    }
   }, [order]);
 
   const handleInputChange = (skuId: string, field: keyof OrderItem, value: string) => {
@@ -297,10 +307,13 @@ export default function App() {
       const response = await fetch(`/api/orders?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
-        setHistory(data.map((h: any) => ({
-          ...h,
-          category_productive_data: typeof h.category_productive_data === 'string' ? JSON.parse(h.category_productive_data) : (h.category_productive_data || {})
-        })));
+        if (Array.isArray(data)) {
+          setHistory(data.map((h: any) => ({
+            ...h,
+            category_productive_data: typeof h.category_productive_data === 'string' ? JSON.parse(h.category_productive_data) : (h.category_productive_data || {}),
+            order_data: typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {})
+          })));
+        }
       }
     } catch (err) { console.error(err); }
     finally { setIsLoadingHistory(false); }
@@ -364,13 +377,13 @@ export default function App() {
         const mtd: Record<string, number> = {};
         CATEGORIES.forEach(cat => {
           mtd[cat] = obOrders.reduce((sum: number, order: any) => {
-            const orderData = JSON.parse(order.order_data);
+            const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
             const catTotal = SKUS
               .filter(sku => sku.category === cat)
               .reduce((s, sku) => {
                 const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                 const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                return s + (packs / sku.unitsPerCarton);
+                return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
               }, 0);
             return sum + catTotal;
           }, 0);
@@ -485,7 +498,11 @@ export default function App() {
       reader.onloadend = () => {
         const base64String = reader.result as string;
         setAppLogo(base64String);
-        localStorage.setItem(LOGO_STORAGE_KEY, base64String);
+        try {
+          localStorage.setItem(LOGO_STORAGE_KEY, base64String);
+        } catch (e) {
+          console.error("Error saving logo to localStorage", e);
+        }
         setMessage({ text: 'Logo Updated!', type: 'success' });
         setTimeout(() => setMessage(null), 3000);
       };
@@ -494,6 +511,21 @@ export default function App() {
   };
 
   if (view === 'dashboard') {
+    if (isLoadingHistory || isLoadingAdmin) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col">
+          <MainNav view={view} setView={setView} />
+          <div className="flex-1 flex items-center justify-center">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Stats...</p>
+              <button onClick={() => { fetchHistory(true); fetchAdminData(); }} className="text-[10px] font-bold text-seablue underline">Retry</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     const today = new Date().toISOString().split('T')[0];
     const currentMonth = today.slice(0, 7);
     
@@ -566,21 +598,6 @@ export default function App() {
         shops: { t: totalShops, v: totalVisited, p: totalProductive }
       };
     }).sort((a, b) => b.totalAch - a.totalAch);
-
-    if (isLoadingHistory || isLoadingAdmin) {
-      return (
-        <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav view={view} setView={setView} />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-4">
-              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Stats...</p>
-              <button onClick={() => { fetchHistory(true); fetchAdminData(); }} className="text-[10px] font-bold text-seablue underline">Retry</button>
-            </div>
-          </div>
-        </div>
-      );
-    }
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
