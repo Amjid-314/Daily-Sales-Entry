@@ -80,6 +80,7 @@ export default function App() {
   const [historyPage, setHistoryPage] = useState(1);
   const itemsPerPage = 10;
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [obAssignments, setObAssignments] = useState<OBAssignment[]>([]);
   const [obSearch, setObSearch] = useState('');
   const [appConfig, setAppConfig] = useState<Record<string, string>>({ total_working_days: '25' });
@@ -314,6 +315,7 @@ export default function App() {
             category_productive_data: typeof h.category_productive_data === 'string' ? JSON.parse(h.category_productive_data) : (h.category_productive_data || {}),
             order_data: typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {})
           })));
+          setLastUpdated(new Date().toLocaleTimeString());
         }
       }
     } catch (err) { console.error(err); }
@@ -646,6 +648,29 @@ export default function App() {
       };
     }).sort((a, b) => b.totalAch - a.totalAch);
 
+    // Route Sales Analysis
+    const routeAnalysis = mtdOrders.reduce((acc: any[], h) => {
+      const route = h.route || 'Unknown';
+      let routeData = acc.find(r => r.name === route);
+      if (!routeData) {
+        routeData = { name: route, ach: 0, shops: { t: 0, v: 0, p: 0 } };
+        acc.push(routeData);
+      }
+      
+      const items = h.order_data || {};
+      const orderAch = SKUS.reduce((sum, sku) => {
+        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+        return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+      }, 0);
+      
+      routeData.ach += orderAch;
+      routeData.shops.t += (h.total_shops || 0);
+      routeData.shops.v += (h.visited_shops || 0);
+      routeData.shops.p += (h.productive_shops || 0);
+      return acc;
+    }, []).sort((a, b) => b.ach - a.ach);
+
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
         <MainNav view={view} setView={setView} />
@@ -734,6 +759,62 @@ export default function App() {
                   <Bar dataKey="MTD" name="MTD" fill="#10b981" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="card-clean p-4">
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Recent Submissions</h3>
+            <div className="space-y-3">
+              {history.slice(0, 5).map(h => (
+                <div key={h.id} className="flex justify-between items-center p-2 bg-slate-50 rounded-lg border border-slate-100">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-700">{h.order_booker}</div>
+                    <div className="text-[8px] text-slate-400">{h.route} • {h.date}</div>
+                  </div>
+                  <div className="text-right">
+                    <div className="text-[10px] font-black text-seablue">
+                      {((Object.values(h.order_data || {}) as any[]).reduce((sum: number, item: any) => {
+                        return sum + (Number(item.ctn) || 0) + (Number(item.dzn) || 0) / 12 + (Number(item.pks) || 0) / 24;
+                      }, 0) as number).toFixed(1)}
+                    </div>
+                    <div className="text-[7px] text-slate-400 uppercase font-bold">Total Ach</div>
+                  </div>
+                </div>
+              ))}
+              {history.length === 0 && <p className="text-center text-[10px] text-slate-400 py-4">No recent activity</p>}
+            </div>
+          </div>
+
+          <div className="card-clean p-4">
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Route-to-Route Analysis (MTD)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[10px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                    <th className="py-2">Route Name</th>
+                    <th className="py-2 text-center">T/V/P</th>
+                    <th className="py-2 text-right">Achievement</th>
+                    <th className="py-2 text-right">Efficiency</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {routeAnalysis.map(route => (
+                    <tr key={route.name} className="hover:bg-slate-50">
+                      <td className="py-2 font-bold text-slate-700">{route.name}</td>
+                      <td className="py-2 text-center text-slate-500">{route.shops.t}/{route.shops.v}/{route.shops.p}</td>
+                      <td className="py-2 text-right font-mono font-bold text-seablue">{route.ach.toFixed(1)}</td>
+                      <td className="py-2 text-right">
+                        <span className={`px-1.5 py-0.5 rounded-full font-bold ${route.shops.v > 0 && (route.shops.p / route.shops.v) > 0.7 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                          {route.shops.v > 0 ? ((route.shops.p / route.shops.v) * 100).toFixed(0) : 0}%
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {routeAnalysis.length === 0 && (
+                    <tr><td colSpan={4} className="py-8 text-center text-slate-400 italic">No route data available for this month</td></tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -861,12 +942,19 @@ export default function App() {
 
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="card-clean p-4 flex items-center gap-6 overflow-x-auto">
-              <div><div className="text-[10px] font-bold text-slate-400 uppercase">OBs</div><div className="text-xl font-bold text-seablue">{obAssignments.length}</div></div>
-              <div className="w-px h-8 bg-slate-100" />
-              <div><div className="text-[10px] font-bold text-slate-400 uppercase">Days</div><div className="text-xl font-bold text-seablue">{appConfig.total_working_days}</div></div>
-              <div className="w-px h-8 bg-slate-100" />
-              <div><div className="text-[10px] font-bold text-slate-400 uppercase">Time</div><div className="text-xl font-bold text-seablue">{timeGone.percentage.toFixed(1)}%</div></div>
+            <div className="card-clean p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-black text-seablue uppercase tracking-widest">System Status</h3>
+                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[8px] font-bold rounded-full uppercase">Database Active</span>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div><div className="text-[10px] font-bold text-slate-400 uppercase">OBs</div><div className="text-xl font-bold text-seablue">{obAssignments.length}</div></div>
+                <div><div className="text-[10px] font-bold text-slate-400 uppercase">History</div><div className="text-xl font-bold text-seablue">{history.length}</div></div>
+                <div><div className="text-[10px] font-bold text-slate-400 uppercase">Retention</div><div className="text-xl font-bold text-seablue">90 Days+</div></div>
+              </div>
+              <p className="text-[9px] text-slate-400 italic border-t border-slate-50 pt-2">
+                * All submitted reports are stored in the central database for a minimum of 3 months for MTD and Route analysis.
+              </p>
             </div>
 
             <div className="card-clean p-4 flex items-center justify-between">
@@ -1000,7 +1088,10 @@ export default function App() {
                 <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
                   <History className="w-5 h-5" />
                 </div>
-                <h1 className="text-lg font-bold text-seablue">History</h1>
+                <div>
+                  <h1 className="text-lg font-bold text-seablue">History</h1>
+                  {lastUpdated && <p className="text-[8px] font-bold text-slate-400 uppercase">Last Sync: {lastUpdated}</p>}
+                </div>
               </div>
               <div className="flex items-center gap-2">
                 <button 
@@ -1046,7 +1137,17 @@ export default function App() {
                     files: [new File([blob], fileName, { type: 'text/csv' })],
                     title: 'Sales History Export',
                     text: 'Complete Sales History Export'
-                  }).catch(err => console.error('Share failed:', err));
+                  }).catch(err => {
+                    if (err.name !== 'AbortError') {
+                      console.error('Share failed:', err);
+                      // Fallback to download if share fails for other reasons
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = fileName;
+                      a.click();
+                    }
+                  });
                 } else {
                   const url = URL.createObjectURL(blob);
                   const a = document.createElement('a');
@@ -1060,10 +1161,15 @@ export default function App() {
             </div>
           </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
               <select 
                 value={historyFilters.tsm} 
-                onChange={(e) => setHistoryFilters(prev => ({ ...prev, tsm: e.target.value, ob: '' }))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setHistoryFilters(prev => ({ ...prev, tsm: val, ob: '' }));
+                  // Auto-fetch on change
+                  setTimeout(() => fetchHistory(), 0);
+                }}
                 className="input-clean text-xs py-1.5"
               >
                 <option value="">All TSMs</option>
@@ -1071,7 +1177,11 @@ export default function App() {
               </select>
               <select 
                 value={historyFilters.ob} 
-                onChange={(e) => setHistoryFilters(prev => ({ ...prev, ob: e.target.value }))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setHistoryFilters(prev => ({ ...prev, ob: val }));
+                  setTimeout(() => fetchHistory(), 0);
+                }}
                 className="input-clean text-xs py-1.5"
               >
                 <option value="">All OBs</option>
@@ -1083,16 +1193,23 @@ export default function App() {
               <input 
                 type="date" 
                 value={historyFilters.from} 
-                onChange={(e) => setHistoryFilters(prev => ({ ...prev, from: e.target.value }))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setHistoryFilters(prev => ({ ...prev, from: val }));
+                  setTimeout(() => fetchHistory(), 0);
+                }}
                 className="input-clean text-xs py-1.5"
               />
               <input 
                 type="date" 
                 value={historyFilters.to} 
-                onChange={(e) => setHistoryFilters(prev => ({ ...prev, to: e.target.value }))}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setHistoryFilters(prev => ({ ...prev, to: val }));
+                  setTimeout(() => fetchHistory(), 0);
+                }}
                 className="input-clean text-xs py-1.5"
               />
-              <button onClick={() => { setHistoryPage(1); fetchHistory(); }} className="btn-seablue text-xs py-1.5 col-span-1 md:col-span-4">Apply Filters</button>
             </div>
           </div>
         </header>
@@ -1222,7 +1339,9 @@ export default function App() {
               </div>
               <div>
                 <h1 className="text-sm font-black text-seablue uppercase tracking-tight leading-none">OB Sales</h1>
-                <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">Secondary Sales</p>
+                <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">
+                  {lastUpdated ? `Updated: ${lastUpdated}` : 'Secondary Sales'}
+                </p>
               </div>
             </div>
             <div className="flex gap-1.5">
@@ -1248,6 +1367,39 @@ export default function App() {
               >
                 {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                 <span className="hidden sm:inline">Submit</span>
+              </button>
+              <button 
+                onClick={() => {
+                  const items = order.items || {};
+                  const skuDetails = SKUS.map(sku => {
+                    const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                    if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
+                    let detail = `*${sku.name}:* `;
+                    const parts = [];
+                    if (item.ctn > 0) parts.push(`${item.ctn} Ctn`);
+                    if (item.dzn > 0) parts.push(`${item.dzn} Dzn`);
+                    if (item.pks > 0) parts.push(`${item.pks} Pks`);
+                    return detail + parts.join(", ");
+                  }).filter(Boolean).join('\n');
+
+                  const summary = `*Sales Entry - ${order.date}*\n` +
+                    `*OB:* ${order.orderBooker}\n` +
+                    `*Route:* ${order.route}\n` +
+                    `*Shops (T/V/P):* ${order.totalShops}/${order.visitedShops}/${order.productiveShops}\n` +
+                    `------------------\n` +
+                    `*SKU Details:*\n${skuDetails}\n` +
+                    `------------------\n` +
+                    CATEGORIES.map(cat => `*${cat}:* ${categoryTotals[cat].toFixed(2)}`).join('\n') +
+                    `\n------------------\n` +
+                    `*Total Achievement:* ${(Object.values(categoryTotals) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}`;
+                  
+                  const encodedSummary = encodeURIComponent(summary);
+                  window.open(`https://wa.me/?text=${encodedSummary}`, '_blank');
+                }}
+                className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all"
+                title="Share via WhatsApp"
+              >
+                <WhatsAppIcon />
               </button>
             </div>
           </div>
@@ -1414,7 +1566,8 @@ export default function App() {
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="card-clean p-8 max-w-sm w-full text-center space-y-6">
               <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center mx-auto"><Send className="w-8 h-8" /></div>
               <h3 className="text-xl font-bold text-seablue">Confirm Submission</h3>
-              <p className="text-sm text-slate-500">Submit report for <span className="font-bold text-seablue">{order.route}</span>?</p>
+              <p className="text-xs text-slate-500">This will save the report to the <span className="font-bold text-seablue">Shared Team History</span> for everyone to see.</p>
+              <p className="text-sm text-slate-700">Submit report for <span className="font-bold text-seablue">{order.route}</span>?</p>
               <div className="space-y-3">
                 <button onClick={confirmSubmit} className="btn-seablue w-full py-3">Confirm</button>
                 <button onClick={() => setIsConfirming(false)} className="w-full text-sm font-bold text-slate-400">Cancel</button>
