@@ -49,26 +49,26 @@ const WhatsAppIcon = () => (
 );
 
 const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void }) => (
-  <nav className="bg-white border-b border-slate-200 px-4 h-12 flex justify-around items-center sticky top-0 z-40 shadow-sm">
-    <button onClick={() => setView('entry')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
-      <ClipboardList className="w-5 h-5" />
-      <span className="text-[8px] font-black uppercase tracking-tighter">Entry</span>
-      {view === 'entry' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+  <nav className="bg-white border-b border-slate-200 px-2 h-10 flex justify-around items-center sticky top-0 z-40 shadow-sm">
+    <button onClick={() => setView('entry')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
+      <ClipboardList className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">Entry</span>
+      {view === 'entry' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
-    <button onClick={() => setView('dashboard')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'dashboard' ? 'text-seablue' : 'text-slate-400'}`}>
-      <LayoutDashboard className="w-5 h-5" />
-      <span className="text-[8px] font-black uppercase tracking-tighter">Stats</span>
-      {view === 'dashboard' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+    <button onClick={() => setView('dashboard')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors ${view === 'dashboard' ? 'text-seablue' : 'text-slate-400'}`}>
+      <LayoutDashboard className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">Stats</span>
+      {view === 'dashboard' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
-    <button onClick={() => setView('history')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
-      <History className="w-5 h-5" />
-      <span className="text-[8px] font-black uppercase tracking-tighter">History</span>
-      {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+    <button onClick={() => setView('history')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
+      <History className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">History</span>
+      {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
-    <button onClick={() => setView('admin')} className={`p-2 flex flex-col items-center gap-0.5 transition-colors ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
-      <Settings className="w-5 h-5" />
-      <span className="text-[8px] font-black uppercase tracking-tighter">Admin</span>
-      {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />}
+    <button onClick={() => setView('admin')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
+      <Settings className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">Admin</span>
+      {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
   </nav>
 );
@@ -76,7 +76,7 @@ const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void })
 export default function App() {
   const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin'>('entry');
   const [history, setHistory] = useState<any[]>([]);
-  const [historyFilters, setHistoryFilters] = useState({ ob: '', from: '', to: '' });
+  const [historyFilters, setHistoryFilters] = useState({ ob: '', tsm: '', from: '', to: '' });
   const [historyPage, setHistoryPage] = useState(1);
   const itemsPerPage = 10;
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -300,6 +300,7 @@ export default function App() {
       const params = new URLSearchParams();
       if (!ignoreFilters) {
         if (historyFilters.ob) params.append('ob', historyFilters.ob);
+        if (historyFilters.tsm) params.append('tsm', historyFilters.tsm);
         if (historyFilters.from) params.append('from', historyFilters.from);
         if (historyFilters.to) params.append('to', historyFilters.to);
       }
@@ -465,6 +466,19 @@ export default function App() {
     return obAssignments.filter(ob => ob.tsm === selectedTSM);
   }, [obAssignments, selectedTSM]);
 
+  const groupedHistory = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    history.forEach(h => {
+      const ob = h.order_booker || 'Unknown';
+      if (!groups[ob]) groups[ob] = [];
+      groups[ob].push(h);
+    });
+    return Object.keys(groups).sort().map(ob => ({
+      obName: ob,
+      entries: groups[ob].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    }));
+  }, [history]);
+
   const resetDatabase = async () => {
     if (window.confirm("WARNING: This will delete ALL history (submitted orders and drafts). Continue?")) {
       try {
@@ -566,6 +580,39 @@ export default function App() {
       Achievement: globalToday[cat] || 0,
       MTD: globalMtd[cat] || 0
     }));
+
+    // TSM Sales Analysis
+    const tsmAnalysis = tsmList.map(tsmName => {
+      const tsmOrders = mtdOrders.filter(h => h.tsm === tsmName);
+      const totals: Record<string, number> = {};
+      CATEGORIES.forEach(cat => {
+        totals[cat] = tsmOrders.reduce((sum, h) => {
+          const items = h.order_data || {};
+          const catAch = SKUS
+            .filter(sku => sku.category === cat)
+            .reduce((s, sku) => {
+              const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+              const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+              return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+            }, 0);
+          return sum + catAch;
+        }, 0);
+      });
+      
+      const totalAch = Object.values(totals).reduce((a: number, b: number) => a + b, 0);
+      const tsmOBs = obAssignments.filter(ob => ob.tsm === tsmName);
+      const totalTarget = tsmOBs.reduce((sum, ob) => {
+        return sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0);
+      }, 0);
+
+      return {
+        name: tsmName,
+        totals,
+        totalAch,
+        target: totalTarget,
+        obCount: tsmOBs.length
+      };
+    }).sort((a, b) => b.totalAch - a.totalAch);
 
     // OB Sales Analysis
     const obAnalysis = obAssignments.map(ob => {
@@ -687,6 +734,36 @@ export default function App() {
                   <Bar dataKey="MTD" name="MTD" fill="#10b981" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
+            </div>
+          </div>
+
+          <div className="card-clean p-4">
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">TSM Performance (MTD)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[10px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                    <th className="py-2">TSM Name</th>
+                    <th className="py-2 text-center">OBs</th>
+                    <th className="py-2 text-right">Achievement</th>
+                    <th className="py-2 text-right">Target</th>
+                    <th className="py-2 text-right">%</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {tsmAnalysis.map(tsm => (
+                    <tr key={tsm.name} className="hover:bg-slate-50">
+                      <td className="py-2 font-bold text-slate-700">{tsm.name}</td>
+                      <td className="py-2 text-center text-slate-500">{tsm.obCount}</td>
+                      <td className="py-2 text-right font-mono font-bold text-emerald-600">{tsm.totalAch.toFixed(1)}</td>
+                      <td className="py-2 text-right font-mono text-slate-400">{tsm.target.toFixed(1)}</td>
+                      <td className="py-2 text-right font-bold text-seablue">
+                        {tsm.target > 0 ? ((tsm.totalAch / tsm.target) * 100).toFixed(0) : 0}%
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
@@ -894,19 +971,6 @@ export default function App() {
     );
   }
 
-  const groupedHistory = useMemo(() => {
-    const groups: Record<string, any[]> = {};
-    history.forEach(h => {
-      const ob = h.order_booker || 'Unknown';
-      if (!groups[ob]) groups[ob] = [];
-      groups[ob].push(h);
-    });
-    return Object.keys(groups).sort().map(ob => ({
-      obName: ob,
-      entries: groups[ob].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
-    }));
-  }, [history]);
-
   if (view === 'history') {
     if (isLoadingHistory) {
       return (
@@ -938,7 +1002,15 @@ export default function App() {
                 </div>
                 <h1 className="text-lg font-bold text-seablue">History</h1>
               </div>
-              <button onClick={() => {
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => fetchHistory()}
+                  className="p-2 hover:bg-slate-100 rounded-full text-seablue transition-colors"
+                  title="Refresh History"
+                >
+                  <RefreshCw className={`w-5 h-5 ${isLoadingHistory ? 'animate-spin' : ''}`} />
+                </button>
+                <button onClick={() => {
                 const headers = [
                   'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
                   'Total Shops', 'Visited Shops', 'Productive Shops',
@@ -986,15 +1058,27 @@ export default function App() {
                 }
               }} className="btn-seablue text-xs">Export Data</button>
             </div>
+          </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <select 
+                value={historyFilters.tsm} 
+                onChange={(e) => setHistoryFilters(prev => ({ ...prev, tsm: e.target.value, ob: '' }))}
+                className="input-clean text-xs py-1.5"
+              >
+                <option value="">All TSMs</option>
+                {tsmList.map(tsm => <option key={tsm} value={tsm}>{tsm}</option>)}
+              </select>
               <select 
                 value={historyFilters.ob} 
                 onChange={(e) => setHistoryFilters(prev => ({ ...prev, ob: e.target.value }))}
                 className="input-clean text-xs py-1.5"
               >
                 <option value="">All OBs</option>
-                {obAssignments.map(ob => <option key={ob.contact} value={ob.name}>{ob.name}</option>)}
+                {obAssignments
+                  .filter(ob => !historyFilters.tsm || ob.tsm === historyFilters.tsm)
+                  .map(ob => <option key={ob.contact} value={ob.name}>{ob.name}</option>)
+                }
               </select>
               <input 
                 type="date" 
@@ -1008,13 +1092,26 @@ export default function App() {
                 onChange={(e) => setHistoryFilters(prev => ({ ...prev, to: e.target.value }))}
                 className="input-clean text-xs py-1.5"
               />
-              <button onClick={() => { setHistoryPage(1); fetchHistory(); }} className="btn-seablue text-xs py-1.5 col-span-1 md:col-span-3">Apply Filters</button>
+              <button onClick={() => { setHistoryPage(1); fetchHistory(); }} className="btn-seablue text-xs py-1.5 col-span-1 md:col-span-4">Apply Filters</button>
             </div>
           </div>
         </header>
 
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-          <div className="card-clean overflow-hidden">
+          {history.length === 0 ? (
+            <div className="card-clean p-12 text-center space-y-4">
+              <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
+                <History className="w-8 h-8" />
+              </div>
+              <div className="space-y-1">
+                <h3 className="text-lg font-bold text-slate-700">No History Found</h3>
+                <p className="text-sm text-slate-400">Try adjusting your filters or refresh the data.</p>
+              </div>
+              <button onClick={() => { setHistoryFilters({ ob: '', tsm: '', from: '', to: '' }); fetchHistory(true); }} className="btn-seablue px-6 py-2">Clear Filters & Refresh</button>
+            </div>
+          ) : (
+            <>
+              <div className="card-clean overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
                 <thead>
@@ -1102,139 +1199,111 @@ export default function App() {
               <button disabled={historyPage === totalPages} onClick={() => setHistoryPage(p => p + 1)} className="btn-seablue px-3 py-1 text-xs disabled:opacity-50">Next</button>
             </div>
           )}
+          </>
+          )}
         </main>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-80">
+    <div className="min-h-screen bg-slate-50 pb-40">
       <MainNav view={view} setView={setView} />
-      <header className="bg-white border-b border-slate-200 sticky top-12 z-30 shadow-sm">
-        <div className="max-w-6xl mx-auto px-4 py-3">
+      <header className="bg-white border-b border-slate-200 sticky top-10 z-30 shadow-sm">
+        <div className="max-w-6xl mx-auto px-3 py-2">
           <div className="flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-seablue rounded-xl flex items-center justify-center text-white shadow-sm overflow-hidden">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white shadow-sm overflow-hidden">
                 {appLogo ? (
                   <img src={appLogo} alt="Logo" className="w-full h-full object-cover" />
                 ) : (
-                  <Waves className="w-6 h-6" />
+                  <Waves className="w-5 h-5" />
                 )}
               </div>
               <div>
-                <h1 className="text-lg font-black text-seablue uppercase tracking-tight leading-none">OB Sales</h1>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Secondary Sales System</p>
+                <h1 className="text-sm font-black text-seablue uppercase tracking-tight leading-none">OB Sales</h1>
+                <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">Secondary Sales</p>
               </div>
             </div>
-            <div className="flex gap-2">
+            <div className="flex gap-1.5">
+              <button 
+                onClick={() => { fetchAdminData(); fetchHistory(true); }}
+                className="p-1.5 hover:bg-slate-100 rounded-full text-seablue transition-colors"
+                title="Refresh Data"
+              >
+                <RefreshCw className={`w-4 h-4 ${(isLoadingAdmin || isLoadingHistory) ? 'animate-spin' : ''}`} />
+              </button>
               <button 
                 onClick={saveDraft} 
                 disabled={isSaving}
-                className="flex items-center gap-2 px-3 py-2 bg-slate-100 text-slate-700 rounded-xl font-black uppercase text-[10px] tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2 py-1.5 bg-slate-100 text-slate-700 rounded-lg font-black uppercase text-[9px] tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50"
               >
-                {isSaving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-                <span className="hidden sm:inline">Save Draft</span>
+                {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                <span className="hidden sm:inline">Save</span>
               </button>
               <button 
                 onClick={submitOrder} 
                 disabled={isSubmitting}
-                className="flex items-center gap-2 px-3 py-2 bg-seablue text-white rounded-xl font-black uppercase text-[10px] tracking-widest shadow-lg shadow-blue-200 hover:bg-seablue-dark transition-all disabled:opacity-50"
+                className="flex items-center gap-1.5 px-2 py-1.5 bg-seablue text-white rounded-lg font-black uppercase text-[9px] tracking-widest shadow-md shadow-blue-100 hover:bg-seablue-dark transition-all disabled:opacity-50"
               >
-                {isSubmitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                <span className="hidden sm:inline">Submit Report</span>
-              </button>
-              <button 
-                onClick={() => {
-                  const items = order.items || {};
-                  const skuDetails = SKUS.map(sku => {
-                    const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                    if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
-                    let detail = `*${sku.name}:* `;
-                    const parts = [];
-                    if (item.ctn > 0) parts.push(`${item.ctn} Ctn`);
-                    if (item.dzn > 0) parts.push(`${item.dzn} Dzn`);
-                    if (item.pks > 0) parts.push(`${item.pks} Pks`);
-                    return detail + parts.join(", ");
-                  }).filter(Boolean).join('\n');
-
-                  const summary = `*Sales Entry - ${order.date}*\n` +
-                    `*OB:* ${order.orderBooker}\n` +
-                    `*Route:* ${order.route}\n` +
-                    `*Shops (T/V/P):* ${order.totalShops}/${order.visitedShops}/${order.productiveShops}\n` +
-                    `------------------\n` +
-                    `*SKU Details:*\n${skuDetails}\n` +
-                    `------------------\n` +
-                    CATEGORIES.map(cat => `*${cat}:* ${categoryTotals[cat].toFixed(2)} ${["Kite Glow", "Burq Action", "Vero"].includes(cat) ? 'Bags' : 'Ctns'}`).join('\n') +
-                    `\n------------------\n` +
-                    `*Total Achievement:* ${(Object.values(categoryTotals) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}`;
-                  
-                  const encodedSummary = encodeURIComponent(summary);
-                  window.open(`https://wa.me/?text=${encodedSummary}`, '_blank');
-                }}
-                className="flex items-center gap-2 px-3 py-2 text-emerald-500 hover:bg-emerald-50 rounded-xl transition-all"
-                title="Share via WhatsApp"
-              >
-                <WhatsAppIcon />
-                <span className="text-[10px] font-black uppercase tracking-wider hidden sm:inline">Share WhatsApp</span>
+                {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                <span className="hidden sm:inline">Submit</span>
               </button>
             </div>
           </div>
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-4 py-4 space-y-4">
+      <main className="max-w-6xl mx-auto px-3 py-3 space-y-3">
         {/* TSM Filter */}
         {tsmList.length > 0 && (
-          <div className="card-clean p-3 flex items-center gap-4 bg-seablue/5 border-seablue/10">
-            <label className="text-[10px] font-black text-seablue uppercase tracking-widest">Select TSM:</label>
+          <div className="card-clean p-2 flex items-center gap-3 bg-seablue/5 border-seablue/10">
+            <label className="text-[9px] font-black text-seablue uppercase tracking-widest">TSM:</label>
             <select 
               value={selectedTSM} 
               onChange={(e) => {
                 setSelectedTSM(e.target.value);
                 setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 0 }));
               }} 
-              className="input-clean flex-1 max-w-xs"
+              className="input-clean flex-1 max-w-[150px] text-[10px] py-1"
             >
               <option value="">All TSMs</option>
               {tsmList.map(tsm => <option key={tsm} value={tsm}>{tsm}</option>)}
             </select>
-            {selectedTSM && (
-              <p className="text-[10px] font-bold text-seablue/60 uppercase">Showing {filteredOBs.length} OBs</p>
-            )}
           </div>
         )}
 
         {/* Meta Info Section */}
-        <div className="card-clean p-4 grid grid-cols-2 md:grid-cols-6 gap-4">
+        <div className="card-clean p-3 grid grid-cols-2 md:grid-cols-6 gap-3">
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Date</label>
-            <input type="date" value={order.date} onChange={(e) => handleMetaChange('date', e.target.value)} className="input-clean w-full" />
+            <label className="text-[9px] font-bold text-slate-400 uppercase">Date</label>
+            <input type="date" value={order.date} onChange={(e) => handleMetaChange('date', e.target.value)} className="input-clean w-full text-[10px] py-1" />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Order Booker</label>
-            <select value={order.obContact} onChange={(e) => handleMetaChange('obContact', e.target.value)} className="input-clean w-full">
+            <label className="text-[9px] font-bold text-slate-400 uppercase">OB</label>
+            <select value={order.obContact} onChange={(e) => handleMetaChange('obContact', e.target.value)} className="input-clean w-full text-[10px] py-1">
               <option value="">Select OB</option>
               {filteredOBs.map(ob => <option key={ob.contact} value={ob.contact}>{ob.name}</option>)}
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Route</label>
-            <select value={order.route} onChange={(e) => handleMetaChange('route', e.target.value)} className="input-clean w-full" disabled={!order.obContact}>
+            <label className="text-[9px] font-bold text-slate-400 uppercase">Route</label>
+            <select value={order.route} onChange={(e) => handleMetaChange('route', e.target.value)} className="input-clean w-full text-[10px] py-1" disabled={!order.obContact}>
               <option value="">Select Route</option>
               {obAssignments.find(a => a.contact === order.obContact)?.routes.map(r => <option key={r} value={r}>{r}</option>)}
             </select>
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Total Shops</label>
-            <input type="number" value={order.totalShops || ''} onChange={(e) => handleMetaChange('totalShops', parseInt(e.target.value) || 0)} className="input-clean w-full bg-slate-50" />
+            <label className="text-[9px] font-bold text-slate-400 uppercase">Shops</label>
+            <input type="number" inputMode="numeric" autoComplete="off" value={order.totalShops || ''} onChange={(e) => handleMetaChange('totalShops', parseInt(e.target.value) || 0)} className="input-clean w-full bg-slate-50 text-[10px] py-1" />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Visited</label>
-            <input type="number" value={order.visitedShops || ''} onChange={(e) => handleMetaChange('visitedShops', parseInt(e.target.value) || 0)} className="input-clean w-full" />
+            <label className="text-[9px] font-bold text-slate-400 uppercase">Visited</label>
+            <input type="number" inputMode="numeric" autoComplete="off" value={order.visitedShops || ''} onChange={(e) => handleMetaChange('visitedShops', parseInt(e.target.value) || 0)} className="input-clean w-full text-[10px] py-1" />
           </div>
           <div className="space-y-1">
-            <label className="text-[10px] font-bold text-slate-400 uppercase">Productive</label>
-            <input type="number" value={order.productiveShops || ''} onChange={(e) => handleMetaChange('productiveShops', parseInt(e.target.value) || 0)} className={`input-clean w-full ${order.visitedShops > 0 && (order.productiveShops / order.visitedShops) < 0.7 ? 'border-red-300' : ''}`} />
+            <label className="text-[9px] font-bold text-slate-400 uppercase">Prod</label>
+            <input type="number" inputMode="numeric" autoComplete="off" value={order.productiveShops || ''} onChange={(e) => handleMetaChange('productiveShops', parseInt(e.target.value) || 0)} className={`input-clean w-full text-[10px] py-1 ${order.visitedShops > 0 && (order.productiveShops / order.visitedShops) < 0.7 ? 'border-red-300' : ''}`} />
           </div>
         </div>
 
@@ -1248,30 +1317,26 @@ export default function App() {
           </div>
         )}
 
-        {/* Category Summary Section */}
-        <div className="card-clean p-1.5 flex flex-wrap items-center justify-center gap-1.5 md:gap-3 bg-slate-50/50">
-          <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-0.5 shadow-sm">
-            <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Washing Powder</span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-black text-seablue">{(categoryTotals["Kite Glow"] + categoryTotals["Burq Action"] + categoryTotals["Vero"]).toFixed(2)}</span>
-              <span className="text-[8px] font-bold text-slate-400">Tgt: {((order.targets["Kite Glow"] || 0) + (order.targets["Burq Action"] || 0) + (order.targets["Vero"] || 0)).toFixed(2)}</span>
+          <div className="card-clean p-1.5 flex flex-wrap items-center justify-center gap-1.5 md:gap-3 bg-slate-50/50">
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-0.5 shadow-sm">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-black text-seablue">{(categoryTotals["Kite Glow"] + categoryTotals["Burq Action"] + categoryTotals["Vero"]).toFixed(2)}</span>
+                <span className="text-[8px] font-bold text-slate-400">Tgt: {((order.targets["Kite Glow"] || 0) + (order.targets["Burq Action"] || 0) + (order.targets["Vero"] || 0)).toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-0.5 shadow-sm">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-black text-seablue">{categoryTotals["DWB"].toFixed(2)}</span>
+                <span className="text-[8px] font-bold text-slate-400">Tgt: {(order.targets["DWB"] || 0).toFixed(2)}</span>
+              </div>
+            </div>
+            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-0.5 shadow-sm">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[11px] font-black text-seablue">{categoryTotals["Match"].toFixed(2)}</span>
+                <span className="text-[8px] font-bold text-slate-400">Tgt: {(order.targets["Match"] || 0).toFixed(2)}</span>
+              </div>
             </div>
           </div>
-          <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-0.5 shadow-sm">
-            <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">DWB</span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-black text-seablue">{categoryTotals["DWB"].toFixed(2)}</span>
-              <span className="text-[8px] font-bold text-slate-400">Tgt: {(order.targets["DWB"] || 0).toFixed(2)}</span>
-            </div>
-          </div>
-          <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-0.5 shadow-sm">
-            <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Match</span>
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-black text-seablue">{categoryTotals["Match"].toFixed(2)}</span>
-              <span className="text-[8px] font-bold text-slate-400">Tgt: {(order.targets["Match"] || 0).toFixed(2)}</span>
-            </div>
-          </div>
-        </div>
 
         {/* Categories Section */}
         <div className="space-y-4">
@@ -1282,15 +1347,15 @@ export default function App() {
                 
                 <div className="flex items-center gap-2 md:gap-4 flex-1 justify-end">
                   {/* 2nd: Productive Shops */}
-                  <div className="flex flex-col items-center bg-white border border-slate-200 rounded-lg px-2 py-1 shadow-sm min-w-[45px]">
-                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Prod</span>
-                    <input type="number" value={order.categoryProductiveShops[category] || ''} onChange={(e) => setOrder(prev => ({ ...prev, categoryProductiveShops: { ...prev.categoryProductiveShops, [category]: parseInt(e.target.value) || 0 } }))} className="w-8 text-center text-[11px] font-bold text-seablue focus:outline-none" />
+                  <div className="flex flex-col items-center bg-white border border-slate-200 rounded-lg px-1.5 py-0.5 shadow-sm min-w-[40px]">
+                    <span className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Prod</span>
+                    <input type="number" inputMode="numeric" autoComplete="off" value={order.categoryProductiveShops[category] || ''} onChange={(e) => setOrder(prev => ({ ...prev, categoryProductiveShops: { ...prev.categoryProductiveShops, [category]: parseInt(e.target.value) || 0 } }))} className="w-6 text-center text-[10px] font-bold text-seablue focus:outline-none" />
                   </div>
 
                   {/* 3rd: Today Sales */}
-                  <div className="flex flex-col items-center bg-seablue rounded-lg px-3 py-1 shadow-sm border border-seablue/20 min-w-[60px]">
-                    <span className="text-[7px] font-black text-white/80 uppercase tracking-tighter">Today</span>
-                    <span className="text-[13px] font-black text-white leading-tight">{categoryTotals[category].toFixed(2)}</span>
+                  <div className="flex flex-col items-center bg-seablue rounded-lg px-2 py-0.5 shadow-sm border border-seablue/10 min-w-[50px]">
+                    <span className="text-[6px] font-black text-white/80 uppercase tracking-tighter">Today</span>
+                    <span className="text-[11px] font-black text-white leading-tight">{categoryTotals[category].toFixed(2)}</span>
                   </div>
 
                   {/* 4th: Target */}
@@ -1322,16 +1387,16 @@ export default function App() {
                       const item = order.items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                       return (
                         <tr key={sku.id} className="hover:bg-slate-50/50">
-                          <td className="px-4 py-2">
-                            <div className="text-xs font-bold text-slate-700">{sku.name}</div>
-                            <div className="text-[9px] text-slate-400 font-mono">{sku.unitsPerCarton}u/C</div>
+                          <td className="px-2 py-1.5">
+                            <div className="text-[10px] font-bold text-slate-700 leading-tight">{sku.name}</div>
+                            <div className="text-[8px] text-slate-400 font-mono">{sku.unitsPerCarton}u</div>
                           </td>
-                          <td className="px-1 py-2"><input ref={el => inputRefs.current[`${sku.id}-ctn`] = el} type="number" value={item.ctn || ''} onChange={(e) => handleInputChange(sku.id, 'ctn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-ctn`)} className="input-clean w-full py-1 text-center" /></td>
+                          <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-ctn`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.ctn || ''} onChange={(e) => handleInputChange(sku.id, 'ctn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-ctn`)} className="input-clean w-full py-1 text-center text-[10px]" /></td>
                           {category !== "Match" && (
-                            <td className="px-1 py-2"><input ref={el => inputRefs.current[`${sku.id}-dzn`] = el} type="number" disabled={sku.unitsPerDozen === 0} value={item.dzn || ''} onChange={(e) => handleInputChange(sku.id, 'dzn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-dzn`)} className="input-clean w-full py-1 text-center disabled:opacity-30" /></td>
+                            <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-dzn`] = el} type="number" inputMode="numeric" autoComplete="off" disabled={sku.unitsPerDozen === 0} value={item.dzn || ''} onChange={(e) => handleInputChange(sku.id, 'dzn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-dzn`)} className="input-clean w-full py-1 text-center text-[10px] disabled:opacity-30" /></td>
                           )}
-                          <td className="px-1 py-2"><input ref={el => inputRefs.current[`${sku.id}-pks`] = el} type="number" value={item.pks || ''} onChange={(e) => handleInputChange(sku.id, 'pks', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-pks`)} className="input-clean w-full py-1 text-center" /></td>
-                          <td className="px-4 py-2 text-right font-mono text-[10px] font-bold text-seablue">{calculateTotalCartons(sku.id).toFixed(3)}</td>
+                          <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-pks`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.pks || ''} onChange={(e) => handleInputChange(sku.id, 'pks', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-pks`)} className="input-clean w-full py-1 text-center text-[10px]" /></td>
+                          <td className="px-2 py-1.5 text-right font-mono text-[9px] font-bold text-seablue">{calculateTotalCartons(sku.id).toFixed(3)}</td>
                         </tr>
                       );
                     })}

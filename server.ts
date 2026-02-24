@@ -293,13 +293,17 @@ async function startServer() {
 
   app.get("/api/orders", (req, res) => {
     try {
-      const { ob, from, to } = req.query;
+      const { ob, tsm, from, to } = req.query;
       let query = "SELECT * FROM submitted_orders WHERE 1=1";
       const params: any[] = [];
 
       if (ob) {
         query += " AND order_booker = ?";
         params.push(ob);
+      }
+      if (tsm) {
+        query += " AND tsm = ?";
+        params.push(tsm);
       }
       if (from) {
         query += " AND date >= ?";

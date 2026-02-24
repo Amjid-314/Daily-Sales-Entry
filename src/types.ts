@@ -116,15 +116,15 @@ export const SKUS: SKU[] = [
   { id: "v-20kg", name: "20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0 },
 
   // DWB
-  { id: "dwb-reg", name: "Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "dwb-large", name: "Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
-  { id: "dwb-long", name: "Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
-  { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
-  { id: "dwb-new", name: "New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  { id: "dwb-reg", name: "D Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "dwb-large", name: "D Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  { id: "dwb-long", name: "D Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  { id: "dwb-super", name: "D Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  { id: "dwb-new", name: "D New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
 
   // Match
-  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
-  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
-  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12 },
-  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12 },
+  { id: "m-large", name: "M Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
+  { id: "m-classic", name: "M Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
+  { id: "m-regular", name: "M Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12 },
+  { id: "m-slim", name: "M Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12 },
 ];
