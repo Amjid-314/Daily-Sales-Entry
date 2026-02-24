@@ -186,7 +186,7 @@ export default function App() {
           newState.distributor = assignment.distributor;
           newState.tsm = assignment.tsm || '';
           newState.route = ''; 
-          newState.totalShops = assignment.totalShops || 0;
+          newState.totalShops = assignment.total_shops || 50;
           fetchTargetsForOB(value as string);
           fetchMTDForOB(value as string);
         }
@@ -424,8 +424,12 @@ export default function App() {
   useEffect(() => {
     if (view === 'history') fetchHistory();
     if (view === 'dashboard') fetchHistory(true);
-    if (view === 'admin' || view === 'dashboard') fetchAdminData();
-  }, [view]);
+    if (view === 'admin' && adminAuthenticated) {
+      fetchAdminData();
+      fetchHistory(true); // Fetch all history for the download button
+    }
+    if (view === 'dashboard') fetchAdminData();
+  }, [view, adminAuthenticated]);
 
   const calculateTimeGone = () => {
     const now = new Date();
@@ -636,7 +640,7 @@ export default function App() {
       
       const totalVisited = obOrders.reduce((sum, h) => sum + (h.visited_shops || 0), 0);
       const totalProductive = obOrders.reduce((sum, h) => sum + (h.productive_shops || 0), 0);
-      const totalShops = obOrders.length * (ob.totalShops || 0);
+      const totalShops = obOrders.length * (ob.total_shops || 50);
 
       return {
         name: ob.name,
@@ -726,18 +730,30 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="card-clean p-4 bg-seablue text-white shadow-blue-200 shadow-lg">
-              <div className="text-[10px] uppercase font-bold text-white/60">Today Total Sales</div>
-              <div className="text-3xl font-black">{(Object.values(globalToday) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}</div>
+              <div className="text-[10px] uppercase font-bold text-white/60">Today Sales</div>
+              <div className="text-2xl font-black">{(Object.values(globalToday) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(1)}</div>
             </div>
             <div className="card-clean p-4 bg-emerald-600 text-white shadow-emerald-200 shadow-lg">
-              <div className="text-[10px] uppercase font-bold text-white/60">MTD Total Sales</div>
-              <div className="text-3xl font-black">{(Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}</div>
+              <div className="text-[10px] uppercase font-bold text-white/60">MTD Sales</div>
+              <div className="text-2xl font-black">{(Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(1)}</div>
             </div>
-            <div className="card-clean p-4 bg-slate-800 text-white shadow-slate-200 shadow-lg">
-              <div className="text-[10px] uppercase font-bold text-white/60">Time Gone</div>
-              <div className="text-3xl font-black">{timeGone.percentage.toFixed(1)}%</div>
+            <div className="card-clean p-4 bg-white border border-slate-100">
+              <div className="text-[10px] uppercase font-bold text-slate-400">Monthly Target</div>
+              <div className="text-2xl font-black text-seablue">
+                {obAssignments.reduce((sum, ob) => sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0), 0).toFixed(1)}
+              </div>
+            </div>
+            <div className="card-clean p-4 bg-white border border-slate-100">
+              <div className="text-[10px] uppercase font-bold text-slate-400">Achievement %</div>
+              <div className="text-2xl font-black text-emerald-600">
+                {(() => {
+                  const ach = (Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0);
+                  const tgt = obAssignments.reduce((sum, ob) => sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0), 0);
+                  return tgt > 0 ? ((ach / tgt) * 100).toFixed(0) : 0;
+                })()}%
+              </div>
             </div>
           </div>
 
@@ -932,7 +948,49 @@ export default function App() {
               <h1 className="text-lg font-bold text-seablue">Admin Panel</h1>
             </div>
             <div className="flex gap-2">
-              <button onClick={fetchAdminData} className="p-2 hover:bg-slate-100 rounded-full text-seablue" title="Refresh Data"><RefreshCw className={`w-5 h-5 ${isLoadingAdmin ? 'animate-spin' : ''}`} /></button>
+              <button onClick={() => { fetchAdminData(); fetchHistory(true); }} className="p-2 hover:bg-slate-100 rounded-full text-seablue" title="Refresh Data"><RefreshCw className={`w-5 h-5 ${isLoadingAdmin || isLoadingHistory ? 'animate-spin' : ''}`} /></button>
+              <button 
+                onClick={() => {
+                  const headers = [
+                    'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
+                    'Total Shops', 'Visited Shops', 'Productive Shops',
+                    ...SKUS.map(sku => `${sku.name} (${sku.category})`),
+                    'Total Achievement'
+                  ];
+                  
+                  const rows = history.map(h => {
+                    const items = h.order_data || {};
+                    const skuValues = SKUS.map(sku => {
+                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                      const total = (item.ctn * sku.unitsPerCarton + item.dzn * sku.unitsPerDozen + item.pks) / (sku.unitsPerCarton || 1);
+                      return total.toFixed(3);
+                    });
+                    const totalAch = skuValues.reduce((a, b) => a + parseFloat(b), 0);
+                    return [
+                      h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
+                      h.total_shops, h.visited_shops, h.productive_shops,
+                      ...skuValues,
+                      totalAch.toFixed(3)
+                    ].join(",");
+                  });
+
+                  const csvContent = [headers.join(","), ...rows].join("\n");
+                  const blob = new Blob([csvContent], { type: 'text/csv' });
+                  const fileName = `All_OB+All_TSM+${new Date().toISOString().split('T')[0]}.csv`;
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = fileName;
+                  a.click();
+                  setMessage({ text: 'All History Downloaded!', type: 'success' });
+                  setTimeout(() => setMessage(null), 3000);
+                }}
+                disabled={isLoadingHistory || history.length === 0}
+                className={`px-3 py-1.5 rounded-lg text-white text-[10px] font-black uppercase flex items-center gap-2 shadow-sm ${isLoadingHistory || history.length === 0 ? 'bg-slate-300 cursor-not-allowed' : 'bg-seablue hover:bg-seablue-dark'}`}
+              >
+                {isLoadingHistory ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />} 
+                {history.length === 0 && !isLoadingHistory ? 'No Data to Download' : `Download All Data (${history.length})`}
+              </button>
               <button onClick={reseedTeam} className="px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-600 text-[10px] font-black uppercase flex items-center gap-2 hover:bg-emerald-50"><RefreshCw className="w-3 h-3" /> Re-seed Team</button>
               <button onClick={resetDatabase} className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-[10px] font-black uppercase hover:bg-red-50">Clear History</button>
               <button onClick={() => setAdminAuthenticated(false)} className="text-xs font-bold text-slate-400 hover:underline">Logout</button>
@@ -941,22 +999,29 @@ export default function App() {
         </header>
 
         <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="card-clean p-4 space-y-4">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-black text-seablue uppercase tracking-widest">System Status</h3>
-                <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 text-[8px] font-bold rounded-full uppercase">Database Active</span>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="card-clean p-4 space-y-2">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">System Status</h3>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-600">Database:</span>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase">Connected</span>
               </div>
-              <div className="grid grid-cols-3 gap-4">
-                <div><div className="text-[10px] font-bold text-slate-400 uppercase">OBs</div><div className="text-xl font-bold text-seablue">{obAssignments.length}</div></div>
-                <div><div className="text-[10px] font-bold text-slate-400 uppercase">History</div><div className="text-xl font-bold text-seablue">{history.length}</div></div>
-                <div><div className="text-[10px] font-bold text-slate-400 uppercase">Retention</div><div className="text-xl font-bold text-seablue">90 Days+</div></div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-600">Retention:</span>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase">90 Days+</span>
               </div>
-              <p className="text-[9px] text-slate-400 italic border-t border-slate-50 pt-2">
-                * All submitted reports are stored in the central database for a minimum of 3 months for MTD and Route analysis.
-              </p>
             </div>
-
+            <div className="card-clean p-4 space-y-2">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Summary</h3>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-600">Total Records:</span>
+                <span className="text-sm font-black text-seablue">{history.length}</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-600">Last Sync:</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase">{lastUpdated || 'Never'}</span>
+              </div>
+            </div>
             <div className="card-clean p-4 flex items-center justify-between">
               <div className="space-y-1">
                 <div className="text-[10px] font-bold text-slate-400 uppercase">App Logo</div>
@@ -1007,7 +1072,7 @@ export default function App() {
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold text-slate-400 uppercase">Total Shops in Route</label>
-                      <input type="number" defaultValue={ob.totalShops || 0} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, totalShops: parseInt(e.target.value) || 0 }) }); }} className="input-clean w-full" />
+                      <input type="number" defaultValue={ob.total_shops || 50} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, total_shops: parseInt(e.target.value) || 50 }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold text-slate-400 uppercase">Routes (comma separated)</label>
@@ -1130,7 +1195,10 @@ export default function App() {
 
                 const csvContent = [headers.join(","), ...rows].join("\n");
                 const blob = new Blob([csvContent], { type: 'text/csv' });
-                const fileName = `sales_history_${new Date().toISOString().split('T')[0]}.csv`;
+                const obPart = historyFilters.ob || 'AllOB';
+                const tsmPart = historyFilters.tsm || 'AllTSM';
+                const datePart = historyFilters.from || new Date().toISOString().split('T')[0];
+                const fileName = `${obPart}+${tsmPart}+${datePart}.csv`.replace(/\s+/g, '_');
                 
                 if (navigator.share && navigator.canShare && navigator.canShare({ files: [new File([blob], fileName, { type: 'text/csv' })] })) {
                   navigator.share({
@@ -1415,7 +1483,7 @@ export default function App() {
               value={selectedTSM} 
               onChange={(e) => {
                 setSelectedTSM(e.target.value);
-                setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 0 }));
+                setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50 }));
               }} 
               className="input-clean flex-1 max-w-[150px] text-[10px] py-1"
             >
