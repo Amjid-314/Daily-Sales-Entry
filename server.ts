@@ -2,6 +2,7 @@ import express from "express";
 import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
+import { google } from "googleapis";
 
 const db = new Database("orders.db");
 
@@ -73,16 +74,30 @@ async function startServer() {
     );
   `);
 
-  // Migration: Add contact and tsm columns if they don't exist
-  try { db.exec("ALTER TABLE ob_assignments ADD COLUMN contact TEXT UNIQUE"); } catch (e) {}
-  try { db.exec("ALTER TABLE ob_assignments ADD COLUMN tsm TEXT"); } catch (e) {}
-  try { db.exec("ALTER TABLE ob_assignments ADD COLUMN total_shops INTEGER DEFAULT 50"); } catch (e) {}
-  try { db.exec("ALTER TABLE submitted_orders ADD COLUMN total_shops INTEGER DEFAULT 50"); } catch (e) {}
+  // Migration: Ensure all columns exist in ob_assignments
+  const obCols = ["contact", "tsm", "total_shops", "town", "distributor", "routes"];
+  obCols.forEach(col => {
+    try { db.exec(`ALTER TABLE ob_assignments ADD COLUMN ${col} ${col === 'total_shops' ? 'INTEGER DEFAULT 50' : 'TEXT'}`); } catch (e) {}
+  });
+
+  // Migration: Ensure all columns exist in submitted_orders
+  const subCols = [
+    "date", "tsm", "town", "distributor", "order_booker", "ob_contact", "route", 
+    "total_shops", "visited_shops", "productive_shops", 
+    "category_productive_data", "order_data", "targets_data"
+  ];
+  subCols.forEach(col => {
+    try { 
+      const type = (col.includes('shops')) ? 'INTEGER DEFAULT 0' : 'TEXT';
+      db.exec(`ALTER TABLE submitted_orders ADD COLUMN ${col} ${type}`); 
+    } catch (e) {}
+  });
   
   // Force update all existing OBs to 50 shops as per user request
-  db.exec("UPDATE ob_assignments SET total_shops = 50");
-  db.exec("UPDATE submitted_orders SET total_shops = 50");
-  try { db.exec("ALTER TABLE submitted_orders ADD COLUMN ob_contact TEXT"); } catch (e) {}
+  try {
+    db.exec("UPDATE ob_assignments SET total_shops = 50 WHERE total_shops IS NULL OR total_shops = 0");
+    db.exec("UPDATE submitted_orders SET total_shops = 50 WHERE total_shops IS NULL OR total_shops = 0");
+  } catch (e) {}
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS brand_targets (
@@ -101,6 +116,73 @@ async function startServer() {
 
   // Initial Config
   db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("total_working_days", "25");
+  db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("google_spreadsheet_id", "");
+  db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("google_service_account_email", "");
+  db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("google_private_key", "");
+
+  // Google Sheets Helper
+  async function appendToSheet(order: any) {
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      
+      let spreadsheetId = config.google_spreadsheet_id;
+      let clientEmail = config.google_service_account_email;
+      let privateKeyRaw = config.google_private_key;
+
+      try {
+        const parsed = JSON.parse(privateKeyRaw);
+        if (parsed.private_key) privateKeyRaw = parsed.private_key;
+        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+      } catch (e) {}
+
+      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+
+      if (!spreadsheetId || !clientEmail || !privateKey) {
+        console.log("Skipping sync: Google Sheets config incomplete");
+        return;
+      }
+
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      const targetsData = typeof order.targets_data === 'string' ? JSON.parse(order.targets_data) : (order.targets_data || {});
+      
+      const row = [
+        order.date, order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
+        order.total_shops, order.visited_shops, order.productive_shops,
+        targetsData["Kite Glow"] || 0, targetsData["Burq Action"] || 0, targetsData["Vero"] || 0, targetsData["DWB"] || 0, targetsData["Match"] || 0,
+        order.submitted_at
+      ];
+
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: 'Sheet1!A2',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [row] },
+      });
+      console.log(`Successfully appended order ${order.id} to Google Sheets`);
+    } catch (err) {
+      console.error("Google Sheets Sync Error:", err);
+    }
+  }
+
+  // Google OAuth Setup
+  const getOAuth2Client = (req: express.Request) => {
+    const protocol = req.headers['x-forwarded-proto'] || req.protocol;
+    const host = req.headers.host;
+    const redirectUri = `${protocol}://${host}/api/auth/google/callback`;
+    
+    return new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      redirectUri
+    );
+  };
 
   // Initial Seed Data if empty
   const obCount = db.prepare("SELECT COUNT(*) as count FROM ob_assignments").get() as any;
@@ -233,6 +315,117 @@ async function startServer() {
     }
   });
 
+  // Google Sheets Integration Routes
+  app.get("/api/auth/google/url", (req, res) => {
+    const oauth2Client = getOAuth2Client(req);
+    const url = oauth2Client.generateAuthUrl({
+      access_type: "offline",
+      scope: ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive.file"],
+      prompt: "consent"
+    });
+    res.json({ url });
+  });
+
+  app.get("/api/auth/google/callback", async (req, res) => {
+    const { code } = req.query;
+    const oauth2Client = getOAuth2Client(req);
+    try {
+      const { tokens } = await oauth2Client.getToken(code as string);
+      db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_tokens", JSON.stringify(tokens));
+      
+      res.send(`
+        <html>
+          <body>
+            <script>
+              if (window.opener) {
+                window.opener.postMessage({ type: 'GOOGLE_AUTH_SUCCESS' }, '*');
+                window.close();
+              } else {
+                window.location.href = '/admin';
+              }
+            </script>
+            <p>Authentication successful. You can close this window.</p>
+          </body>
+        </html>
+      `);
+    } catch (err) {
+      res.status(500).send("Authentication failed: " + err.message);
+    }
+  });
+
+  app.get("/api/google/status", (req, res) => {
+    const row = db.prepare("SELECT value FROM app_config WHERE key = 'google_tokens'").get() as any;
+    const sheetIdRow = db.prepare("SELECT value FROM app_config WHERE key = 'google_spreadsheet_id'").get() as any;
+    res.json({ 
+      connected: !!row, 
+      spreadsheetId: sheetIdRow ? sheetIdRow.value : null 
+    });
+  });
+
+  app.post("/api/google/sync", async (req, res) => {
+    const tokensRow = db.prepare("SELECT value FROM app_config WHERE key = 'google_tokens'").get() as any;
+    if (!tokensRow) return res.status(401).json({ error: "Not connected to Google" });
+
+    const oauth2Client = getOAuth2Client(req);
+    oauth2Client.setCredentials(JSON.parse(tokensRow.value));
+
+    const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+    const drive = google.drive({ version: "v3", auth: oauth2Client });
+
+    try {
+      let spreadsheetId = (db.prepare("SELECT value FROM app_config WHERE key = 'google_spreadsheet_id'").get() as any)?.value;
+
+      if (!spreadsheetId) {
+        const resource = {
+          properties: { title: "Sales Reporting Data" },
+        };
+        const spreadsheet = await sheets.spreadsheets.create({
+          requestBody: resource,
+          fields: "spreadsheetId",
+        });
+        spreadsheetId = spreadsheet.data.spreadsheetId;
+        db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_spreadsheet_id", spreadsheetId);
+      }
+
+      // Fetch all orders
+      const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date DESC").all();
+      
+      // Prepare headers
+      const headers = [
+        'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
+        'Total Shops', 'Visited Shops', 'Productive Shops', 
+        'Kite Glow Tgt', 'Burq Action Tgt', 'Vero Tgt', 'DWB Tgt', 'Match Tgt',
+        'Submitted At'
+      ];
+
+      const rows = orders.map((h: any) => {
+        const targetsData = typeof h.targets_data === 'string' ? JSON.parse(h.targets_data) : (h.targets_data || {});
+        return [
+          h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
+          h.total_shops, h.visited_shops, h.productive_shops,
+          targetsData["Kite Glow"] || 0,
+          targetsData["Burq Action"] || 0,
+          targetsData["Vero"] || 0,
+          targetsData["DWB"] || 0,
+          targetsData["Match"] || 0,
+          h.submitted_at
+        ];
+      });
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "Sheet1!A1",
+        valueInputOption: "RAW",
+        requestBody: { values: [headers, ...rows] },
+      });
+
+      res.json({ success: true, spreadsheetId });
+    } catch (err) {
+      console.error("Sync error:", err);
+      res.status(500).json({ error: "Sync failed: " + err.message });
+    }
+  });
+
   app.post("/api/admin/reseed", (req, res) => {
     const transaction = db.transaction(() => {
       db.prepare("DELETE FROM ob_assignments").run();
@@ -348,19 +541,338 @@ async function startServer() {
   });
 
   app.post("/api/submit", (req, res) => {
-    const { data } = req.body;
-    const { date, tsm, town, distributor, orderBooker, obContact, route, totalShops, visitedShops, productiveShops, categoryProductiveShops, items, targets } = data;
-    
     try {
-      db.prepare(`
-        INSERT INTO submitted_orders (date, tsm, town, distributor, order_booker, ob_contact, route, total_shops, visited_shops, productive_shops, category_productive_data, order_data, targets_data)
+      const { data } = req.body;
+      if (!data) return res.status(400).json({ error: "Missing data" });
+
+      const { 
+        date, tsm, town, distributor, orderBooker, obContact, route, 
+        totalShops, visitedShops, productiveShops, 
+        categoryProductiveShops, items, targets 
+      } = data;
+      
+      const info = db.prepare(`
+        INSERT INTO submitted_orders (
+          date, tsm, town, distributor, order_booker, ob_contact, route, 
+          total_shops, visited_shops, productive_shops, 
+          category_productive_data, order_data, targets_data
+        )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(date, tsm, town, distributor, orderBooker, obContact, route, totalShops || 0, visitedShops, productiveShops, JSON.stringify(categoryProductiveShops), JSON.stringify(items), JSON.stringify(targets));
+      `).run(
+        date || new Date().toISOString().split('T')[0], 
+        tsm || '', 
+        town || '', 
+        distributor || '', 
+        orderBooker || '', 
+        obContact || '', 
+        route || '', 
+        totalShops || 0, 
+        visitedShops || 0, 
+        productiveShops || 0, 
+        JSON.stringify(categoryProductiveShops || {}), 
+        JSON.stringify(items || {}), 
+        JSON.stringify(targets || {})
+      );
+
+      // Async sync to Google Sheets
+      const newOrder = db.prepare("SELECT * FROM submitted_orders WHERE id = ?").get(info.lastInsertRowid);
+      appendToSheet(newOrder).catch(console.error);
       
       res.json({ success: true, message: "Order submitted successfully" });
     } catch (err) {
       console.error("Submission error:", err);
-      res.status(500).json({ error: "Failed to submit order" });
+      res.status(500).json({ error: "Failed to submit order: " + err.message });
+    }
+  });
+
+  app.post("/api/admin/bulk-upload", (req, res) => {
+    const { team } = req.body;
+    if (!Array.isArray(team)) return res.status(400).json({ error: "Invalid data" });
+
+    const transaction = db.transaction(() => {
+      for (const item of team) {
+        const { name, contact, town, distributor, tsm, total_shops, routes, targets } = item;
+        
+        db.prepare(`
+          INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(contact) DO UPDATE SET
+            name=excluded.name,
+            town=excluded.town,
+            distributor=excluded.distributor,
+            tsm=excluded.tsm,
+            total_shops=excluded.total_shops,
+            routes=excluded.routes
+        `).run(name, contact, town, distributor, tsm, total_shops || 50, JSON.stringify(routes || []));
+
+        if (targets && typeof targets === 'object') {
+          for (const [brand, target] of Object.entries(targets)) {
+            db.prepare(`
+              INSERT INTO brand_targets (ob_contact, brand_name, target_ctn)
+              VALUES (?, ?, ?)
+              ON CONFLICT(ob_contact, brand_name) DO UPDATE SET
+                target_ctn=excluded.target_ctn
+            `).run(contact, brand, target);
+          }
+        }
+      }
+    });
+
+    try {
+      transaction();
+      res.json({ success: true, message: `Processed ${team.length} records` });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/clear-history", (req, res) => {
+    try {
+      db.prepare("DELETE FROM submitted_orders").run();
+      res.json({ success: true, message: "All sales history has been cleared." });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/sync-team-to-sheets", async (req, res) => {
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      
+      let spreadsheetId = config.google_spreadsheet_id;
+      let clientEmail = config.google_service_account_email;
+      let privateKeyRaw = config.google_private_key;
+
+      try {
+        const parsed = JSON.parse(privateKeyRaw);
+        if (parsed.private_key) privateKeyRaw = parsed.private_key;
+        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+      } catch (e) {}
+
+      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+
+      if (!spreadsheetId || !clientEmail || !privateKey) {
+        return res.status(400).json({ error: "Google Sheets configuration missing" });
+      }
+
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+      
+      const rows = obs.map(ob => {
+        const targets = db.prepare("SELECT brand_name, target_ctn FROM brand_targets WHERE ob_contact = ?").all(ob.contact) as any[];
+        const targetMap = targets.reduce((acc, t) => ({ ...acc, [t.brand_name]: t.target_ctn }), {} as any);
+        const routes = JSON.parse(ob.routes || '[]');
+        return [
+          ob.name, ob.contact, ob.town, ob.distributor, ob.tsm, ob.total_shops, routes.join(", "),
+          targetMap["Kite Glow"] || 0, targetMap["Burq Action"] || 0, targetMap["Vero"] || 0, targetMap["DWB"] || 0, targetMap["Match"] || 0
+        ];
+      });
+
+      // Ensure sheet exists or create it
+      try {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [{ addSheet: { properties: { title: "Team_Targets" } } }]
+          }
+        });
+      } catch (e) {} // Ignore if sheet already exists
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "Team_Targets!A1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [headers, ...rows] },
+      });
+
+      res.json({ success: true, message: `Exported ${obs.length} team members to 'Team_Targets' sheet` });
+    } catch (err: any) {
+      console.error("Team Export Error:", err);
+      let errorMessage = err.message;
+      if (errorMessage.includes("API has not been used") || errorMessage.includes("disabled")) {
+        errorMessage = "Google Sheets API is disabled. Please enable it in your Google Cloud Console.";
+      }
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.post("/api/admin/sync-team-from-sheets", async (req, res) => {
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      
+      let spreadsheetId = config.google_spreadsheet_id;
+      let clientEmail = config.google_service_account_email;
+      let privateKeyRaw = config.google_private_key;
+
+      try {
+        const parsed = JSON.parse(privateKeyRaw);
+        if (parsed.private_key) privateKeyRaw = parsed.private_key;
+        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+      } catch (e) {}
+
+      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+
+      if (!spreadsheetId || !clientEmail || !privateKey) {
+        return res.status(400).json({ error: "Google Sheets configuration missing" });
+      }
+
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "Team_Targets!A1:L1000",
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length < 2) return res.status(400).json({ error: "No data found in 'Team_Targets' sheet" });
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      const team = dataRows.map(row => {
+        const getVal = (headerName: string) => {
+          const idx = headers.indexOf(headerName);
+          return idx > -1 ? row[idx] : null;
+        };
+
+        return {
+          name: getVal('Name'),
+          contact: getVal('ID'),
+          town: getVal('Town'),
+          distributor: getVal('Distributor'),
+          tsm: getVal('TSM'),
+          total_shops: parseInt(getVal('Total Shops')) || 50,
+          routes: getVal('Routes') ? getVal('Routes').split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
+          targets: {
+            "Kite Glow": parseFloat(getVal('Kite Glow Target')) || 0,
+            "Burq Action": parseFloat(getVal('Burq Action Target')) || 0,
+            "Vero": parseFloat(getVal('Vero Target')) || 0,
+            "DWB": parseFloat(getVal('DWB Target')) || 0,
+            "Match": parseFloat(getVal('Match Target')) || 0
+          }
+        };
+      }).filter(t => t.name && t.contact);
+
+      // Reuse bulk upload logic
+      const transaction = db.transaction(() => {
+        for (const item of team) {
+          db.prepare(`
+            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(contact) DO UPDATE SET
+              name=excluded.name, town=excluded.town, distributor=excluded.distributor, tsm=excluded.tsm, total_shops=excluded.total_shops, routes=excluded.routes
+          `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.total_shops, JSON.stringify(item.routes));
+
+          for (const [brand, target] of Object.entries(item.targets)) {
+            db.prepare(`
+              INSERT INTO brand_targets (ob_contact, brand_name, target_ctn)
+              VALUES (?, ?, ?)
+              ON CONFLICT(ob_contact, brand_name) DO UPDATE SET target_ctn=excluded.target_ctn
+            `).run(item.contact, brand, target);
+          }
+        }
+      });
+      transaction();
+
+      res.json({ success: true, message: `Imported ${team.length} team members from Google Sheets` });
+    } catch (err: any) {
+      console.error("Team Import Error:", err);
+      let errorMessage = err.message;
+      if (errorMessage.includes("API has not been used") || errorMessage.includes("disabled")) {
+        errorMessage = "Google Sheets API is disabled. Please enable it in your Google Cloud Console.";
+      }
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.post("/api/admin/sync-sheets", async (req, res) => {
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      
+      let spreadsheetId = config.google_spreadsheet_id;
+      let clientEmail = config.google_service_account_email;
+      let privateKeyRaw = config.google_private_key;
+
+      // Try to parse if user pasted the whole JSON
+      try {
+        const parsed = JSON.parse(privateKeyRaw);
+        if (parsed.private_key) privateKeyRaw = parsed.private_key;
+        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+      } catch (e) {
+        // Not a JSON, use as raw string
+      }
+
+      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+
+      if (!spreadsheetId || !clientEmail || !privateKey) {
+        return res.status(400).json({ error: "Google Sheets configuration missing in Admin panel. Ensure Spreadsheet ID, Email, and Key are provided." });
+      }
+
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all();
+      
+      const headers = [
+        'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
+        'Total Shops', 'Visited Shops', 'Productive Shops', 
+        'Kite Glow Tgt', 'Burq Action Tgt', 'Vero Tgt', 'DWB Tgt', 'Match Tgt',
+        'Submitted At'
+      ];
+
+      const rows = orders.map((h: any) => {
+        let targetsData = {};
+        try {
+          targetsData = typeof h.targets_data === 'string' ? JSON.parse(h.targets_data) : (h.targets_data || {});
+        } catch (e) {
+          targetsData = {};
+        }
+        return [
+          h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
+          h.total_shops, h.visited_shops, h.productive_shops,
+          (targetsData as any)["Kite Glow"] || 0,
+          (targetsData as any)["Burq Action"] || 0,
+          (targetsData as any)["Vero"] || 0,
+          (targetsData as any)["DWB"] || 0,
+          (targetsData as any)["Match"] || 0,
+          h.submitted_at
+        ];
+      });
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "Sheet1!A1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [headers, ...rows] },
+      });
+
+      res.json({ success: true, message: `Successfully synced ${orders.length} records to Google Sheets` });
+    } catch (err: any) {
+      console.error("Bulk Sync Error:", err);
+      let errorMessage = err.message;
+      if (errorMessage.includes("API has not been used") || errorMessage.includes("disabled")) {
+        errorMessage = "Google Sheets API is disabled. Please enable it in your Google Cloud Console (check server logs for the link).";
+      }
+      res.status(500).json({ error: errorMessage });
     }
   });
 

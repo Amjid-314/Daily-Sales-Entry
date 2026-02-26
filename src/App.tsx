@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import Papa from 'papaparse';
 import { 
   BarChart, 
   Bar, 
@@ -34,7 +35,11 @@ import {
   Store,
   EyeOff,
   Upload,
-  RefreshCw
+  RefreshCw,
+  Link2,
+  ExternalLink,
+  Cloud,
+  Share2
 } from 'lucide-react';
 import { SKUS, CATEGORIES, OrderState, OrderItem, SKU, OBAssignment } from './types';
 
@@ -98,6 +103,8 @@ export default function App() {
   });
   const [selectedOBForTargets, setSelectedOBForTargets] = useState<string | null>(null);
   const [obTargetsEdit, setObTargetsEdit] = useState<Record<string, number>>({});
+  const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; spreadsheetId: string | null }>({ connected: false, spreadsheetId: null });
+  const [isSyncing, setIsSyncing] = useState(false);
 
   const [order, setOrder] = useState<OrderState>(() => {
     const defaultState: OrderState = {
@@ -316,7 +323,14 @@ export default function App() {
             order_data: typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {})
           })));
           setLastUpdated(new Date().toLocaleTimeString());
+        } else {
+          console.error("Expected array from /api/orders, got:", data);
+          setHistory([]);
         }
+      } else {
+        const errData = await response.json();
+        console.error("History fetch failed:", errData);
+        setMessage({ text: 'Failed to load history', type: 'error' });
       }
     } catch (err) { console.error(err); }
     finally { setIsLoadingHistory(false); }
@@ -342,16 +356,36 @@ export default function App() {
     return workingDays > 0 ? (daysGone / workingDays) * 100 : 0;
   };
 
+  const updateConfig = async (key: string, value: string) => {
+    setAppConfig(prev => ({ ...prev, [key]: value }));
+    try {
+      await fetch('/api/admin/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ key, value })
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
-      const [obsRes, configRes] = await Promise.all([
+      const [obsRes, configRes, googleRes] = await Promise.all([
         fetch('/api/admin/obs'),
-        fetch('/api/admin/config')
+        fetch('/api/admin/config'),
+        fetch('/api/google/status')
       ]);
-      if (obsRes.ok && configRes.ok) {
+      
+      if (obsRes.ok) {
         setObAssignments(await obsRes.json());
+      }
+      if (configRes.ok) {
         setAppConfig(await configRes.json());
+      }
+      if (googleRes.ok) {
+        setGoogleStatus(await googleRes.json());
       }
     } catch (err) { console.error(err); }
     finally { setIsLoadingAdmin(false); }
@@ -375,7 +409,7 @@ export default function App() {
       if (res.ok) {
         const allOrders = await res.json();
         const currentMonth = new Date().toISOString().slice(0, 7);
-        const obOrders = allOrders.filter((o: any) => o.ob_contact === contact && o.date.startsWith(currentMonth));
+        const obOrders = allOrders.filter((o: any) => o.ob_contact === contact && o.date && typeof o.date === 'string' && o.date.startsWith(currentMonth));
         
         const mtd: Record<string, number> = {};
         CATEGORIES.forEach(cat => {
@@ -430,6 +464,117 @@ export default function App() {
     }
     if (view === 'dashboard') fetchAdminData();
   }, [view, adminAuthenticated]);
+
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
+        fetchAdminData();
+        setMessage({ text: 'Google Sheets Connected!', type: 'success' });
+        setTimeout(() => setMessage(null), 3000);
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
+  const connectGoogle = async () => {
+    try {
+      const res = await fetch('/api/auth/google/url');
+      const { url } = await res.json();
+      window.open(url, 'google_auth', 'width=600,height=700');
+    } catch (err) {
+      setMessage({ text: 'Failed to connect Google', type: 'error' });
+    }
+  };
+
+  const syncGoogle = async () => {
+    setIsSyncing(true);
+    try {
+      const res = await fetch('/api/google/sync', { method: 'POST' });
+      const data = await res.json();
+      if (res.ok) {
+        setGoogleStatus(prev => ({ ...prev, spreadsheetId: data.spreadsheetId }));
+        setMessage({ text: 'Synced to Google Sheets!', type: 'success' });
+      } else {
+        throw new Error(data.error);
+      }
+    } catch (err: any) {
+      setMessage({ text: 'Sync failed: ' + err.message, type: 'error' });
+    } finally {
+      setIsSyncing(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const handleBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setMessage({ text: 'Parsing CSV...', type: 'info' });
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      error: (err) => {
+        setMessage({ text: 'CSV Parse Error: ' + err.message, type: 'error' });
+        setTimeout(() => setMessage(null), 3000);
+      },
+      complete: async (results) => {
+        if (results.errors.length > 0) {
+          setMessage({ text: 'CSV has errors. Check format.', type: 'error' });
+          console.error("PapaParse Errors:", results.errors);
+          setTimeout(() => setMessage(null), 3000);
+          return;
+        }
+
+        const team = results.data.map((row: any) => ({
+          name: row.Name || row.name,
+          contact: row.ID || row.id || row.Contact || row.contact,
+          town: row.Town || row.town,
+          distributor: row.Distributor || row.distributor,
+          tsm: row.TSM || row.tsm,
+          total_shops: parseInt(row['Total Shops'] || row['total_shops']) || 50,
+          routes: row.Routes || row.routes ? (row.Routes || row.routes).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
+          targets: {
+            "Kite Glow": parseFloat(row['Kite Glow Target'] || row['kite_glow_target']) || 0,
+            "Burq Action": parseFloat(row['Burq Action Target'] || row['burq_action_target']) || 0,
+            "Vero": parseFloat(row['Vero Target'] || row['vero_target']) || 0,
+            "DWB": parseFloat(row['DWB Target'] || row['dwb_target']) || 0,
+            "Match": parseFloat(row['Match Target'] || row['match_target']) || 0
+          }
+        })).filter((item: any) => item.name && item.contact);
+
+        if (team.length === 0) {
+          setMessage({ text: 'No valid records found in CSV', type: 'error' });
+          setTimeout(() => setMessage(null), 3000);
+          return;
+        }
+
+        setMessage({ text: `Uploading ${team.length} records...`, type: 'info' });
+
+        try {
+          const res = await fetch('/api/admin/bulk-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ team })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setMessage({ text: `Successfully uploaded ${team.length} team members!`, type: 'success' });
+            fetchAdminData();
+          } else {
+            throw new Error(data.error || 'Upload failed');
+          }
+        } catch (err: any) {
+          setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+        } finally {
+          setTimeout(() => setMessage(null), 3000);
+          // Reset file input
+          e.target.value = '';
+        }
+      }
+    });
+  };
 
   const calculateTimeGone = () => {
     const now = new Date();
@@ -549,8 +694,8 @@ export default function App() {
     const today = new Date().toISOString().split('T')[0];
     const currentMonth = today.slice(0, 7);
     
-    const todayOrders = history.filter(h => h.date === today);
-    const mtdOrders = history.filter(h => h.date.startsWith(currentMonth));
+    const todayOrders = history.filter(h => h.date && typeof h.date === 'string' && h.date === today);
+    const mtdOrders = history.filter(h => h.date && typeof h.date === 'string' && h.date.startsWith(currentMonth));
     
     const calculateCatTotals = (orders: any[]) => {
       const totals: Record<string, number> = {};
@@ -925,7 +1070,17 @@ export default function App() {
             <div className="card-clean p-8 max-w-sm w-full space-y-6 text-center">
               <Lock className="w-12 h-12 text-seablue mx-auto" />
               <h2 className="text-xl font-bold text-seablue">Admin Login</h2>
-              <form onSubmit={(e) => { e.preventDefault(); if (adminPassInput.toLowerCase() === ADMIN_PASSWORD) setAdminAuthenticated(true); else setMessage({ text: 'Wrong Pass', type: 'error' }); }} className="space-y-4">
+              <form onSubmit={(e) => { 
+                e.preventDefault(); 
+                const pass = adminPassInput.trim().toLowerCase();
+                if (pass === ADMIN_PASSWORD) {
+                  setAdminAuthenticated(true);
+                  setMessage({ text: 'Welcome Admin', type: 'success' });
+                } else {
+                  setMessage({ text: 'Incorrect Password. Hint: admin', type: 'error' });
+                }
+                setTimeout(() => setMessage(null), 3000);
+              }} className="space-y-4">
                 <input type="password" placeholder="Enter Password" value={adminPassInput} onChange={(e) => setAdminPassInput(e.target.value)} className="input-clean w-full text-center" autoFocus />
                 <button type="submit" className="btn-seablue w-full">Login to Admin</button>
                 <button type="button" onClick={() => setView('entry')} className="text-xs text-slate-400 font-bold hover:underline">Cancel</button>
@@ -1020,6 +1175,173 @@ export default function App() {
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-600">Last Sync:</span>
                 <span className="text-[10px] font-bold text-slate-400 uppercase">{lastUpdated || 'Never'}</span>
+              </div>
+            </div>
+            <div className="card-clean p-4 space-y-2">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Google Sheets Sync</h3>
+              <div className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[8px] font-bold text-slate-400 uppercase">Spreadsheet ID</label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter ID"
+                    value={appConfig.google_spreadsheet_id || ''} 
+                    onChange={(e) => updateConfig('google_spreadsheet_id', e.target.value)}
+                    className="input-clean w-full text-[10px]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[8px] font-bold text-slate-400 uppercase">Service Account Email</label>
+                  <input 
+                    type="text" 
+                    placeholder="email@project.iam.gserviceaccount.com"
+                    value={appConfig.google_service_account_email || ''} 
+                    onChange={(e) => updateConfig('google_service_account_email', e.target.value)}
+                    className="input-clean w-full text-[10px]"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[8px] font-bold text-slate-400 uppercase">Private Key (JSON)</label>
+                  <textarea 
+                    placeholder="-----BEGIN PRIVATE KEY-----..."
+                    value={appConfig.google_private_key || ''} 
+                    onChange={(e) => updateConfig('google_private_key', e.target.value)}
+                    className="input-clean w-full text-[10px] h-12 resize-none"
+                  />
+                </div>
+                <button 
+                  onClick={async () => {
+                    console.log("Starting Google Sheets Sync...");
+                    setIsSyncing(true);
+                    setMessage({ text: 'Syncing to Google Sheets...', type: 'success' });
+                    try {
+                      const res = await fetch('/api/admin/sync-sheets', { method: 'POST' });
+                      const data = await res.json();
+                      console.log("Sync Response:", data);
+                      if (res.ok) {
+                        setMessage({ text: data.message, type: 'success' });
+                      } else {
+                        throw new Error(data.error || 'Sync failed');
+                      }
+                    } catch (err: any) {
+                      console.error("Sync Error:", err);
+                      setMessage({ text: 'Sync Error: ' + err.message, type: 'error' });
+                    } finally {
+                      setIsSyncing(false);
+                      setTimeout(() => setMessage(null), 5000);
+                    }
+                  }} 
+                  disabled={isSyncing || !appConfig.google_spreadsheet_id}
+                  className="btn-seablue w-full text-[10px] flex items-center justify-center gap-2"
+                >
+                  {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+                  Sync All to Google Sheets
+                </button>
+              </div>
+            </div>
+            <div className="card-clean p-4 space-y-3">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bulk Team & Targets</h3>
+              <div className="flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={() => {
+                      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+                      const csvContent = headers.join(",") + "\n" + 
+                        "Sample Name,S-01,Sample Town,Sample Dist,Sample TSM,50,\"Route 1, Route 2\",10.5,5.0,2.5,1.0,0.5";
+                      const blob = new Blob([csvContent], { type: 'text/csv' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'team_targets_template.csv';
+                      a.click();
+                    }}
+                    className="text-[9px] font-bold text-seablue hover:underline flex items-center justify-center gap-1 border border-seablue/20 py-1.5 rounded"
+                  >
+                    <Download className="w-3 h-3" /> Template
+                  </button>
+                  <label className="btn-seablue w-full text-[9px] flex items-center justify-center gap-2 cursor-pointer py-1.5">
+                    <Upload className="w-3 h-3" />
+                    Upload CSV
+                    <input type="file" accept=".csv" className="hidden" onChange={handleBulkUpload} />
+                  </label>
+                </div>
+                
+                <div className="h-px bg-slate-100 my-1"></div>
+                
+                <div className="grid grid-cols-2 gap-2">
+                  <button 
+                    onClick={async () => {
+                      setIsSyncing(true);
+                      try {
+                        const res = await fetch('/api/admin/sync-team-to-sheets', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok) setMessage({ text: data.message, type: 'success' });
+                        else throw new Error(data.error);
+                      } catch (err: any) {
+                        setMessage({ text: err.message, type: 'error' });
+                      } finally {
+                        setIsSyncing(false);
+                        setTimeout(() => setMessage(null), 3000);
+                      }
+                    }}
+                    disabled={isSyncing || !appConfig.google_spreadsheet_id}
+                    className="text-[9px] font-bold text-emerald-600 border border-emerald-200 py-1.5 rounded hover:bg-emerald-50 flex items-center justify-center gap-1 disabled:opacity-50"
+                  >
+                    <Share2 className="w-3 h-3" /> Export to Sheets
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      if (!confirm("This will overwrite existing team members with data from the 'Team_Targets' tab in Google Sheets. Continue?")) return;
+                      setIsSyncing(true);
+                      try {
+                        const res = await fetch('/api/admin/sync-team-from-sheets', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok) {
+                          setMessage({ text: data.message, type: 'success' });
+                          fetchAdminData();
+                        } else throw new Error(data.error);
+                      } catch (err: any) {
+                        setMessage({ text: err.message, type: 'error' });
+                      } finally {
+                        setIsSyncing(false);
+                        setTimeout(() => setMessage(null), 3000);
+                      }
+                    }}
+                    disabled={isSyncing || !appConfig.google_spreadsheet_id}
+                    className="text-[9px] font-bold text-amber-600 border border-amber-200 py-1.5 rounded hover:bg-amber-50 flex items-center justify-center gap-1 disabled:opacity-50"
+                  >
+                    <Download className="w-3 h-3" /> Import from Sheets
+                  </button>
+                </div>
+              </div>
+            </div>
+            <div className="card-clean p-4 space-y-3">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Management</h3>
+              <div className="flex flex-col gap-2">
+                <button 
+                  onClick={async () => {
+                    if (!confirm("CRITICAL: This will permanently delete ALL sales reports from the app database. This cannot be undone. Are you sure?")) return;
+                    if (!confirm("LAST WARNING: Are you absolutely sure you want to wipe all history?")) return;
+                    
+                    setIsLoadingAdmin(true);
+                    try {
+                      const res = await fetch('/api/admin/clear-history', { method: 'POST' });
+                      const data = await res.json();
+                      if (res.ok) {
+                        setMessage({ text: data.message, type: 'success' });
+                        setHistory([]);
+                      } else throw new Error(data.error);
+                    } catch (err: any) {
+                      setMessage({ text: err.message, type: 'error' });
+                    } finally {
+                      setIsLoadingAdmin(false);
+                      setTimeout(() => setMessage(null), 5000);
+                    }
+                  }}
+                  className="w-full py-2 border border-red-200 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-3 h-3" /> Clear All Sales History
+                </button>
               </div>
             </div>
             <div className="card-clean p-4 flex items-center justify-between">
@@ -1734,7 +2056,12 @@ export default function App() {
 
       <AnimatePresence>
         {message && (
-          <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} className={`fixed bottom-20 left-1/2 -translate-x-1/2 px-6 py-3 rounded-xl shadow-xl flex items-center gap-3 z-50 ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}>
+          <motion.div 
+            initial={{ opacity: 0, y: 50, x: '-50%' }} 
+            animate={{ opacity: 1, y: 0, x: '-50%' }} 
+            exit={{ opacity: 0, y: 20, x: '-50%' }}
+            className={`fixed bottom-32 left-1/2 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 z-[100] min-w-[280px] border border-white/10 ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}
+          >
             {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             <span className="text-sm font-bold uppercase tracking-widest">{message.text}</span>
           </motion.div>
