@@ -527,22 +527,38 @@ export default function App() {
           return;
         }
 
-        const team = results.data.map((row: any) => ({
-          name: row.Name || row.name,
-          contact: row.ID || row.id || row.Contact || row.contact,
-          town: row.Town || row.town,
-          distributor: row.Distributor || row.distributor,
-          tsm: row.TSM || row.tsm,
-          total_shops: parseInt(row['Total Shops'] || row['total_shops']) || 50,
-          routes: row.Routes || row.routes ? (row.Routes || row.routes).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
-          targets: {
-            "Kite Glow": parseFloat(row['Kite Glow Target'] || row['kite_glow_target']) || 0,
-            "Burq Action": parseFloat(row['Burq Action Target'] || row['burq_action_target']) || 0,
-            "Vero": parseFloat(row['Vero Target'] || row['vero_target']) || 0,
-            "DWB": parseFloat(row['DWB Target'] || row['dwb_target']) || 0,
-            "Match": parseFloat(row['Match Target'] || row['match_target']) || 0
-          }
-        })).filter((item: any) => item.name && item.contact);
+        const team = results.data.map((row: any) => {
+          // Normalize keys to lowercase and trimmed
+          const normalizedRow: any = {};
+          Object.keys(row).forEach(key => {
+            normalizedRow[key.trim().toLowerCase()] = row[key];
+          });
+
+          const getVal = (possibleKeys: string[]) => {
+            for (const key of possibleKeys) {
+              const normalizedKey = key.toLowerCase();
+              if (normalizedRow[normalizedKey] !== undefined) return normalizedRow[normalizedKey];
+            }
+            return null;
+          };
+
+          return {
+            name: getVal(['Name', 'name']),
+            contact: getVal(['ID', 'id', 'Contact', 'contact']),
+            town: getVal(['Town', 'town']),
+            distributor: getVal(['Distributor', 'distributor']),
+            tsm: getVal(['TSM', 'tsm']),
+            total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops']) || '50') || 50,
+            routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
+            targets: {
+              "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow'])) || 0,
+              "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action'])) || 0,
+              "Vero": parseFloat(getVal(['Vero Target', 'vero_target', 'vero'])) || 0,
+              "DWB": parseFloat(getVal(['DWB Target', 'dwb_target', 'dwb'])) || 0,
+              "Match": parseFloat(getVal(['Match Target', 'match_target', 'match'])) || 0
+            }
+          };
+        }).filter((item: any) => item.name && item.contact);
 
         if (team.length === 0) {
           setMessage({ text: 'No valid records found in CSV', type: 'error' });
@@ -550,13 +566,15 @@ export default function App() {
           return;
         }
 
+        const clearExisting = window.confirm("Do you want to REPLACE the entire team list with this new file? (Click Cancel to just ADD/UPDATE without deleting others)");
+
         setMessage({ text: `Uploading ${team.length} records...`, type: 'info' });
 
         try {
           const res = await fetch('/api/admin/bulk-upload', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ team })
+            body: JSON.stringify({ team, clearExisting })
           });
           const data = await res.json();
           if (res.ok) {
@@ -1318,6 +1336,27 @@ export default function App() {
             <div className="card-clean p-4 space-y-3">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Management</h3>
               <div className="flex flex-col gap-2">
+                <button 
+                  onClick={async () => {
+                    setIsLoadingAdmin(true);
+                    try {
+                      const res = await fetch('/api/admin/sync-all-to-sheets', { method: 'POST' });
+                      const data = await res.json();
+                      if (res.ok) setMessage({ text: data.message, type: 'success' });
+                      else throw new Error(data.error);
+                    } catch (err: any) {
+                      setMessage({ text: err.message, type: 'error' });
+                    } finally {
+                      setIsLoadingAdmin(false);
+                      setTimeout(() => setMessage(null), 3000);
+                    }
+                  }}
+                  disabled={isLoadingAdmin || !appConfig.google_spreadsheet_id}
+                  className="w-full py-2 border border-seablue text-seablue rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/5 flex items-center justify-center gap-2 disabled:opacity-50"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isLoadingAdmin ? 'animate-spin' : ''}`} /> Sync All to Google Sheets
+                </button>
+
                 <button 
                   onClick={async () => {
                     if (!confirm("CRITICAL: This will permanently delete ALL sales reports from the app database. This cannot be undone. Are you sure?")) return;

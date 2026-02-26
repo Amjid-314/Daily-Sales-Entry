@@ -6,6 +6,48 @@ import { google } from "googleapis";
 
 const db = new Database("orders.db");
 
+const CATEGORIES = ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"];
+const SKUS = [
+  { id: "kg-10", name: "Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12 },
+  { id: "kg-20", name: "Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12 },
+  { id: "kg-50", name: "Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "kg-99", name: "Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12 },
+  { id: "kg-05kg", name: "0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0 },
+  { id: "kg-1kg", name: "1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0 },
+  { id: "kg-2kg", name: "2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0 },
+  { id: "ba-10", name: "Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12 },
+  { id: "ba-20", name: "Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12 },
+  { id: "ba-50", name: "Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "ba-99", name: "Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12 },
+  { id: "ba-1kg", name: "1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0 },
+  { id: "ba-23kg", name: "2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0 },
+  { id: "v-5kg", name: "5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0 },
+  { id: "v-20kg", name: "20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0 },
+  { id: "dwb-reg", name: "D Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "dwb-large", name: "D Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  { id: "dwb-long", name: "D Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  { id: "dwb-super", name: "D Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  { id: "dwb-new", name: "D New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  { id: "m-large", name: "M Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
+  { id: "m-classic", name: "M Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
+  { id: "m-regular", name: "M Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12 },
+  { id: "m-slim", name: "M Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12 },
+];
+
+function calculateAchievement(orderData: any) {
+  const totals: Record<string, number> = {};
+  CATEGORIES.forEach(cat => {
+    totals[cat] = SKUS
+      .filter(sku => sku.category === cat)
+      .reduce((sum, sku) => {
+        const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+        return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+      }, 0);
+  });
+  return totals;
+}
+
 // Initialize database
 db.exec(`
   CREATE TABLE IF NOT EXISTS drafts (
@@ -150,25 +192,128 @@ async function startServer() {
       });
       const sheets = google.sheets({ version: 'v4', auth });
 
+      // Ensure Sheets exist
+      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance"];
+      for (const title of sheetTitles) {
+        try {
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+              requests: [{ addSheet: { properties: { title } } }]
+            }
+          });
+        } catch (e) {}
+      }
+
+      const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
       const targetsData = typeof order.targets_data === 'string' ? JSON.parse(order.targets_data) : (order.targets_data || {});
+      const achievement = calculateAchievement(orderData);
       
-      const row = [
+      // 1. Append to Sales_Data
+      const salesRow = [
         order.date, order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
         order.total_shops, order.visited_shops, order.productive_shops,
-        targetsData["Kite Glow"] || 0, targetsData["Burq Action"] || 0, targetsData["Vero"] || 0, targetsData["DWB"] || 0, targetsData["Match"] || 0,
+        ...SKUS.map(sku => {
+          const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          return `${item.ctn}c, ${item.dzn}d, ${item.pks}p`;
+        }),
         order.submitted_at
       ];
 
+      const salesHeaders = [
+        'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
+        'Total Shops', 'Visited Shops', 'Productive Shops',
+        ...SKUS.map(sku => `${sku.name} (${sku.category})`),
+        'Submitted At'
+      ];
+
+      // Check if headers exist, if not add them
+      const salesData = await sheets.spreadsheets.values.get({ spreadsheetId, range: 'Sales_Data!A1:A1' });
+      if (!salesData.data.values || salesData.data.values.length === 0) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId,
+          range: 'Sales_Data!A1',
+          valueInputOption: 'USER_ENTERED',
+          requestBody: { values: [salesHeaders] }
+        });
+      }
+
       await sheets.spreadsheets.values.append({
         spreadsheetId,
-        range: 'Sheet1!A2',
+        range: 'Sales_Data!A2',
         valueInputOption: 'USER_ENTERED',
-        requestBody: { values: [row] },
+        requestBody: { values: [salesRow] },
       });
-      console.log(`Successfully appended order ${order.id} to Google Sheets`);
+
+      // 2. Refresh Targets_vs_Achievement & OB_Route_Performance
+      // For simplicity and accuracy, we trigger a full refresh of these summary sheets
+      await refreshSummarySheets(sheets, spreadsheetId);
+
+      console.log(`Successfully synced order ${order.id} to Google Sheets`);
     } catch (err) {
       console.error("Google Sheets Sync Error:", err);
     }
+  }
+
+  async function refreshSummarySheets(sheets: any, spreadsheetId: string) {
+    const orders = db.prepare("SELECT * FROM submitted_orders").all() as any[];
+    const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+
+    // --- Targets_vs_Achievement ---
+    const targetHeaders = ['Brand', 'Target (CTN)', 'Achievement (CTN)', 'Achievement %'];
+    const brandStats = CATEGORIES.map(cat => {
+      const target = obs.reduce((sum, ob) => {
+        const obTargets = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ?").get(ob.contact, cat) as any;
+        return sum + (obTargets ? obTargets.target_ctn : 0);
+      }, 0);
+
+      const ach = orders.reduce((sum, order) => {
+        const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
+        const orderAch = calculateAchievement(orderData);
+        return sum + (orderAch[cat] || 0);
+      }, 0);
+
+      return [cat, target.toFixed(2), ach.toFixed(2), target > 0 ? ((ach / target) * 100).toFixed(1) + '%' : '0%'];
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "Targets_vs_Achievement!A1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [targetHeaders, ...brandStats] },
+    });
+
+    // --- OB_Route_Performance ---
+    const performanceHeaders = [
+      'OB Name', 'Contact', 'Route', 'Total Shops', 'Visited', 'Productive', 'Visit %', 'Prod %',
+      ...CATEGORIES.map(cat => `${cat} Ach`),
+      'Total Ach', 'Total Target', 'Overall %'
+    ];
+
+    const performanceRows = orders.map(order => {
+      const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
+      const targetsData = typeof order.targets_data === 'string' ? JSON.parse(order.targets_data) : (order.targets_data || {});
+      const ach = calculateAchievement(orderData);
+      const totalAch = Object.values(ach).reduce((a, b) => a + b, 0);
+      const totalTarget = Object.values(targetsData).reduce((a: any, b: any) => a + b, 0);
+
+      return [
+        order.order_booker, order.ob_contact, order.route,
+        order.total_shops, order.visited_shops, order.productive_shops,
+        order.total_shops > 0 ? ((order.visited_shops / order.total_shops) * 100).toFixed(1) + '%' : '0%',
+        order.visited_shops > 0 ? ((order.productive_shops / order.visited_shops) * 100).toFixed(1) + '%' : '0%',
+        ...CATEGORIES.map(cat => ach[cat].toFixed(2)),
+        totalAch.toFixed(2), totalTarget.toFixed(2),
+        totalTarget > 0 ? ((totalAch / totalTarget) * 100).toFixed(1) + '%' : '0%'
+      ];
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "OB_Route_Performance!A1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [performanceHeaders, ...performanceRows] },
+    });
   }
 
   // Google OAuth Setup
@@ -414,7 +559,7 @@ async function startServer() {
 
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: "Sheet1!A1",
+        range: "Sales_Data!A1",
         valueInputOption: "RAW",
         requestBody: { values: [headers, ...rows] },
       });
@@ -744,25 +889,28 @@ async function startServer() {
       const dataRows = rows.slice(1);
 
       const team = dataRows.map(row => {
-        const getVal = (headerName: string) => {
-          const idx = headers.indexOf(headerName);
-          return idx > -1 ? row[idx] : null;
+        const getVal = (headerNames: string[]) => {
+          for (const name of headerNames) {
+            const idx = headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+            if (idx > -1 && row[idx] !== undefined) return row[idx];
+          }
+          return null;
         };
 
         return {
-          name: getVal('Name'),
-          contact: getVal('ID'),
-          town: getVal('Town'),
-          distributor: getVal('Distributor'),
-          tsm: getVal('TSM'),
-          total_shops: parseInt(getVal('Total Shops')) || 50,
-          routes: getVal('Routes') ? getVal('Routes').split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
+          name: getVal(['Name', 'name']),
+          contact: getVal(['ID', 'id', 'Contact', 'contact']),
+          town: getVal(['Town', 'town']),
+          distributor: getVal(['Distributor', 'distributor']),
+          tsm: getVal(['TSM', 'tsm']),
+          total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
+          routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
           targets: {
-            "Kite Glow": parseFloat(getVal('Kite Glow Target')) || 0,
-            "Burq Action": parseFloat(getVal('Burq Action Target')) || 0,
-            "Vero": parseFloat(getVal('Vero Target')) || 0,
-            "DWB": parseFloat(getVal('DWB Target')) || 0,
-            "Match": parseFloat(getVal('Match Target')) || 0
+            "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow'])) || 0,
+            "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action'])) || 0,
+            "Vero": parseFloat(getVal(['Vero Target', 'vero_target', 'vero'])) || 0,
+            "DWB": parseFloat(getVal(['DWB Target', 'dwb_target', 'dwb'])) || 0,
+            "Match": parseFloat(getVal(['Match Target', 'match_target', 'match'])) || 0
           }
         };
       }).filter(t => t.name && t.contact);
@@ -830,40 +978,49 @@ async function startServer() {
       });
       const sheets = google.sheets({ version: 'v4', auth });
 
-      const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all();
+      // Ensure Sheets exist
+      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance"];
+      for (const title of sheetTitles) {
+        try {
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+              requests: [{ addSheet: { properties: { title } } }]
+            }
+          });
+        } catch (e) {}
+      }
+
+      const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all() as any[];
       
-      const headers = [
+      const salesHeaders = [
         'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
-        'Total Shops', 'Visited Shops', 'Productive Shops', 
-        'Kite Glow Tgt', 'Burq Action Tgt', 'Vero Tgt', 'DWB Tgt', 'Match Tgt',
+        'Total Shops', 'Visited Shops', 'Productive Shops',
+        ...SKUS.map(sku => `${sku.name} (${sku.category})`),
         'Submitted At'
       ];
 
-      const rows = orders.map((h: any) => {
-        let targetsData = {};
-        try {
-          targetsData = typeof h.targets_data === 'string' ? JSON.parse(h.targets_data) : (h.targets_data || {});
-        } catch (e) {
-          targetsData = {};
-        }
+      const salesRows = orders.map((order: any) => {
+        const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
         return [
-          h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
-          h.total_shops, h.visited_shops, h.productive_shops,
-          (targetsData as any)["Kite Glow"] || 0,
-          (targetsData as any)["Burq Action"] || 0,
-          (targetsData as any)["Vero"] || 0,
-          (targetsData as any)["DWB"] || 0,
-          (targetsData as any)["Match"] || 0,
-          h.submitted_at
+          order.date, order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
+          order.total_shops, order.visited_shops, order.productive_shops,
+          ...SKUS.map(sku => {
+            const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+            return `${item.ctn}c, ${item.dzn}d, ${item.pks}p`;
+          }),
+          order.submitted_at
         ];
       });
 
       await sheets.spreadsheets.values.update({
         spreadsheetId,
-        range: "Sheet1!A1",
+        range: "Sales_Data!A1",
         valueInputOption: "USER_ENTERED",
-        requestBody: { values: [headers, ...rows] },
+        requestBody: { values: [salesHeaders, ...salesRows] },
       });
+
+      await refreshSummarySheets(sheets, spreadsheetId);
 
       res.json({ success: true, message: `Successfully synced ${orders.length} records to Google Sheets` });
     } catch (err: any) {
