@@ -15,23 +15,23 @@ const CATEGORIES = [
 ];
 const SKUS = [
   // Kite Glow
-  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12 },
-  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12 },
-  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12 },
-  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0 },
-  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0 },
-  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0 },
+  { id: "kg-10", name: "K Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12 },
+  { id: "kg-20", name: "K Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12 },
+  { id: "kg-50", name: "K Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "kg-99", name: "K Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12 },
+  { id: "kg-05kg", name: "K Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0 },
+  { id: "kg-1kg", name: "K Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0 },
+  { id: "kg-2kg", name: "K Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0 },
   // Burq Action
-  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12 },
-  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12 },
-  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12 },
-  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0 },
-  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0 },
+  { id: "ba-10", name: "B Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12 },
+  { id: "ba-20", name: "B Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12 },
+  { id: "ba-50", name: "B Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "ba-99", name: "B Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12 },
+  { id: "ba-1kg", name: "B Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0 },
+  { id: "ba-23kg", name: "B Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0 },
   // Vero
-  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0 },
-  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0 },
+  { id: "v-5kg", name: "V Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0 },
+  { id: "v-20kg", name: "V Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0 },
   // DWB
   { id: "dwb-reg", name: "D Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12 },
   { id: "dwb-large", name: "D Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
@@ -65,6 +65,16 @@ db.exec(`
     id TEXT PRIMARY KEY,
     data TEXT,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS stock_reports (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    date TEXT,
+    tsm TEXT,
+    town TEXT,
+    distributor TEXT,
+    stock_data TEXT,
+    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
   CREATE TABLE IF NOT EXISTS submitted_orders (
@@ -241,7 +251,7 @@ async function startServer() {
       const sheets = google.sheets({ version: 'v4', auth });
 
       // Ensure Sheets exist
-      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance"];
+      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report"];
       for (const title of sheetTitles) {
         try {
           await sheets.spreadsheets.batchUpdate({
@@ -355,6 +365,32 @@ async function startServer() {
       requestBody: { values: [targetHeaders, ...targetRows] },
     });
 
+    // --- SHEET 4: Stocks_Report ---
+    const stockHeaders = ['Date', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Submitted At'];
+    const stockReports = db.prepare("SELECT * FROM stock_reports ORDER BY date DESC, submitted_at DESC").all() as any[];
+    const stockRows = stockReports.map(report => {
+      const stockData = JSON.parse(report.stock_data || '{}');
+      return [
+        report.date,
+        report.tsm,
+        report.town,
+        report.distributor,
+        ...SKUS.map(sku => {
+          const item = stockData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const total = (Number(item.ctn || 0) * sku.unitsPerCarton + Number(item.dzn || 0) * sku.unitsPerDozen + Number(item.pks || 0)) / (sku.unitsPerCarton || 1);
+          return total.toFixed(2);
+        }),
+        report.submitted_at
+      ];
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "Stocks_Report!A1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [stockHeaders, ...stockRows] },
+    });
+
     // --- SHEET 3: OB_Route_Performance ---
     const performanceHeaders = [
       'OB Name', 'Contact', 'Route', 'Total Shops', 'Visited', 'Productive', 'Visit %', 'Prod %',
@@ -415,7 +451,7 @@ async function startServer() {
       const sheets = google.sheets({ version: 'v4', auth });
 
       // Ensure Sheets exist
-      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance"];
+      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report"];
       for (const title of sheetTitles) {
         try {
           await sheets.spreadsheets.batchUpdate({
@@ -840,6 +876,38 @@ async function startServer() {
     }
   });
 
+  app.post("/api/stocks", (req, res) => {
+    try {
+      const { date, tsm, town, distributor, stocks } = req.body;
+      if (!stocks) return res.status(400).json({ error: "Missing stock data" });
+
+      db.prepare(`
+        INSERT INTO stock_reports (date, tsm, town, distributor, stock_data)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(
+        date || new Date().toISOString().split('T')[0],
+        tsm || '',
+        town || '',
+        distributor || '',
+        JSON.stringify(stocks)
+      );
+
+      res.json({ success: true, message: "Stock report submitted successfully" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to submit stock report" });
+    }
+  });
+
+  app.get("/api/stocks", (req, res) => {
+    try {
+      const rows = db.prepare("SELECT * FROM stock_reports ORDER BY submitted_at DESC").all();
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch stock reports" });
+    }
+  });
+
   app.post("/api/submit", (req, res) => {
     try {
       const { data } = req.body;
@@ -1139,7 +1207,7 @@ async function startServer() {
       const sheets = google.sheets({ version: 'v4', auth });
 
       // Ensure Sheets exist
-      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance"];
+      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report"];
       for (const title of sheetTitles) {
         try {
           await sheets.spreadsheets.batchUpdate({
@@ -1187,7 +1255,7 @@ async function startServer() {
 
       await refreshSummarySheets(sheets, spreadsheetId);
 
-      res.json({ success: true, message: `Successfully synced ${orders.length} records to Google Sheets` });
+      res.json({ success: true, message: `Successfully synced ${orders.length} records and stock reports to Google Sheets` });
     } catch (err: any) {
       console.error("Bulk Sync Error:", err);
       let errorMessage = err.message;

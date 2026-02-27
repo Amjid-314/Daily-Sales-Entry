@@ -54,23 +54,28 @@ const WhatsAppIcon = () => (
 );
 
 const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void }) => (
-  <nav className="bg-white border-b border-slate-200 px-2 h-10 flex justify-around items-center sticky top-0 z-40 shadow-sm">
-    <button onClick={() => setView('entry')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
+  <nav className="bg-white border-b border-slate-200 px-2 h-10 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto">
+    <button onClick={() => setView('entry')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
       <ClipboardList className="w-4 h-4" />
       <span className="text-[7px] font-black uppercase tracking-tighter">Entry</span>
       {view === 'entry' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
-    <button onClick={() => setView('dashboard')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors ${view === 'dashboard' ? 'text-seablue' : 'text-slate-400'}`}>
+    <button onClick={() => setView('stocks')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'stocks' ? 'text-seablue' : 'text-slate-400'}`}>
+      <Store className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">Stocks</span>
+      {view === 'stocks' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
+    </button>
+    <button onClick={() => setView('dashboard')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'dashboard' ? 'text-seablue' : 'text-slate-400'}`}>
       <LayoutDashboard className="w-4 h-4" />
       <span className="text-[7px] font-black uppercase tracking-tighter">Stats</span>
       {view === 'dashboard' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
-    <button onClick={() => setView('history')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
+    <button onClick={() => setView('history')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
       <History className="w-4 h-4" />
       <span className="text-[7px] font-black uppercase tracking-tighter">History</span>
       {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
-    <button onClick={() => setView('admin')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
+    <button onClick={() => setView('admin')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
       <Settings className="w-4 h-4" />
       <span className="text-[7px] font-black uppercase tracking-tighter">Admin</span>
       {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
@@ -79,7 +84,7 @@ const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void })
 );
 
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin'>('entry');
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks'>('entry');
   const [history, setHistory] = useState<any[]>([]);
   const [historyFilters, setHistoryFilters] = useState({ ob: '', tsm: '', from: '', to: '' });
   const [historyPage, setHistoryPage] = useState(1);
@@ -148,6 +153,14 @@ export default function App() {
   const [lastSubmittedOrder, setLastSubmittedOrder] = useState<any | null>(null);
   const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [stockOrder, setStockOrder] = useState({
+    date: new Date().toISOString().split('T')[0],
+    tsm: '',
+    town: '',
+    distributor: '',
+    items: {} as Record<string, { ctn: number; dzn: number; pks: number }>
+  });
+  const [isSubmittingStocks, setIsSubmittingStocks] = useState(false);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
@@ -898,6 +911,10 @@ export default function App() {
       return prodRate < 0.6 || r.ach < 5; // Less than 60% productivity or low sales
     });
 
+    const zeroVisitRoutes = routeAnalysis.filter(r => r.shops.t > 0 && r.shops.v === 0).sort((a, b) => b.shops.t - a.shops.t);
+    const highVisitLowSales = routeAnalysis.filter(r => r.shops.v > 10 && r.ach < 2);
+    const highProdLowSales = routeAnalysis.filter(r => r.shops.p > 5 && r.ach < 1);
+
     const bottom10OBs = [...obAnalysis].sort((a, b) => a.totalAch - b.totalAch).slice(0, 10);
     const obRanking = [...obAnalysis].sort((a, b) => b.totalAch - a.totalAch);
 
@@ -1077,7 +1094,40 @@ export default function App() {
             </div>
 
             <div className="card-clean p-4 md:col-span-2">
-              <h3 className="text-sm font-bold mb-4 text-amber-600 uppercase">Low Sales Routes (Alert)</h3>
+              <h3 className="text-sm font-bold mb-4 text-rose-600 uppercase">Critical Alerts (Routes)</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {zeroVisitRoutes.slice(0, 4).map(route => (
+                  <div key={route.name} className="p-3 border border-red-100 bg-red-50/30 rounded-xl space-y-1">
+                    <div className="flex justify-between items-start">
+                      <div className="text-[10px] font-black text-slate-700 uppercase">{route.name}</div>
+                      <div className="px-2 py-0.5 bg-red-100 text-red-700 rounded text-[7px] font-bold uppercase">Zero Visits</div>
+                    </div>
+                    <div className="text-[9px] text-slate-500">Total Shops: <span className="font-bold">{route.shops.t}</span></div>
+                  </div>
+                ))}
+                {highVisitLowSales.slice(0, 4).map(route => (
+                  <div key={route.name} className="p-3 border border-amber-100 bg-amber-50/30 rounded-xl space-y-1">
+                    <div className="flex justify-between items-start">
+                      <div className="text-[10px] font-black text-slate-700 uppercase">{route.name}</div>
+                      <div className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[7px] font-bold uppercase">High Visit Low Sale</div>
+                    </div>
+                    <div className="text-[9px] text-slate-500">Visits: <span className="font-bold">{route.shops.v}</span> | Ach: <span className="font-bold">{route.ach.toFixed(1)}</span></div>
+                  </div>
+                ))}
+                {highProdLowSales.slice(0, 4).map(route => (
+                  <div key={route.name} className="p-3 border border-orange-100 bg-orange-50/30 rounded-xl space-y-1">
+                    <div className="flex justify-between items-start">
+                      <div className="text-[10px] font-black text-slate-700 uppercase">{route.name}</div>
+                      <div className="px-2 py-0.5 bg-orange-100 text-orange-700 rounded text-[7px] font-bold uppercase">High Prod Low Sale</div>
+                    </div>
+                    <div className="text-[9px] text-slate-500">Prod: <span className="font-bold">{route.shops.p}</span> | Ach: <span className="font-bold">{route.ach.toFixed(1)}</span></div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="card-clean p-4 md:col-span-2">
+              <h3 className="text-sm font-bold mb-4 text-amber-600 uppercase">Low Sales Routes</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 {underperformingRoutes.slice(0, 6).map(route => (
                   <div key={route.name} className="p-3 border border-amber-100 bg-amber-50/30 rounded-xl space-y-2">
@@ -1148,9 +1198,13 @@ export default function App() {
                     <div className="text-[10px] font-black text-seablue">
                       {((Object.values(h.order_data || {}) as any[]).reduce((sum: number, item: any) => {
                         return sum + (Number(item.ctn) || 0) + (Number(item.dzn) || 0) / 12 + (Number(item.pks) || 0) / 24;
-                      }, 0) as number).toFixed(1)}
+                      }, 0)).toFixed(1)}
                     </div>
-                    <div className="text-[7px] text-slate-400 uppercase font-bold">Total Ach</div>
+                    <div className="text-[7px] text-slate-400 uppercase font-bold">
+                      {h.latitude ? `${h.latitude.toFixed(4)}, ${h.longitude.toFixed(4)}` : 'No Location'}
+                      <br />
+                      {h.submitted_at ? new Date(h.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -1567,7 +1621,7 @@ export default function App() {
                   disabled={isLoadingAdmin || !appConfig.google_spreadsheet_id}
                   className="w-full py-2 border border-seablue text-seablue rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/5 flex items-center justify-center gap-2 disabled:opacity-50"
                 >
-                  <RefreshCw className={`w-3 h-3 ${isLoadingAdmin ? 'animate-spin' : ''}`} /> Sync All to Google Sheets
+                  <RefreshCw className={`w-3 h-3 ${isLoadingAdmin ? 'animate-spin' : ''}`} /> Sync All (Sales & Stocks) to Sheets
                 </button>
 
                 <button 
@@ -1698,6 +1752,208 @@ export default function App() {
     );
   }
 
+  if (view === 'stocks') {
+    const tsmList = Array.from(new Set(obAssignments.map(ob => ob.tsm).filter(Boolean)));
+    const towns = Array.from(new Set(obAssignments.map(ob => ob.town).filter(Boolean)));
+    const distributors = Array.from(new Set(obAssignments.map(ob => ob.distributor).filter(Boolean)));
+
+    const handleSubmitStocks = async () => {
+      if (!stockOrder.tsm || !stockOrder.town || !stockOrder.distributor) {
+        setMessage({ text: 'Please fill all TSM, Town and Distributor', type: 'error' });
+        return;
+      }
+      setIsSubmittingStocks(true);
+      try {
+        const response = await fetch('/api/stocks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            date: stockOrder.date,
+            tsm: stockOrder.tsm,
+            town: stockOrder.town,
+            distributor: stockOrder.distributor,
+            stocks: stockOrder.items
+          })
+        });
+        if (response.ok) {
+          setMessage({ text: 'Stock Report Submitted!', type: 'success' });
+          setStockOrder(prev => ({ ...prev, items: {} }));
+        } else {
+          setMessage({ text: 'Failed to submit stocks', type: 'error' });
+        }
+      } catch (e) {
+        setMessage({ text: 'Error submitting stocks', type: 'error' });
+      } finally {
+        setIsSubmittingStocks(false);
+        setTimeout(() => setMessage(null), 3000);
+      }
+    };
+
+    return (
+      <div className="min-h-screen bg-slate-50 pb-20">
+        <MainNav view={view} setView={setView} />
+        <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
+          <div className="max-w-4xl mx-auto flex items-center gap-3">
+            <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
+              <Store className="w-5 h-5" />
+            </div>
+            <h1 className="text-lg font-bold text-seablue">Stock Report (TSM)</h1>
+          </div>
+        </header>
+
+        <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+          <div className="card-clean p-4 space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Date</label>
+                <input 
+                  type="date" 
+                  value={stockOrder.date} 
+                  onChange={e => setStockOrder(prev => ({ ...prev, date: e.target.value }))}
+                  className="input-clean"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">TSM Name</label>
+                <select 
+                  value={stockOrder.tsm} 
+                  onChange={e => setStockOrder(prev => ({ ...prev, tsm: e.target.value }))}
+                  className="input-clean"
+                >
+                  <option value="">Select TSM</option>
+                  {tsmList.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Town</label>
+                <select 
+                  value={stockOrder.town} 
+                  onChange={e => setStockOrder(prev => ({ ...prev, town: e.target.value }))}
+                  className="input-clean"
+                >
+                  <option value="">Select Town</option>
+                  {towns.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold text-slate-400 uppercase">Distributor</label>
+                <select 
+                  value={stockOrder.distributor} 
+                  onChange={e => setStockOrder(prev => ({ ...prev, distributor: e.target.value }))}
+                  className="input-clean"
+                >
+                  <option value="">Select Distributor</option>
+                  {distributors.map(d => <option key={d} value={d}>{d}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            {CATEGORIES.map(cat => (
+              <div key={cat} className="card-clean overflow-hidden">
+                <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex justify-between items-center">
+                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider">{cat}</h3>
+                </div>
+                <div className="divide-y divide-slate-50">
+                  {SKUS.filter(s => s.category === cat).map(sku => (
+                    <div key={sku.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                      <div className="flex-1">
+                        <div className="text-sm font-bold text-slate-700">{sku.name}</div>
+                        <div className="text-[10px] text-slate-400 uppercase font-bold">Stock at Distributor</div>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[8px] font-bold text-slate-400 uppercase">CTN</span>
+                          <input 
+                            type="number" 
+                            placeholder="0"
+                            value={stockOrder.items[sku.id]?.ctn || ''}
+                            onChange={e => {
+                              const val = parseInt(e.target.value) || 0;
+                              setStockOrder(prev => ({
+                                ...prev,
+                                items: {
+                                  ...prev.items,
+                                  [sku.id]: { ...(prev.items[sku.id] || { ctn: 0, dzn: 0, pks: 0 }), ctn: val }
+                                }
+                              }));
+                            }}
+                            className="w-16 text-center py-2 border border-slate-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all"
+                          />
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[8px] font-bold text-slate-400 uppercase">DZN</span>
+                          <input 
+                            type="number" 
+                            placeholder="0"
+                            value={stockOrder.items[sku.id]?.dzn || ''}
+                            onChange={e => {
+                              const val = parseInt(e.target.value) || 0;
+                              setStockOrder(prev => ({
+                                ...prev,
+                                items: {
+                                  ...prev.items,
+                                  [sku.id]: { ...(prev.items[sku.id] || { ctn: 0, dzn: 0, pks: 0 }), dzn: val }
+                                }
+                              }));
+                            }}
+                            className="w-16 text-center py-2 border border-slate-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all"
+                          />
+                        </div>
+                        <div className="flex flex-col items-center gap-1">
+                          <span className="text-[8px] font-bold text-slate-400 uppercase">PKS</span>
+                          <input 
+                            type="number" 
+                            placeholder="0"
+                            value={stockOrder.items[sku.id]?.pks || ''}
+                            onChange={e => {
+                              const val = parseInt(e.target.value) || 0;
+                              setStockOrder(prev => ({
+                                ...prev,
+                                items: {
+                                  ...prev.items,
+                                  [sku.id]: { ...(prev.items[sku.id] || { ctn: 0, dzn: 0, pks: 0 }), pks: val }
+                                }
+                              }));
+                            }}
+                            className="w-16 text-center py-2 border border-slate-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all"
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+
+          <button 
+            onClick={handleSubmitStocks}
+            disabled={isSubmittingStocks}
+            className="w-full btn-seablue py-4 rounded-2xl shadow-lg shadow-blue-200 flex items-center justify-center gap-3 text-base font-black uppercase tracking-widest"
+          >
+            {isSubmittingStocks ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
+            Submit Stock Report
+          </button>
+        </main>
+
+        <AnimatePresence>
+          {message && (
+            <motion.div 
+              initial={{ opacity: 0, y: 50 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 50 }}
+              className={`fixed bottom-24 left-4 right-4 p-4 rounded-2xl shadow-2xl flex items-center gap-3 z-50 ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}
+            >
+              {message.type === 'success' ? <CheckCircle2 className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
+              <span className="text-sm font-bold">{message.text}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
+    );
+  }
   if (view === 'history') {
     if (isLoadingHistory) {
       return (
@@ -2071,9 +2327,9 @@ export default function App() {
         {/* Never Visited Indicator */}
         {order.totalShops > 0 && (
           <div className="flex justify-center">
-            <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm border ${Math.max(0, order.totalShops - order.visitedShops) > 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-              <EyeOff className="w-2.5 h-2.5" />
-              Never Visited Shops: <span className="text-xs">{Math.max(0, order.totalShops - order.visitedShops)}</span>
+            <div className={`px-2 py-0.5 rounded-full text-[7px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-sm border ${Math.max(0, order.totalShops - order.visitedShops) > 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+              <EyeOff className="w-2 h-2" />
+              Never Visited: <span className="text-[10px]">{Math.max(0, order.totalShops - order.visitedShops)}</span>
             </div>
           </div>
         )}
