@@ -87,12 +87,12 @@ db.exec(`
     accuracy REAL,
     submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
-
-  // Add columns if they don't exist
-  try { db.exec("ALTER TABLE submitted_orders ADD COLUMN latitude REAL"); } catch (e) {}
-  try { db.exec("ALTER TABLE submitted_orders ADD COLUMN longitude REAL"); } catch (e) {}
-  try { db.exec("ALTER TABLE submitted_orders ADD COLUMN accuracy REAL"); } catch (e) {}
 `);
+
+// Add columns if they don't exist
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN latitude REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN longitude REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN accuracy REAL"); } catch (e) {}
 
 async function startServer() {
   const app = express();
