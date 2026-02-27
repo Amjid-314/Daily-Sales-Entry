@@ -1,5 +1,5 @@
 {
-  "name": "OB Sales",
-  "description": "Professional Secondary Sales Management System with Google Sheets & Bulk Target Upload",
+  "name": "OB Sales (Execution Only)",
+  "description": "Secondary Sales (Execution)",
   "requestFramePermissions": []
 }

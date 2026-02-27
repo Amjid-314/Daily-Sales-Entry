@@ -6,28 +6,39 @@ import { google } from "googleapis";
 
 const db = new Database("orders.db");
 
-const CATEGORIES = ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"];
+const CATEGORIES = [
+  "Kite Glow",
+  "Burq Action",
+  "Vero",
+  "DWB",
+  "Match"
+];
 const SKUS = [
-  { id: "kg-10", name: "Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12 },
-  { id: "kg-20", name: "Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12 },
-  { id: "kg-50", name: "Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "kg-99", name: "Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12 },
-  { id: "kg-05kg", name: "0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0 },
-  { id: "kg-1kg", name: "1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0 },
-  { id: "kg-2kg", name: "2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0 },
-  { id: "ba-10", name: "Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12 },
-  { id: "ba-20", name: "Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12 },
-  { id: "ba-50", name: "Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "ba-99", name: "Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12 },
-  { id: "ba-1kg", name: "1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0 },
-  { id: "ba-23kg", name: "2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0 },
-  { id: "v-5kg", name: "5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0 },
-  { id: "v-20kg", name: "20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0 },
+  // Kite Glow
+  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12 },
+  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12 },
+  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12 },
+  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0 },
+  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0 },
+  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0 },
+  // Burq Action
+  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12 },
+  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12 },
+  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12 },
+  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0 },
+  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0 },
+  // Vero
+  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0 },
+  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0 },
+  // DWB
   { id: "dwb-reg", name: "D Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12 },
   { id: "dwb-large", name: "D Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
   { id: "dwb-long", name: "D Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
   { id: "dwb-super", name: "D Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
   { id: "dwb-new", name: "D New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  // Match
   { id: "m-large", name: "M Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
   { id: "m-classic", name: "M Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
   { id: "m-regular", name: "M Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12 },
@@ -71,8 +82,16 @@ db.exec(`
     category_productive_data TEXT,
     order_data TEXT,
     targets_data TEXT,
+    latitude REAL,
+    longitude REAL,
+    accuracy REAL,
     submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
+
+  // Add columns if they don't exist
+  try { db.exec("ALTER TABLE submitted_orders ADD COLUMN latitude REAL"); } catch (e) {}
+  try { db.exec("ALTER TABLE submitted_orders ADD COLUMN longitude REAL"); } catch (e) {}
+  try { db.exec("ALTER TABLE submitted_orders ADD COLUMN accuracy REAL"); } catch (e) {}
 `);
 
 async function startServer() {
@@ -126,11 +145,14 @@ async function startServer() {
   const subCols = [
     "date", "tsm", "town", "distributor", "order_booker", "ob_contact", "route", 
     "total_shops", "visited_shops", "productive_shops", 
-    "category_productive_data", "order_data", "targets_data"
+    "category_productive_data", "order_data", "targets_data",
+    "latitude", "longitude", "accuracy"
   ];
   subCols.forEach(col => {
     try { 
-      const type = (col.includes('shops')) ? 'INTEGER DEFAULT 0' : 'TEXT';
+      let type = 'TEXT';
+      if (col.includes('shops')) type = 'INTEGER DEFAULT 0';
+      if (col === 'latitude' || col === 'longitude' || col === 'accuracy') type = 'REAL';
       db.exec(`ALTER TABLE submitted_orders ADD COLUMN ${col} ${type}`); 
     } catch (e) {}
   });
@@ -139,7 +161,24 @@ async function startServer() {
   try {
     db.exec("UPDATE ob_assignments SET total_shops = 50 WHERE total_shops IS NULL OR total_shops = 0");
     db.exec("UPDATE submitted_orders SET total_shops = 50 WHERE total_shops IS NULL OR total_shops = 0");
-  } catch (e) {}
+    
+    // Cleanup duplicates in ob_assignments
+    db.exec(`
+      DELETE FROM ob_assignments 
+      WHERE id NOT IN (
+        SELECT MIN(id) 
+        FROM ob_assignments 
+        GROUP BY contact
+      )
+    `);
+
+    // Delete dummy entries for Usama as requested
+    db.prepare("DELETE FROM submitted_orders WHERE order_booker LIKE ?").run("%Usama%");
+    
+    console.log("Database cleanup completed: Duplicates removed and dummy entries deleted.");
+  } catch (e) {
+    console.error("Cleanup error:", e);
+  }
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS brand_targets (
@@ -149,6 +188,15 @@ async function startServer() {
       target_ctn REAL DEFAULT 0,
       UNIQUE(ob_contact, brand_name)
     );
+
+    -- Migration: Group old categories into "Washing Powder"
+    INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn)
+    SELECT ob_contact, 'Washing Powder', SUM(target_ctn)
+    FROM brand_targets
+    WHERE brand_name IN ('Kite Glow', 'Burq Action', 'Vero')
+    GROUP BY ob_contact;
+
+    DELETE FROM brand_targets WHERE brand_name IN ('Kite Glow', 'Burq Action', 'Vero');
 
     CREATE TABLE IF NOT EXISTS app_config (
       key TEXT PRIMARY KEY,
@@ -215,16 +263,21 @@ async function startServer() {
         order.total_shops, order.visited_shops, order.productive_shops,
         ...SKUS.map(sku => {
           const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-          return `${item.ctn}c, ${item.dzn}d, ${item.pks}p`;
+          const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          const total = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+          return total;
         }),
-        order.submitted_at
+        order.submitted_at,
+        order.latitude || '',
+        order.longitude || '',
+        order.accuracy || ''
       ];
 
       const salesHeaders = [
         'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
         'Total Shops', 'Visited Shops', 'Productive Shops',
         ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-        'Submitted At'
+        'Submitted At', 'Latitude', 'Longitude', 'Accuracy'
       ];
 
       // Check if headers exist, if not add them
@@ -259,31 +312,50 @@ async function startServer() {
     const orders = db.prepare("SELECT * FROM submitted_orders").all() as any[];
     const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
 
-    // --- Targets_vs_Achievement ---
-    const targetHeaders = ['Brand', 'Target (CTN)', 'Achievement (CTN)', 'Achievement %'];
-    const brandStats = CATEGORIES.map(cat => {
-      const target = obs.reduce((sum, ob) => {
-        const obTargets = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ?").get(ob.contact, cat) as any;
-        return sum + (obTargets ? obTargets.target_ctn : 0);
-      }, 0);
+    // --- SHEET 2: Targets_vs_Achievement (Town, OB, Brand Wise) ---
+    const targetHeaders = ['Town', 'OB Name', 'OB Contact', 'Brand', 'Target (CTN)', 'Achievement (CTN)', 'Achievement %'];
+    const targetRows: any[] = [];
 
-      const ach = orders.reduce((sum, order) => {
-        const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
-        const orderAch = calculateAchievement(orderData);
-        return sum + (orderAch[cat] || 0);
-      }, 0);
-
-      return [cat, target.toFixed(2), ach.toFixed(2), target > 0 ? ((ach / target) * 100).toFixed(1) + '%' : '0%'];
+    // Pre-calculate achievements per OB and Brand for efficiency
+    const achievementMap: Record<string, Record<string, number>> = {};
+    orders.forEach(order => {
+      const obContact = order.ob_contact;
+      if (!achievementMap[obContact]) achievementMap[obContact] = {};
+      
+      const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
+      const orderAch = calculateAchievement(orderData);
+      
+      CATEGORIES.forEach(cat => {
+        achievementMap[obContact][cat] = (achievementMap[obContact][cat] || 0) + (orderAch[cat] || 0);
+      });
     });
+
+    for (const ob of obs) {
+      for (const cat of CATEGORIES) {
+        const obTargets = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ?").get(ob.contact, cat) as any;
+        const target = obTargets ? obTargets.target_ctn : 0;
+        const ach = achievementMap[ob.contact]?.[cat] || 0;
+
+        targetRows.push([
+          ob.town || '',
+          ob.name || '',
+          ob.contact || '',
+          cat,
+          target.toFixed(2),
+          ach.toFixed(2),
+          target > 0 ? ((ach / target) * 100).toFixed(1) + '%' : '0%'
+        ]);
+      }
+    }
 
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: "Targets_vs_Achievement!A1",
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: [targetHeaders, ...brandStats] },
+      requestBody: { values: [targetHeaders, ...targetRows] },
     });
 
-    // --- OB_Route_Performance ---
+    // --- SHEET 3: OB_Route_Performance ---
     const performanceHeaders = [
       'OB Name', 'Contact', 'Route', 'Total Shops', 'Visited', 'Productive', 'Visit %', 'Prod %',
       ...CATEGORIES.map(cat => `${cat} Ach`),
@@ -302,9 +374,9 @@ async function startServer() {
         order.total_shops, order.visited_shops, order.productive_shops,
         order.total_shops > 0 ? ((order.visited_shops / order.total_shops) * 100).toFixed(1) + '%' : '0%',
         order.visited_shops > 0 ? ((order.productive_shops / order.visited_shops) * 100).toFixed(1) + '%' : '0%',
-        ...CATEGORIES.map(cat => ach[cat].toFixed(2)),
-        totalAch.toFixed(2), totalTarget.toFixed(2),
-        totalTarget > 0 ? ((totalAch / totalTarget) * 100).toFixed(1) + '%' : '0%'
+        ...CATEGORIES.map(cat => (ach[cat] as number).toFixed(2)),
+        (totalAch as number).toFixed(2), (totalTarget as number).toFixed(2),
+        (totalTarget as number) > 0 ? (((totalAch as number) / (totalTarget as number)) * 100).toFixed(1) + '%' : '0%'
       ];
     });
 
@@ -314,6 +386,86 @@ async function startServer() {
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [performanceHeaders, ...performanceRows] },
     });
+  }
+
+  async function syncAllToSheets() {
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      
+      let spreadsheetId = config.google_spreadsheet_id;
+      let clientEmail = config.google_service_account_email;
+      let privateKeyRaw = config.google_private_key;
+
+      try {
+        const parsed = JSON.parse(privateKeyRaw);
+        if (parsed.private_key) privateKeyRaw = parsed.private_key;
+        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+      } catch (e) {}
+
+      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+
+      if (!spreadsheetId || !clientEmail || !privateKey) return;
+
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets']
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      // Ensure Sheets exist
+      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance"];
+      for (const title of sheetTitles) {
+        try {
+          await sheets.spreadsheets.batchUpdate({
+            spreadsheetId,
+            requestBody: {
+              requests: [{ addSheet: { properties: { title } } }]
+            }
+          });
+        } catch (e) {}
+      }
+
+      const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all() as any[];
+      
+      // --- SHEET 1: Sales_Data (SKU Wise) ---
+      const salesHeaders = [
+        'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
+        'Total Shops', 'Visited Shops', 'Productive Shops',
+        ...SKUS.map(sku => `${sku.name} (${sku.category})`),
+        'Submitted At', 'Latitude', 'Longitude', 'Accuracy'
+      ];
+
+      const salesRows = orders.map((order: any) => {
+        const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
+        return [
+          order.date, order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
+          order.total_shops, order.visited_shops, order.productive_shops,
+          ...SKUS.map(sku => {
+            const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+            const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+            const total = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+            return total;
+          }),
+          order.submitted_at,
+          order.latitude || '',
+          order.longitude || '',
+          order.accuracy || ''
+        ];
+      });
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "Sales_Data!A1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [salesHeaders, ...salesRows] },
+      });
+
+      await refreshSummarySheets(sheets, spreadsheetId);
+    } catch (err) {
+      console.error("Global Sync Error:", err);
+    }
   }
 
   // Google OAuth Setup
@@ -538,21 +690,22 @@ async function startServer() {
       // Prepare headers
       const headers = [
         'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
-        'Total Shops', 'Visited Shops', 'Productive Shops', 
-        'Kite Glow Tgt', 'Burq Action Tgt', 'Vero Tgt', 'DWB Tgt', 'Match Tgt',
+        'Total Shops', 'Visited Shops', 'Productive Shops',
+        ...SKUS.map(sku => `${sku.name} (${sku.category})`),
         'Submitted At'
       ];
 
       const rows = orders.map((h: any) => {
-        const targetsData = typeof h.targets_data === 'string' ? JSON.parse(h.targets_data) : (h.targets_data || {});
+        const orderData = typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {});
         return [
           h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
           h.total_shops, h.visited_shops, h.productive_shops,
-          targetsData["Kite Glow"] || 0,
-          targetsData["Burq Action"] || 0,
-          targetsData["Vero"] || 0,
-          targetsData["DWB"] || 0,
-          targetsData["Match"] || 0,
+          ...SKUS.map(sku => {
+            const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+            const totalPacks = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+            const total = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+            return total.toFixed(3);
+          }),
           h.submitted_at
         ];
       });
@@ -560,9 +713,11 @@ async function startServer() {
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: "Sales_Data!A1",
-        valueInputOption: "RAW",
+        valueInputOption: "USER_ENTERED",
         requestBody: { values: [headers, ...rows] },
       });
+
+      await refreshSummarySheets(sheets, spreadsheetId);
 
       res.json({ success: true, spreadsheetId });
     } catch (err) {
@@ -693,16 +848,18 @@ async function startServer() {
       const { 
         date, tsm, town, distributor, orderBooker, obContact, route, 
         totalShops, visitedShops, productiveShops, 
-        categoryProductiveShops, items, targets 
+        categoryProductiveShops, items, targets,
+        latitude, longitude, accuracy
       } = data;
       
       const info = db.prepare(`
         INSERT INTO submitted_orders (
           date, tsm, town, distributor, order_booker, ob_contact, route, 
           total_shops, visited_shops, productive_shops, 
-          category_productive_data, order_data, targets_data
+          category_productive_data, order_data, targets_data,
+          latitude, longitude, accuracy
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         date || new Date().toISOString().split('T')[0], 
         tsm || '', 
@@ -716,7 +873,10 @@ async function startServer() {
         productiveShops || 0, 
         JSON.stringify(categoryProductiveShops || {}), 
         JSON.stringify(items || {}), 
-        JSON.stringify(targets || {})
+        JSON.stringify(targets || {}),
+        latitude || null,
+        longitude || null,
+        accuracy || null
       );
 
       // Async sync to Google Sheets
@@ -997,7 +1157,7 @@ async function startServer() {
         'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
         'Total Shops', 'Visited Shops', 'Productive Shops',
         ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-        'Submitted At'
+        'Submitted At', 'Latitude', 'Longitude', 'Accuracy'
       ];
 
       const salesRows = orders.map((order: any) => {
@@ -1007,9 +1167,14 @@ async function startServer() {
           order.total_shops, order.visited_shops, order.productive_shops,
           ...SKUS.map(sku => {
             const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-            return `${item.ctn}c, ${item.dzn}d, ${item.pks}p`;
+            const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+            const total = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+            return total;
           }),
-          order.submitted_at
+          order.submitted_at,
+          order.latitude || '',
+          order.longitude || '',
+          order.accuracy || ''
         ];
       });
 

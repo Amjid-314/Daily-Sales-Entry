@@ -95,25 +95,25 @@ export const CATEGORIES = [
 
 export const SKUS: SKU[] = [
   // Kite Glow
-  { id: "kg-10", name: "Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12 },
-  { id: "kg-20", name: "Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12 },
-  { id: "kg-50", name: "Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "kg-99", name: "Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12 },
-  { id: "kg-05kg", name: "0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0 },
-  { id: "kg-1kg", name: "1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0 },
-  { id: "kg-2kg", name: "2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0 },
+  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12 },
+  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12 },
+  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12 },
+  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0 },
+  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0 },
+  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0 },
 
   // Burq Action
-  { id: "ba-10", name: "Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12 },
-  { id: "ba-20", name: "Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12 },
-  { id: "ba-50", name: "Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "ba-99", name: "Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12 },
-  { id: "ba-1kg", name: "1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0 },
-  { id: "ba-23kg", name: "2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0 },
+  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12 },
+  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12 },
+  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12 },
+  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12 },
+  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0 },
+  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0 },
 
   // Vero
-  { id: "v-5kg", name: "5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0 },
-  { id: "v-20kg", name: "20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0 },
+  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0 },
+  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0 },
 
   // DWB
   { id: "dwb-reg", name: "D Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12 },

@@ -105,6 +105,7 @@ export default function App() {
   const [obTargetsEdit, setObTargetsEdit] = useState<Record<string, number>>({});
   const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; spreadsheetId: string | null }>({ connected: false, spreadsheetId: null });
   const [isSyncing, setIsSyncing] = useState(false);
+  const [isGoogleConfigLocked, setIsGoogleConfigLocked] = useState(true);
 
   const [order, setOrder] = useState<OrderState>(() => {
     const defaultState: OrderState = {
@@ -145,8 +146,26 @@ export default function App() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isConfirming, setIsConfirming] = useState(false);
   const [lastSubmittedOrder, setLastSubmittedOrder] = useState<any | null>(null);
+  const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  useEffect(() => {
+    if ("geolocation" in navigator) {
+      navigator.geolocation.getCurrentPosition(
+        (position) => {
+          setLocation({
+            latitude: position.coords.latitude,
+            longitude: position.coords.longitude,
+            accuracy: position.coords.accuracy
+          });
+        },
+        (error) => {
+          console.error("Error getting location:", error);
+        }
+      );
+    }
+  }, []);
 
   const focusableIds = useMemo(() => {
     const ids: string[] = [];
@@ -278,11 +297,34 @@ export default function App() {
   const confirmSubmit = async () => {
     setIsConfirming(false);
     setIsSubmitting(true);
+    
+    let currentLoc = location;
+    if ("geolocation" in navigator) {
+      try {
+        const pos = await new Promise<GeolocationPosition>((resolve, reject) => {
+          navigator.geolocation.getCurrentPosition(resolve, reject, { timeout: 5000 });
+        });
+        currentLoc = {
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: pos.coords.accuracy
+        };
+        setLocation(currentLoc);
+      } catch (e) {}
+    }
+
     try {
       const response = await fetch('/api/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ data: order })
+        body: JSON.stringify({ 
+          data: { 
+            ...order,
+            latitude: currentLoc?.latitude,
+            longitude: currentLoc?.longitude,
+            accuracy: currentLoc?.accuracy
+          } 
+        })
       });
       if (response.ok) {
         setLastSubmittedOrder({ ...order });
@@ -551,9 +593,10 @@ export default function App() {
             total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops']) || '50') || 50,
             routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
             targets: {
-              "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow'])) || 0,
-              "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action'])) || 0,
-              "Vero": parseFloat(getVal(['Vero Target', 'vero_target', 'vero'])) || 0,
+              "Washing Powder": parseFloat(getVal(['Washing Powder Target', 'washing_powder_target', 'washing powder', 'wp target'])) || 
+                                ((parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow'])) || 0) + 
+                                 (parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action'])) || 0) + 
+                                 (parseFloat(getVal(['Vero Target', 'vero_target', 'vero'])) || 0)),
               "DWB": parseFloat(getVal(['DWB Target', 'dwb_target', 'dwb'])) || 0,
               "Match": parseFloat(getVal(['Match Target', 'match_target', 'match'])) || 0
             }
@@ -747,7 +790,8 @@ export default function App() {
       name: cat,
       Target: globalTargets[cat] || 0,
       Achievement: globalToday[cat] || 0,
-      MTD: globalMtd[cat] || 0
+      MTD: globalMtd[cat] || 0,
+      AchPercent: globalTargets[cat] > 0 ? ((globalMtd[cat] / globalTargets[cat]) * 100).toFixed(1) : 0
     }));
 
     // TSM Sales Analysis
@@ -838,6 +882,25 @@ export default function App() {
       return acc;
     }, []).sort((a, b) => b.ach - a.ach);
 
+    // Performance Analysis
+    const slowOBs = obAnalysis.filter(ob => {
+      const achPercent = ob.target > 0 ? (ob.totalAch / ob.target) * 100 : 0;
+      return achPercent < timeGone.percentage;
+    }).sort((a, b) => (a.totalAch / (a.target || 1)) - (b.totalAch / (b.target || 1)));
+
+    const topOBs = obAnalysis.filter(ob => {
+      const achPercent = ob.target > 0 ? (ob.totalAch / ob.target) * 100 : 0;
+      return achPercent >= timeGone.percentage;
+    }).sort((a, b) => (b.totalAch / (b.target || 1)) - (a.totalAch / (a.target || 1)));
+
+    const underperformingRoutes = routeAnalysis.filter(r => {
+      const prodRate = r.shops.v > 0 ? (r.shops.p / r.shops.v) : 0;
+      return prodRate < 0.6 || r.ach < 5; // Less than 60% productivity or low sales
+    });
+
+    const bottom10OBs = [...obAnalysis].sort((a, b) => a.totalAch - b.totalAch).slice(0, 10);
+    const obRanking = [...obAnalysis].sort((a, b) => b.totalAch - a.totalAch);
+
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
         <MainNav view={view} setView={setView} />
@@ -893,23 +956,24 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="card-clean p-4 bg-seablue text-white shadow-blue-200 shadow-lg">
               <div className="text-[10px] uppercase font-bold text-white/60">Today Sales</div>
               <div className="text-2xl font-black">{(Object.values(globalToday) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(1)}</div>
+              <div className="text-[8px] font-bold mt-1 text-white/40 uppercase">Cartons</div>
             </div>
             <div className="card-clean p-4 bg-emerald-600 text-white shadow-emerald-200 shadow-lg">
               <div className="text-[10px] uppercase font-bold text-white/60">MTD Sales</div>
               <div className="text-2xl font-black">{(Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(1)}</div>
+              <div className="text-[8px] font-bold mt-1 text-white/40 uppercase">Cartons</div>
             </div>
             <div className="card-clean p-4 bg-white border border-slate-100">
-              <div className="text-[10px] uppercase font-bold text-slate-400">Monthly Target</div>
-              <div className="text-2xl font-black text-seablue">
-                {obAssignments.reduce((sum, ob) => sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0), 0).toFixed(1)}
-              </div>
+              <div className="text-[10px] uppercase font-bold text-slate-400">Time Gone</div>
+              <div className="text-2xl font-black text-amber-500">{timeGone.percentage.toFixed(0)}%</div>
+              <div className="text-[8px] font-bold mt-1 text-slate-400 uppercase">{timeGone.passed}/{timeGone.total} Working Days</div>
             </div>
             <div className="card-clean p-4 bg-white border border-slate-100">
-              <div className="text-[10px] uppercase font-bold text-slate-400">Achievement %</div>
+              <div className="text-[10px] uppercase font-bold text-slate-400">Overall Ach %</div>
               <div className="text-2xl font-black text-emerald-600">
                 {(() => {
                   const ach = (Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0);
@@ -917,27 +981,157 @@ export default function App() {
                   return tgt > 0 ? ((ach / tgt) * 100).toFixed(0) : 0;
                 })()}%
               </div>
+              <div className="text-[8px] font-bold mt-1 text-slate-400 uppercase">vs Monthly Target</div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="card-clean p-4">
+              <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Brand Wise Achievement</h3>
+              <div className="h-[300px]">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chartData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" fontSize={10} axisLine={false} tickLine={false} />
+                    <YAxis fontSize={10} axisLine={false} tickLine={false} />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                      cursor={{ fill: '#f8fafc' }}
+                    />
+                    <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ paddingBottom: '20px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
+                    <Bar dataKey="Target" name="Target" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="MTD" name="MTD Ach" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+
+            <div className="card-clean p-4">
+              <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Brand Performance %</h3>
+              <div className="space-y-4">
+                {chartData.map(d => (
+                  <div key={d.name} className="space-y-1">
+                    <div className="flex justify-between text-[10px] font-bold">
+                      <span className="text-slate-600">{d.name}</span>
+                      <span className={Number(d.AchPercent) >= timeGone.percentage ? 'text-emerald-600' : 'text-amber-600'}>
+                        {d.AchPercent}%
+                      </span>
+                    </div>
+                    <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div 
+                        className={`h-full transition-all duration-500 ${Number(d.AchPercent) >= timeGone.percentage ? 'bg-emerald-500' : 'bg-amber-500'}`}
+                        style={{ width: `${Math.min(Number(d.AchPercent), 100)}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="card-clean p-4">
+              <h3 className="text-sm font-bold mb-4 text-seablue uppercase">OB Ranking (Top 10)</h3>
+              <div className="space-y-3">
+                {obRanking.slice(0, 10).map((ob, idx) => (
+                  <div key={ob.contact} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${idx === 0 ? 'bg-amber-100 text-amber-600' : idx === 1 ? 'bg-slate-100 text-slate-600' : idx === 2 ? 'bg-orange-100 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>
+                        {idx + 1}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700">{ob.name}</div>
+                        <div className="text-[8px] text-slate-400 uppercase font-bold">{ob.shops.p} Productive Shops</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-black text-seablue">{ob.totalAch.toFixed(1)}</div>
+                      <div className="text-[8px] text-emerald-600 font-bold">{ob.target > 0 ? ((ob.totalAch / ob.target) * 100).toFixed(0) : 0}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="card-clean p-4">
+              <h3 className="text-sm font-bold mb-4 text-rose-600 uppercase">Bottom 10 OBs</h3>
+              <div className="space-y-3">
+                {bottom10OBs.map((ob, idx) => (
+                  <div key={ob.contact} className="flex items-center justify-between p-2 rounded-lg hover:bg-rose-50 transition-colors">
+                    <div className="flex items-center gap-3">
+                      <div className="w-6 h-6 bg-rose-50 text-rose-400 rounded-full flex items-center justify-center text-[10px] font-bold">
+                        {obRanking.length - idx}
+                      </div>
+                      <div>
+                        <div className="text-xs font-bold text-slate-700">{ob.name}</div>
+                        <div className="text-[8px] text-slate-400 uppercase font-bold">{ob.shops.p} Productive Shops</div>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-xs font-black text-rose-600">{ob.totalAch.toFixed(1)}</div>
+                      <div className="text-[8px] text-rose-400 font-bold">{ob.target > 0 ? ((ob.totalAch / ob.target) * 100).toFixed(0) : 0}%</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="card-clean p-4 md:col-span-2">
+              <h3 className="text-sm font-bold mb-4 text-amber-600 uppercase">Low Sales Routes (Alert)</h3>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {underperformingRoutes.slice(0, 6).map(route => (
+                  <div key={route.name} className="p-3 border border-amber-100 bg-amber-50/30 rounded-xl space-y-2">
+                    <div className="flex justify-between items-start">
+                      <div className="text-xs font-black text-slate-700 uppercase">{route.name}</div>
+                      <div className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded text-[8px] font-bold uppercase">Low Sales</div>
+                    </div>
+                    <div className="flex justify-between text-[10px]">
+                      <span className="text-slate-500">Achievement:</span>
+                      <span className="font-bold text-amber-700">{route.ach.toFixed(1)} Ctns</span>
+                    </div>
+                    <div className="w-full bg-amber-100 h-1 rounded-full overflow-hidden">
+                      <div className="bg-amber-500 h-full" style={{ width: `${Math.min(100, (route.ach / 10) * 100)}%` }}></div>
+                    </div>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
 
           <div className="card-clean p-4">
-            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Brand Wise Performance</h3>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chartData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="name" fontSize={10} axisLine={false} tickLine={false} />
-                  <YAxis fontSize={10} axisLine={false} tickLine={false} />
-                  <Tooltip 
-                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                    cursor={{ fill: '#f8fafc' }}
-                  />
-                  <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ paddingBottom: '20px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
-                  <Bar dataKey="Target" name="Target" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Achievement" name="Today" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="MTD" name="MTD" fill="#10b981" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-bold text-seablue uppercase">Route Performance (Visited vs Productive)</h3>
+              <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                {underperformingRoutes.length} Routes need attention
+              </span>
+            </div>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              {routeAnalysis.slice(0, 6).map(r => {
+                const prodRate = r.shops.v > 0 ? (r.shops.p / r.shops.v) * 100 : 0;
+                return (
+                  <div key={r.route} className="p-3 bg-white border border-slate-100 rounded-xl shadow-sm">
+                    <div className="flex justify-between items-start mb-2">
+                      <div>
+                        <div className="text-[10px] font-bold text-slate-700">{r.route}</div>
+                        <div className="text-[8px] text-slate-400 uppercase font-bold">{r.obName}</div>
+                      </div>
+                      <div className={`text-[10px] font-black ${prodRate >= 60 ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {prodRate.toFixed(0)}%
+                      </div>
+                    </div>
+                    <div className="flex gap-2 text-[9px] font-bold text-slate-500">
+                      <div className="flex-1 bg-slate-50 p-1 rounded text-center">
+                        <div className="text-[7px] uppercase text-slate-400">Visited</div>
+                        {r.shops.v}
+                      </div>
+                      <div className="flex-1 bg-slate-50 p-1 rounded text-center">
+                        <div className="text-[7px] uppercase text-slate-400">Productive</div>
+                        {r.shops.p}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 
@@ -1196,16 +1390,30 @@ export default function App() {
               </div>
             </div>
             <div className="card-clean p-4 space-y-2">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Google Sheets Sync</h3>
-              <div className="space-y-3">
+              <div className="flex justify-between items-center">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Google Sheets Sync</h3>
+                <button 
+                  onClick={() => setIsGoogleConfigLocked(!isGoogleConfigLocked)}
+                  className={`p-1 rounded-md transition-colors ${isGoogleConfigLocked ? 'text-slate-400 hover:text-seablue' : 'text-seablue bg-seablue/10'}`}
+                  title={isGoogleConfigLocked ? "Unlock Settings" : "Lock Settings"}
+                >
+                  {isGoogleConfigLocked ? <Lock className="w-3.5 h-3.5" /> : <Settings className="w-3.5 h-3.5 animate-pulse" />}
+                </button>
+              </div>
+              
+              <div className={`space-y-3 transition-all duration-300 ${isGoogleConfigLocked ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
                 <div className="space-y-1">
-                  <label className="text-[8px] font-bold text-slate-400 uppercase">Spreadsheet ID</label>
+                  <label className="text-[8px] font-bold text-slate-400 uppercase flex justify-between">
+                    Spreadsheet ID
+                    {isGoogleConfigLocked && <span className="text-[7px] text-amber-500 font-black">LOCKED</span>}
+                  </label>
                   <input 
                     type="text" 
                     placeholder="Enter ID"
                     value={appConfig.google_spreadsheet_id || ''} 
                     onChange={(e) => updateConfig('google_spreadsheet_id', e.target.value)}
                     className="input-clean w-full text-[10px]"
+                    disabled={isGoogleConfigLocked}
                   />
                 </div>
                 <div className="space-y-1">
@@ -1216,6 +1424,7 @@ export default function App() {
                     value={appConfig.google_service_account_email || ''} 
                     onChange={(e) => updateConfig('google_service_account_email', e.target.value)}
                     className="input-clean w-full text-[10px]"
+                    disabled={isGoogleConfigLocked}
                   />
                 </div>
                 <div className="space-y-1">
@@ -1225,8 +1434,12 @@ export default function App() {
                     value={appConfig.google_private_key || ''} 
                     onChange={(e) => updateConfig('google_private_key', e.target.value)}
                     className="input-clean w-full text-[10px] h-12 resize-none"
+                    disabled={isGoogleConfigLocked}
                   />
                 </div>
+              </div>
+
+              <div className="pt-2">
                 <button 
                   onClick={async () => {
                     console.log("Starting Google Sheets Sync...");
@@ -1263,9 +1476,9 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => {
-                      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+                      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Total Shops', 'Routes', 'Washing Powder Target', 'DWB Target', 'Match Target'];
                       const csvContent = headers.join(",") + "\n" + 
-                        "Sample Name,S-01,Sample Town,Sample Dist,Sample TSM,50,\"Route 1, Route 2\",10.5,5.0,2.5,1.0,0.5";
+                        "Sample Name,S-01,Sample Town,Sample Dist,Sample TSM,50,\"Route 1, Route 2\",10.5,1.0,0.5";
                       const blob = new Blob([csvContent], { type: 'text/csv' });
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
@@ -1340,7 +1553,7 @@ export default function App() {
                   onClick={async () => {
                     setIsLoadingAdmin(true);
                     try {
-                      const res = await fetch('/api/admin/sync-all-to-sheets', { method: 'POST' });
+                      const res = await fetch('/api/admin/sync-sheets', { method: 'POST' });
                       const data = await res.json();
                       if (res.ok) setMessage({ text: data.message, type: 'success' });
                       else throw new Error(data.error);
@@ -1719,7 +1932,7 @@ export default function App() {
                                 `------------------\n` +
                                 `*SKU Details:*\n${skuDetails}\n` +
                                 `------------------\n` +
-                                CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)}`).join('\n') +
+                                CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} ${cat === 'Washing Powder' ? 'Bags' : 'Ctns'}`).join('\n') +
                                 `\n------------------\n` +
                                 `*Total Achievement:* ${totalAch.toFixed(2)}`;
                               const encodedMsg = encodeURIComponent(summary);
@@ -1797,39 +2010,6 @@ export default function App() {
                 {isSubmitting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                 <span className="hidden sm:inline">Submit</span>
               </button>
-              <button 
-                onClick={() => {
-                  const items = order.items || {};
-                  const skuDetails = SKUS.map(sku => {
-                    const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                    if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
-                    let detail = `*${sku.name}:* `;
-                    const parts = [];
-                    if (item.ctn > 0) parts.push(`${item.ctn} Ctn`);
-                    if (item.dzn > 0) parts.push(`${item.dzn} Dzn`);
-                    if (item.pks > 0) parts.push(`${item.pks} Pks`);
-                    return detail + parts.join(", ");
-                  }).filter(Boolean).join('\n');
-
-                  const summary = `*Sales Entry - ${order.date}*\n` +
-                    `*OB:* ${order.orderBooker}\n` +
-                    `*Route:* ${order.route}\n` +
-                    `*Shops (T/V/P):* ${order.totalShops}/${order.visitedShops}/${order.productiveShops}\n` +
-                    `------------------\n` +
-                    `*SKU Details:*\n${skuDetails}\n` +
-                    `------------------\n` +
-                    CATEGORIES.map(cat => `*${cat}:* ${categoryTotals[cat].toFixed(2)}`).join('\n') +
-                    `\n------------------\n` +
-                    `*Total Achievement:* ${(Object.values(categoryTotals) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}`;
-                  
-                  const encodedSummary = encodeURIComponent(summary);
-                  window.open(`https://wa.me/?text=${encodedSummary}`, '_blank');
-                }}
-                className="p-1.5 text-emerald-500 hover:bg-emerald-50 rounded-lg transition-all"
-                title="Share via WhatsApp"
-              >
-                <WhatsAppIcon />
-              </button>
             </div>
           </div>
         </div>
@@ -1891,32 +2071,23 @@ export default function App() {
         {/* Never Visited Indicator */}
         {order.totalShops > 0 && (
           <div className="flex justify-center">
-            <div className={`px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm border ${Math.max(0, order.totalShops - order.visitedShops) > 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
-              <EyeOff className="w-3 h-3" />
-              Never Visited Shops: <span className="text-sm">{Math.max(0, order.totalShops - order.visitedShops)}</span>
+            <div className={`px-3 py-1 rounded-full text-[8px] font-black uppercase tracking-widest flex items-center gap-2 shadow-sm border ${Math.max(0, order.totalShops - order.visitedShops) > 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
+              <EyeOff className="w-2.5 h-2.5" />
+              Never Visited Shops: <span className="text-xs">{Math.max(0, order.totalShops - order.visitedShops)}</span>
             </div>
           </div>
         )}
 
           <div className="card-clean p-1.5 flex flex-wrap items-center justify-center gap-1.5 md:gap-3 bg-slate-50/50">
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-0.5 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-black text-seablue">{(categoryTotals["Kite Glow"] + categoryTotals["Burq Action"] + categoryTotals["Vero"]).toFixed(2)}</span>
-                <span className="text-[8px] font-bold text-slate-400">Tgt: {((order.targets["Kite Glow"] || 0) + (order.targets["Burq Action"] || 0) + (order.targets["Vero"] || 0)).toFixed(2)}</span>
+            {CATEGORIES.map(cat => (
+              <div key={cat} className="flex flex-col items-center bg-white border border-slate-200 rounded-md px-2 py-1 shadow-sm min-w-[80px]">
+                <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">{cat}</span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-black text-seablue">{categoryTotals[cat].toFixed(2)}</span>
+                  <span className="text-[8px] font-bold text-slate-400">/ {(order.targets[cat] || 0).toFixed(2)}</span>
+                </div>
               </div>
-            </div>
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-0.5 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-black text-seablue">{categoryTotals["DWB"].toFixed(2)}</span>
-                <span className="text-[8px] font-bold text-slate-400">Tgt: {(order.targets["DWB"] || 0).toFixed(2)}</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-md px-2 py-0.5 shadow-sm">
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-black text-seablue">{categoryTotals["Match"].toFixed(2)}</span>
-                <span className="text-[8px] font-bold text-slate-400">Tgt: {(order.targets["Match"] || 0).toFixed(2)}</span>
-              </div>
-            </div>
+            ))}
           </div>
 
         {/* Categories Section */}
@@ -1957,7 +2128,7 @@ export default function App() {
                   <thead>
                     <tr className="bg-slate-50 text-[9px] uppercase font-bold text-slate-400">
                       <th className="px-4 py-2">SKU</th>
-                      <th className="px-2 py-2 text-center w-20">{["Kite Glow", "Burq Action", "Vero"].includes(category) ? 'Bag' : 'Ctn'}</th>
+                      <th className="px-2 py-2 text-center w-20">{category === "Washing Powder" ? 'Bag' : 'Ctn'}</th>
                       {category !== "Match" && <th className="px-2 py-2 text-center w-20">Dzn</th>}
                       <th className="px-2 py-2 text-center w-20">Pks</th>
                       <th className="px-4 py-2 text-right w-24">Total</th>
@@ -2048,7 +2219,7 @@ export default function App() {
                       `------------------\n` +
                       `*SKU Details:*\n${skuDetails}\n` +
                       `------------------\n` +
-                      CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} ${["Kite Glow", "Burq Action", "Vero"].includes(cat) ? 'Bags' : 'Ctns'}`).join('\n') +
+                      CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} ${cat === 'Washing Powder' ? 'Bags' : 'Ctns'}`).join('\n') +
                       `\n------------------\n` +
                       `*Total Achievement:* ${totalAch.toFixed(2)}`;
                     
