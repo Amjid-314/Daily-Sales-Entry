@@ -10,39 +10,41 @@ const CATEGORIES = [
   "Kite Glow",
   "Burq Action",
   "Vero",
+  "Washing Powder",
   "DWB",
   "Match"
 ];
 const SKUS = [
   // Kite Glow
-  { id: "kg-10", name: "K Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12 },
-  { id: "kg-20", name: "K Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12 },
-  { id: "kg-50", name: "K Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "kg-99", name: "K Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12 },
-  { id: "kg-05kg", name: "K Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0 },
-  { id: "kg-1kg", name: "K Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0 },
-  { id: "kg-2kg", name: "K Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0 },
+  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12, pricePerCarton: 1440 },
+  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12, pricePerCarton: 1920 },
+  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12, pricePerCarton: 2400 },
+  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12, pricePerCarton: 2376 },
+  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0, pricePerCarton: 3600 },
+  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0, pricePerCarton: 3600 },
+  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0, pricePerCarton: 3600 },
   // Burq Action
-  { id: "ba-10", name: "B Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12 },
-  { id: "ba-20", name: "B Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12 },
-  { id: "ba-50", name: "B Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "ba-99", name: "B Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12 },
-  { id: "ba-1kg", name: "B Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0 },
-  { id: "ba-23kg", name: "B Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0 },
+  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12, pricePerCarton: 2040 },
+  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12, pricePerCarton: 1920 },
+  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12, pricePerCarton: 2400 },
+  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12, pricePerCarton: 2376 },
+  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0, pricePerCarton: 3600 },
+  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0, pricePerCarton: 3600 },
   // Vero
-  { id: "v-5kg", name: "V Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0 },
-  { id: "v-20kg", name: "V Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0 },
+  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0, pricePerCarton: 4000 },
+  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0, pricePerCarton: 16000 },
   // DWB
-  { id: "dwb-reg", name: "D Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12 },
-  { id: "dwb-large", name: "D Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
-  { id: "dwb-long", name: "D Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
-  { id: "dwb-super", name: "D Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
-  { id: "dwb-new", name: "D New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12 },
+  { id: "dwb-reg", name: "Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12, pricePerCarton: 4800 },
+  { id: "dwb-large", name: "Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400 },
+  { id: "dwb-long", name: "Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400 },
+  { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400 },
+  { id: "dwb-new", name: "New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400 },
   // Match
-  { id: "m-large", name: "M Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
-  { id: "m-classic", name: "M Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12 },
-  { id: "m-regular", name: "M Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12 },
-  { id: "m-slim", name: "M Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12 },
+  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000 },
+  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000 },
+  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000 },
+  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000 },
+
 ];
 
 function calculateAchievement(orderData: any) {
@@ -96,6 +98,13 @@ db.exec(`
     longitude REAL,
     accuracy REAL,
     submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS distributors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    town TEXT,
+    name TEXT UNIQUE,
+    tsm TEXT
   );
 `);
 
@@ -323,7 +332,7 @@ async function startServer() {
     const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
 
     // --- SHEET 2: Targets_vs_Achievement (Town, OB, Brand Wise) ---
-    const targetHeaders = ['Town', 'OB Name', 'OB Contact', 'Brand', 'Target (CTN)', 'Achievement (CTN)', 'Achievement %'];
+    const targetHeaders = ['Town', 'OB Name', 'OB Contact', 'TSM', 'Distributor', ...CATEGORIES.flatMap(cat => [`${cat} Target`, `${cat} Ach`, `${cat} %`]), 'Total Target', 'Total Ach', 'Total %'];
     const targetRows: any[] = [];
 
     // Pre-calculate achievements per OB and Brand for efficiency
@@ -341,21 +350,35 @@ async function startServer() {
     });
 
     for (const ob of obs) {
+      const row = [
+        ob.town || '',
+        ob.name || '',
+        ob.contact || '',
+        ob.tsm || '',
+        ob.distributor || ''
+      ];
+
+      let totalT = 0;
+      let totalA = 0;
+
       for (const cat of CATEGORIES) {
         const obTargets = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ?").get(ob.contact, cat) as any;
         const target = obTargets ? obTargets.target_ctn : 0;
         const ach = achievementMap[ob.contact]?.[cat] || 0;
 
-        targetRows.push([
-          ob.town || '',
-          ob.name || '',
-          ob.contact || '',
-          cat,
-          target.toFixed(2),
-          ach.toFixed(2),
-          target > 0 ? ((ach / target) * 100).toFixed(1) + '%' : '0%'
-        ]);
+        totalT += target;
+        totalA += ach;
+
+        row.push(target.toFixed(2));
+        row.push(ach.toFixed(2));
+        row.push(target > 0 ? ((ach / target) * 100).toFixed(1) + '%' : '0%');
       }
+
+      row.push(totalT.toFixed(2));
+      row.push(totalA.toFixed(2));
+      row.push(totalT > 0 ? ((totalA / totalT) * 100).toFixed(1) + '%' : '0%');
+
+      targetRows.push(row);
     }
 
     await sheets.spreadsheets.values.update({
@@ -634,8 +657,36 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admin/obs/:id", (req, res) => {
+  app.delete("/api/admin/obs/delete/:id", (req, res) => {
     db.prepare("DELETE FROM ob_assignments WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
+  });
+
+  app.get("/api/admin/distributors", (req, res) => {
+    try {
+      const dists = db.prepare("SELECT * FROM distributors").all();
+      res.json(dists);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch distributors" });
+    }
+  });
+
+  app.post("/api/admin/distributors", (req, res) => {
+    const { id, town, name, tsm } = req.body;
+    try {
+      if (id) {
+        db.prepare("UPDATE distributors SET town = ?, name = ?, tsm = ? WHERE id = ?").run(town, name, tsm, id);
+      } else {
+        db.prepare("INSERT OR REPLACE INTO distributors (town, name, tsm) VALUES (?, ?, ?)").run(town, name, tsm);
+      }
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.delete("/api/admin/distributors/:id", (req, res) => {
+    db.prepare("DELETE FROM distributors WHERE id = ?").run(req.params.id);
     res.json({ success: true });
   });
 
@@ -765,56 +816,65 @@ async function startServer() {
   app.post("/api/admin/reseed", (req, res) => {
     const transaction = db.transaction(() => {
       db.prepare("DELETE FROM ob_assignments").run();
-      const seedOBs = [
-        // Peshawar - TSM: Muhammad Shoaib
-        { name: "Muhammad Bilal", contact: "P-01", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Khizar Hayat", contact: "P-02", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Adil Khan", contact: "P-03", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Baidar Khan", contact: "P-04", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 42, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Muhammad Usman", contact: "P-05", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Ghulam Rasool", contact: "P-06", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 44, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Khalid Awan", contact: "P-07", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 46, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-
-        // Haripur - TSM: Muhammad Yousaf
-        { name: "Shahid", contact: "H-01", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 35, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Shahrukh", contact: "H-02", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 38, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-
-        // Taxila - TSM: Muhammad Yousaf
-        { name: "Bilal", contact: "T-01", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Muneeb", contact: "T-02", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 42, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-
-        // Kohat - TSM: Noman Paracha
-        { name: "Kashif", contact: "K-01", town: "Kohat", distributor: "Kohat Dist", tsm: "Noman Paracha", totalShops: 55, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-
-        // Hangu - TSM: Noman Paracha
-        { name: "Bilal", contact: "HG-01", town: "Hangu", distributor: "Hangu Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-
-        // Attock - TSM: Noman Paracha
-        { name: "Usama", contact: "A-01", town: "Attock", distributor: "Attock Dist", tsm: "Noman Paracha", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-
-        // Charsadda - TSM: Waheed Jamal
-        { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", tsm: "Waheed Jamal", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-
-        // Mardan - TSM: Muhammad Zeeshan
-        { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", tsm: "Muhammad Zeeshan", totalShops: 52, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Farhan Zeb", contact: "NOW-01", town: "Nowshera", distributor: "Nowshera Dist", tsm: "Muhammad Zeeshan", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-
-        // DI Khan & Bannu - TSM: Ikramullah
-        { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 48, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 45, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "OB Bannu", contact: "BAN-01", town: "Bannu", distributor: "Bannu Dist", tsm: "Ikramullah", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-
-        // Muzaffarabad & Mansehra - TSM: Qaisar Yousaf
-        { name: "Ghulam Hussain", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-        { name: "Hashim", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", tsm: "Qaisar Yousaf", totalShops: 40, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) }
+      db.prepare("DELETE FROM brand_targets").run();
+      
+      const tsms = [
+        "Muhammad Shoaib", "Muhammad Yousaf", "Noman Paracha", "Waheed Jamal", "Muhammad Zeeshan",
+        "Ikramullah", "Qaisar Yousaf", "Ahmad Khan", "Zubair Ali", "Sajid Mehmood",
+        "Kamran Shah", "Faisal Abbas", "Imran Nazir", "Yasir Arafat", "Usman Ghani",
+        "Bilal Ahmed", "Hamza Ali", "Zeeshan Haider", "Asif Iqbal", "Naveed Akhtar",
+        "Rashid Khan", "Tariq Aziz", "Sohail Tanvir", "Arshad Nadeem", "Babar Azam",
+        "Shaheen Afridi", "Rizwan Ahmed", "Shadab Khan", "Fakhar Zaman", "Haris Rauf",
+        "Nasim Shah", "Iftikhar Ahmed", "Khushdil Shah", "Mohammad Nawaz", "Asif Ali",
+        "Haider Ali", "Shoaib Malik", "Sarfaraz Ahmed", "Wahab Riaz", "Hasan Ali",
+        "Faheem Ashraf", "Imad Wasim", "Azhar Ali", "Shan Masood", "Abid Ali",
+        "Fawad Alam", "Yasir Shah", "Nauman Ali", "Sajid Khan", "Zahid Mahmood"
       ];
+
+      const towns = [
+        "Peshawar", "Haripur", "Taxila", "Kohat", "Hangu", "Attock", "Charsadda", "Mardan", "Nowshera", "DI Khan",
+        "Bannu", "Muzaffarabad", "Mansehra", "Swabi", "Abbottabad", "Swat", "Buner", "Dir", "Chitral", "Malakand",
+        "Karak", "Lakki Marwat", "Tank", "Rawalpindi", "Islamabad", "Gujranwala", "Sialkot", "Lahore", "Faisalabad", "Multan",
+        "Bahawalpur", "Sargodha", "Jhelum", "Chakwal", "Mianwali", "Bhakkar", "Layyah", "Muzaffargarh", "DG Khan", "Rajanpur",
+        "RY Khan", "Sahiwal", "Okara", "Kasur", "Sheikhupura", "Nankana Sahib", "Chiniot", "TTS", "Jhang", "Hafizabad"
+      ];
+
+      const seedOBs = [];
+      for (let i = 0; i < tsms.length; i++) {
+        const tsm = tsms[i];
+        const town = towns[i % towns.length];
+        const distributor = `${town} Dist`;
+        
+        // Add 2 OBs per TSM
+        for (let j = 1; j <= 2; j++) {
+          const obId = `${town.substring(0, 3).toUpperCase()}-${i+1}-${j}`;
+          seedOBs.push({
+            name: `OB ${town} ${j}`,
+            contact: `03${Math.floor(100000000 + Math.random() * 900000000)}`,
+            town: town,
+            distributor: distributor,
+            tsm: tsm,
+            totalShops: 40 + Math.floor(Math.random() * 20),
+            routes: JSON.stringify(["Route A", "Route B", "Route C", "Route D", "Route E", "Route F"])
+          });
+        }
+      }
+
       const insertOB = db.prepare("INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?)");
-      seedOBs.forEach(ob => insertOB.run(ob.name, ob.contact, ob.town, ob.distributor, ob.tsm, ob.totalShops, ob.routes));
+      const insertTarget = db.prepare("INSERT INTO brand_targets (ob_contact, brand_name, target_ctn) VALUES (?, ?, ?)");
+      
+      seedOBs.forEach(ob => {
+        insertOB.run(ob.name, ob.contact, ob.town, ob.distributor, ob.tsm, ob.totalShops, ob.routes);
+        // Add default targets
+        ["Kite Glow", "Burq Action", "Vero", "Washing Powder", "DWB", "Match"].forEach(brand => {
+          insertTarget.run(ob.contact, brand, (Math.random() * 10).toFixed(1));
+        });
+      });
     });
 
     try {
       transaction();
-      res.json({ success: true });
+      res.json({ success: true, message: "Team re-seeded with 50 TSMs and 50 Towns" });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -959,10 +1019,15 @@ async function startServer() {
   });
 
   app.post("/api/admin/bulk-upload", (req, res) => {
-    const { team } = req.body;
+    const { team, clearExisting } = req.body;
     if (!Array.isArray(team)) return res.status(400).json({ error: "Invalid data" });
 
     const transaction = db.transaction(() => {
+      if (clearExisting) {
+        db.prepare("DELETE FROM ob_assignments").run();
+        db.prepare("DELETE FROM brand_targets").run();
+      }
+
       for (const item of team) {
         const { name, contact, town, distributor, tsm, total_shops, routes, targets } = item;
         
@@ -1172,6 +1237,88 @@ async function startServer() {
         errorMessage = "Google Sheets API is disabled. Please enable it in your Google Cloud Console.";
       }
       res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.post("/api/admin/import-from-sheets", async (req, res) => {
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      
+      let spreadsheetId = config.google_spreadsheet_id;
+      let clientEmail = config.google_service_account_email;
+      let privateKeyRaw = config.google_private_key;
+
+      try {
+        const parsed = JSON.parse(privateKeyRaw);
+        if (parsed.private_key) privateKeyRaw = parsed.private_key;
+        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+      } catch (e) {}
+
+      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+
+      if (!spreadsheetId || !clientEmail || !privateKey) {
+        return res.status(400).json({ error: "Google Sheets configuration missing." });
+      }
+
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      // Import OB Assignments and Targets from a sheet named "Team_Data"
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "Team_Data!A2:J", // Assuming headers: Name, ID, Town, Distributor, TSM, Total Shops, Routes, Kite Target, Burq Target, Vero Target...
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length === 0) {
+        return res.status(400).json({ error: "No data found in 'Team_Data' sheet." });
+      }
+
+      const transaction = db.transaction(() => {
+        db.prepare("DELETE FROM ob_assignments").run();
+        db.prepare("DELETE FROM brand_targets").run();
+
+        for (const row of rows) {
+          const [name, contact, town, distributor, tsm, totalShops, routesRaw, kiteT, burqT, veroT, wpT, dwbT, matchT] = row;
+          if (!name || !contact) continue;
+
+          const routes = routesRaw ? routesRaw.split(",").map((r: string) => r.trim()) : [];
+          
+          db.prepare(`
+            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+          `).run(name, contact, town, distributor, tsm, parseInt(totalShops) || 50, JSON.stringify(routes));
+
+          const targets: Record<string, string> = {
+            "Kite Glow": kiteT,
+            "Burq Action": burqT,
+            "Vero": veroT,
+            "Washing Powder": wpT,
+            "DWB": dwbT,
+            "Match": matchT
+          };
+
+          for (const [brand, target] of Object.entries(targets)) {
+            if (target) {
+              db.prepare(`
+                INSERT INTO brand_targets (ob_contact, brand_name, target_ctn)
+                VALUES (?, ?, ?)
+              `).run(contact, brand, parseFloat(target) || 0);
+            }
+          }
+        }
+      });
+
+      transaction();
+      res.json({ success: true, message: `Successfully imported ${rows.length} team members from Google Sheets.` });
+    } catch (err: any) {
+      console.error("Import Error:", err);
+      res.status(500).json({ error: err.message });
     }
   });
 

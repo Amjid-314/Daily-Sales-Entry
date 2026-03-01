@@ -98,6 +98,7 @@ export default function App() {
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [adminPassInput, setAdminPassInput] = useState('');
   const [selectedTSM, setSelectedTSM] = useState<string>('');
+  const [distributors, setDistributors] = useState<any[]>([]);
   const [mtdAchievement, setMtdAchievement] = useState<Record<string, number>>({});
   const [appLogo, setAppLogo] = useState<string | null>(() => {
     try {
@@ -153,13 +154,8 @@ export default function App() {
   const [lastSubmittedOrder, setLastSubmittedOrder] = useState<any | null>(null);
   const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
-  const [stockOrder, setStockOrder] = useState({
-    date: new Date().toISOString().split('T')[0],
-    tsm: '',
-    town: '',
-    distributor: '',
-    items: {} as Record<string, { ctn: number; dzn: number; pks: number }>
-  });
+  const [stockOrders, setStockOrders] = useState<Record<string, Record<string, { ctn: number }>>>({});
+  const [selectedStockTSM, setSelectedStockTSM] = useState<string>('');
   const [isSubmittingStocks, setIsSubmittingStocks] = useState(false);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
@@ -342,6 +338,9 @@ export default function App() {
       if (response.ok) {
         setLastSubmittedOrder({ ...order });
         setMessage({ text: 'Submitted!', type: 'success' });
+        // Auto-sync to Google Sheets
+        syncGoogle();
+        fetchHistory(true);
         setOrder({
           date: new Date().toISOString().split('T')[0],
           tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
@@ -427,21 +426,17 @@ export default function App() {
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
-      const [obsRes, configRes, googleRes] = await Promise.all([
+      const [obsRes, distsRes, configRes, googleRes] = await Promise.all([
         fetch('/api/admin/obs'),
+        fetch('/api/admin/distributors'),
         fetch('/api/admin/config'),
         fetch('/api/google/status')
       ]);
       
-      if (obsRes.ok) {
-        setObAssignments(await obsRes.json());
-      }
-      if (configRes.ok) {
-        setAppConfig(await configRes.json());
-      }
-      if (googleRes.ok) {
-        setGoogleStatus(await googleRes.json());
-      }
+      if (obsRes.ok) setObAssignments(await obsRes.json());
+      if (distsRes.ok) setDistributors(await distsRes.json());
+      if (configRes.ok) setAppConfig(await configRes.json());
+      if (googleRes.ok) setGoogleStatus(await googleRes.json());
     } catch (err) { console.error(err); }
     finally { setIsLoadingAdmin(false); }
   };
@@ -545,13 +540,24 @@ export default function App() {
   const syncGoogle = async () => {
     setIsSyncing(true);
     try {
+      // Try Service Account sync first if configured
+      if (appConfig.google_spreadsheet_id && appConfig.google_private_key) {
+        const res = await fetch('/api/admin/sync-sheets', { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+          setMessage({ text: 'Synced to Google Sheets (Service Account)!', type: 'success' });
+          return;
+        }
+      }
+
+      // Fallback to OAuth2 sync
       const res = await fetch('/api/google/sync', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setGoogleStatus(prev => ({ ...prev, spreadsheetId: data.spreadsheetId }));
-        setMessage({ text: 'Synced to Google Sheets!', type: 'success' });
+        setMessage({ text: 'Synced to Google Sheets (OAuth2)!', type: 'success' });
       } else {
-        throw new Error(data.error);
+        throw new Error(data.error || 'Sync failed');
       }
     } catch (err: any) {
       setMessage({ text: 'Sync failed: ' + err.message, type: 'error' });
@@ -606,12 +612,15 @@ export default function App() {
             total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops']) || '50') || 50,
             routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
             targets: {
+              "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow', 'kite target'])) || 0,
+              "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action', 'burq target'])) || 0,
+              "Vero": parseFloat(getVal(['Vero Target', 'vero_target', 'vero', 'vero target'])) || 0,
               "Washing Powder": parseFloat(getVal(['Washing Powder Target', 'washing_powder_target', 'washing powder', 'wp target'])) || 
                                 ((parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow'])) || 0) + 
                                  (parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action'])) || 0) + 
                                  (parseFloat(getVal(['Vero Target', 'vero_target', 'vero'])) || 0)),
-              "DWB": parseFloat(getVal(['DWB Target', 'dwb_target', 'dwb'])) || 0,
-              "Match": parseFloat(getVal(['Match Target', 'match_target', 'match'])) || 0
+              "DWB": parseFloat(getVal(['DWB Target', 'dwb_target', 'dwb', 'dwb target'])) || 0,
+              "Match": parseFloat(getVal(['Match Target', 'match_target', 'match', 'match target'])) || 0
             }
           };
         }).filter((item: any) => item.name && item.contact);
@@ -687,8 +696,7 @@ export default function App() {
   }, [obAssignments]);
 
   const filteredOBs = useMemo(() => {
-    if (!selectedTSM) return obAssignments;
-    return obAssignments.filter(ob => ob.tsm === selectedTSM);
+    return selectedTSM ? obAssignments.filter(ob => ob.tsm === selectedTSM) : obAssignments;
   }, [obAssignments, selectedTSM]);
 
   const groupedHistory = useMemo(() => {
@@ -1047,8 +1055,66 @@ export default function App() {
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="card-clean p-4 md:col-span-2 overflow-hidden">
+              <div className="flex justify-between items-center mb-4">
+                <h3 className="text-sm font-bold text-seablue uppercase tracking-widest">OB Performance (MTD)</h3>
+                <span className="text-[10px] font-bold bg-seablue/10 text-seablue px-2 py-0.5 rounded-full">{obAnalysis.length} OBs</span>
+              </div>
+              <div className="overflow-x-auto -mx-4 px-4">
+                <table className="w-full text-left border-collapse min-w-[800px]">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase sticky left-0 bg-slate-50 z-10">OB Name</th>
+                      <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase">Town</th>
+                      {CATEGORIES.map(cat => (
+                        <th key={cat} className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase text-center border-l border-slate-100">
+                          <div className="text-seablue">{cat}</div>
+                          <div className="flex justify-between gap-2 mt-1 px-1">
+                            <span>Tgt</span>
+                            <span>Ach</span>
+                            <span>%</span>
+                          </div>
+                        </th>
+                      ))}
+                      <th className="px-3 py-2 text-[9px] font-black text-slate-400 uppercase text-right border-l border-slate-100">Total %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {obAnalysis.map(ob => {
+                      const assignment = obAssignments.find(a => a.contact === ob.contact);
+                      return (
+                        <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
+                          <td className="px-3 py-2 text-[10px] font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{ob.name}</td>
+                          <td className="px-3 py-2 text-[9px] text-slate-500 font-medium">{assignment?.town}</td>
+                          {CATEGORIES.map(cat => {
+                            const tgt = assignment?.targets?.[cat] || 0;
+                            const ach = ob.totals[cat] || 0;
+                            const perc = tgt > 0 ? (ach / tgt) * 100 : 0;
+                            return (
+                              <td key={cat} className="px-1 py-2 text-[9px] font-bold text-center border-l border-slate-100">
+                                <div className="flex justify-between gap-2 px-1">
+                                  <span className="text-slate-400">{tgt.toFixed(1)}</span>
+                                  <span className="text-slate-700">{ach.toFixed(1)}</span>
+                                  <span className={perc >= timeGone.percentage ? 'text-emerald-600' : 'text-amber-600'}>{perc.toFixed(0)}%</span>
+                                </div>
+                              </td>
+                            );
+                          })}
+                          <td className="px-3 py-2 text-[10px] font-black text-right border-l border-slate-100">
+                            <span className={ob.target > 0 && (ob.totalAch / ob.target * 100) >= timeGone.percentage ? 'text-emerald-600' : 'text-amber-600'}>
+                              {ob.target > 0 ? ((ob.totalAch / ob.target) * 100).toFixed(0) : 0}%
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             <div className="card-clean p-4">
-              <h3 className="text-sm font-bold mb-4 text-seablue uppercase">OB Ranking (Top 10)</h3>
+              <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">TSM Performance (MTD)</h3>
               <div className="space-y-3">
                 {obRanking.slice(0, 10).map((ob, idx) => (
                   <div key={ob.contact} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors">
@@ -1493,23 +1559,20 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="pt-2">
+              <div className="pt-2 grid grid-cols-2 gap-2">
                 <button 
                   onClick={async () => {
-                    console.log("Starting Google Sheets Sync...");
                     setIsSyncing(true);
                     setMessage({ text: 'Syncing to Google Sheets...', type: 'success' });
                     try {
                       const res = await fetch('/api/admin/sync-sheets', { method: 'POST' });
                       const data = await res.json();
-                      console.log("Sync Response:", data);
                       if (res.ok) {
                         setMessage({ text: data.message, type: 'success' });
                       } else {
                         throw new Error(data.error || 'Sync failed');
                       }
                     } catch (err: any) {
-                      console.error("Sync Error:", err);
                       setMessage({ text: 'Sync Error: ' + err.message, type: 'error' });
                     } finally {
                       setIsSyncing(false);
@@ -1520,7 +1583,33 @@ export default function App() {
                   className="btn-seablue w-full text-[10px] flex items-center justify-center gap-2"
                 >
                   {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
-                  Sync All to Google Sheets
+                  Sync All
+                </button>
+                <button 
+                  onClick={async () => {
+                    setIsSyncing(true);
+                    setMessage({ text: 'Importing from Google Sheets...', type: 'success' });
+                    try {
+                      const res = await fetch('/api/admin/import-from-sheets', { method: 'POST' });
+                      const data = await res.json();
+                      if (res.ok) {
+                        setMessage({ text: data.message, type: 'success' });
+                        fetchAdminData();
+                      } else {
+                        throw new Error(data.error || 'Import failed');
+                      }
+                    } catch (err: any) {
+                      setMessage({ text: 'Import Error: ' + err.message, type: 'error' });
+                    } finally {
+                      setIsSyncing(false);
+                      setTimeout(() => setMessage(null), 5000);
+                    }
+                  }} 
+                  disabled={isSyncing || !appConfig.google_spreadsheet_id}
+                  className="btn-seablue w-full text-[10px] flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700"
+                >
+                  {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
+                  Import Team
                 </button>
               </div>
             </div>
@@ -1668,6 +1757,35 @@ export default function App() {
           </div>
 
           <section className="card-clean overflow-hidden">
+            <div className="bg-emerald-600 text-white px-4 py-2 flex justify-between items-center">
+              <h2 className="text-sm font-bold uppercase tracking-widest">Distributors (Independent)</h2>
+              <button onClick={async () => { const name = prompt("Distributor Name:"); const town = prompt("Town:"); const tsm = prompt("TSM:"); if (name && town) { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, town, tsm }) }); fetchAdminData(); } }} className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30">+ Add</button>
+            </div>
+            <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
+              {distributors.map(dist => (
+                <div key={dist.id} className="p-4 flex items-center justify-between gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase">Distributor Name</label>
+                      <input type="text" defaultValue={dist.name} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, name: e.target.value }) }); }} className="input-clean w-full" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase">Town</label>
+                      <input type="text" defaultValue={dist.town} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, town: e.target.value }) }); }} className="input-clean w-full" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase">TSM</label>
+                      <input type="text" defaultValue={dist.tsm} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, tsm: e.target.value }) }); }} className="input-clean w-full" />
+                    </div>
+                  </div>
+                  <button onClick={async () => { if (confirm("Delete?")) { await fetch(`/api/admin/distributors/${dist.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
+                </div>
+              ))}
+              {distributors.length === 0 && <div className="p-8 text-center text-slate-400 text-xs italic">No independent distributors added yet. They will appear in the Stocks Report.</div>}
+            </div>
+          </section>
+
+          <section className="card-clean overflow-hidden">
             <div className="bg-seablue text-white px-4 py-2 flex justify-between items-center">
               <h2 className="text-sm font-bold uppercase tracking-widest">OB Assignments</h2>
               <button onClick={async () => { const name = prompt("Name:"); const contact = prompt("ID:"); if (name && contact) { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, contact, town: '', distributor: '', routes: [] }) }); fetchAdminData(); } }} className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30">+ Add</button>
@@ -1721,7 +1839,7 @@ export default function App() {
                     >
                       {selectedOBForTargets === ob.contact ? 'Close Targets' : 'Manage Brand Targets'}
                     </button>
-                    <button onClick={async () => { if (confirm("Delete?")) { await fetch(`/api/admin/obs/${ob.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
+                    <button onClick={async () => { if (confirm("Delete?")) { await fetch(`/api/admin/obs/delete/${ob.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
                   </div>
 
                   {selectedOBForTargets === ob.contact && (
@@ -1753,34 +1871,52 @@ export default function App() {
   }
 
   if (view === 'stocks') {
-    const tsmList = Array.from(new Set(obAssignments.map(ob => ob.tsm).filter(Boolean)));
-    const towns = Array.from(new Set(obAssignments.map(ob => ob.town).filter(Boolean)));
-    const distributors = Array.from(new Set(obAssignments.map(ob => ob.distributor).filter(Boolean)));
+    const tsmList = Array.from(new Set([...obAssignments.map(ob => ob.tsm), ...distributors.map(d => d.tsm)].filter(Boolean)));
+    
+    // Combine distributors from OB assignments and the explicit distributors table
+    const allDistributors = [
+      ...obAssignments.map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm })),
+      ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm }))
+    ].filter((v, i, a) => a.findIndex(t => t.distributor === v.distributor) === i);
 
-    const handleSubmitStocks = async () => {
-      if (!stockOrder.tsm || !stockOrder.town || !stockOrder.distributor) {
-        setMessage({ text: 'Please fill all TSM, Town and Distributor', type: 'error' });
+    const filteredDistributors = allDistributors
+      .filter(d => !selectedStockTSM || d.tsm === selectedStockTSM);
+
+    const handleStockChange = (distributor: string, skuId: string, val: number) => {
+      setStockOrders(prev => ({
+        ...prev,
+        [distributor]: {
+          ...(prev[distributor] || {}),
+          [skuId]: { ctn: val }
+        }
+      }));
+    };
+
+    const handleSubmitAllStocks = async () => {
+      if (!selectedStockTSM) {
+        setMessage({ text: 'Please select a TSM', type: 'error' });
         return;
       }
       setIsSubmittingStocks(true);
       try {
-        const response = await fetch('/api/stocks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            date: stockOrder.date,
-            tsm: stockOrder.tsm,
-            town: stockOrder.town,
-            distributor: stockOrder.distributor,
-            stocks: stockOrder.items
-          })
+        const promises = Object.entries(stockOrders).map(([distributor, stocks]) => {
+          const distInfo = filteredDistributors.find(d => d.distributor === distributor);
+          return fetch('/api/stocks', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              date: new Date().toISOString().split('T')[0],
+              tsm: selectedStockTSM,
+              town: distInfo?.town || '',
+              distributor: distributor,
+              stocks: stocks
+            })
+          });
         });
-        if (response.ok) {
-          setMessage({ text: 'Stock Report Submitted!', type: 'success' });
-          setStockOrder(prev => ({ ...prev, items: {} }));
-        } else {
-          setMessage({ text: 'Failed to submit stocks', type: 'error' });
-        }
+        await Promise.all(promises);
+        setMessage({ text: 'All Stock Reports Submitted!', type: 'success' });
+        setStockOrders({});
+        syncGoogle();
       } catch (e) {
         setMessage({ text: 'Error submitting stocks', type: 'error' });
       } finally {
@@ -1793,164 +1929,103 @@ export default function App() {
       <div className="min-h-screen bg-slate-50 pb-20">
         <MainNav view={view} setView={setView} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
-          <div className="max-w-4xl mx-auto flex items-center gap-3">
-            <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
-              <Store className="w-5 h-5" />
+          <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
+                <Store className="w-5 h-5" />
+              </div>
+              <h1 className="text-lg font-bold text-seablue">Distributor Stocks</h1>
             </div>
-            <h1 className="text-lg font-bold text-seablue">Stock Report (TSM)</h1>
+            <div className="flex items-center gap-2">
+              <select 
+                value={selectedStockTSM} 
+                onChange={e => setSelectedStockTSM(e.target.value)}
+                className="input-clean py-1.5 text-xs min-w-[150px]"
+              >
+                <option value="">All TSMs</option>
+                {tsmList.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <button 
+                onClick={handleSubmitAllStocks}
+                disabled={isSubmittingStocks || Object.keys(stockOrders).length === 0}
+                className="btn-seablue px-4 py-1.5 text-xs flex items-center gap-2"
+              >
+                {isSubmittingStocks ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                Submit All
+              </button>
+            </div>
           </div>
         </header>
 
-        <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
-          <div className="card-clean p-4 space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Date</label>
-                <input 
-                  type="date" 
-                  value={stockOrder.date} 
-                  onChange={e => setStockOrder(prev => ({ ...prev, date: e.target.value }))}
-                  className="input-clean"
-                />
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">TSM Name</label>
-                <select 
-                  value={stockOrder.tsm} 
-                  onChange={e => setStockOrder(prev => ({ ...prev, tsm: e.target.value }))}
-                  className="input-clean"
-                >
-                  <option value="">Select TSM</option>
-                  {tsmList.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Town</label>
-                <select 
-                  value={stockOrder.town} 
-                  onChange={e => setStockOrder(prev => ({ ...prev, town: e.target.value }))}
-                  className="input-clean"
-                >
-                  <option value="">Select Town</option>
-                  {towns.map(t => <option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold text-slate-400 uppercase">Distributor</label>
-                <select 
-                  value={stockOrder.distributor} 
-                  onChange={e => setStockOrder(prev => ({ ...prev, distributor: e.target.value }))}
-                  className="input-clean"
-                >
-                  <option value="">Select Distributor</option>
-                  {distributors.map(d => <option key={d} value={d}>{d}</option>)}
-                </select>
-              </div>
+        <main className="max-w-6xl mx-auto px-4 py-6">
+          <div className="card-clean overflow-hidden">
+            <div className="overflow-x-auto max-h-[70vh]">
+              <table className="w-full text-left border-collapse">
+                <thead className="sticky top-0 z-20">
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider sticky left-0 bg-slate-50 z-30 border-r border-slate-200 min-w-[120px]">SKU Name</th>
+                    {filteredDistributors.map(d => (
+                      <th key={d.distributor} className="px-4 py-3 text-[10px] font-black text-slate-600 uppercase tracking-wider text-center border-r border-slate-200 min-w-[100px]">
+                        <div className="truncate w-24 mx-auto">{d.distributor}</div>
+                        <div className="text-[8px] text-slate-400 font-bold">{d.town}</div>
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {SKUS.map(sku => (
+                    <tr key={sku.id} className="hover:bg-slate-50/50">
+                      <td className="px-4 py-2 text-[10px] font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
+                        <div className="truncate w-28">{sku.name}</div>
+                        <div className="text-[7px] text-slate-400 font-mono">{sku.category}</div>
+                      </td>
+                      {filteredDistributors.map(d => (
+                        <td key={d.distributor} className="px-2 py-2 border-r border-slate-100">
+                          <input 
+                            type="number" 
+                            inputMode="numeric"
+                            placeholder="0"
+                            value={stockOrders[d.distributor]?.[sku.id]?.ctn || ''}
+                            onChange={e => handleStockChange(d.distributor, sku.id, parseInt(e.target.value) || 0)}
+                            className="w-full text-center py-1 bg-transparent text-[10px] font-bold text-seablue focus:bg-white focus:ring-1 focus:ring-seablue/20 outline-none rounded transition-all"
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                  <tr className="bg-slate-50/80 font-black border-t-2 border-slate-200 sticky bottom-0 z-10">
+                    <td className="px-4 py-3 text-[9px] uppercase text-slate-500 sticky left-0 bg-slate-50 z-10 border-r border-slate-200">Total Stock (Ctns)</td>
+                    {filteredDistributors.map(d => {
+                      const total = Object.values(stockOrders[d.distributor] || {}).reduce((sum: number, s: any) => sum + (Number(s.ctn) || 0), 0) as number;
+                      return (
+                        <td key={d.distributor} className="px-4 py-3 text-center text-[10px] text-seablue border-r border-slate-200">
+                          {total > 0 ? total.toFixed(1) : '-'}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                  <tr className="bg-emerald-50 font-black border-t border-emerald-100 sticky bottom-0 z-10 translate-y-[-1px]">
+                    <td className="px-4 py-3 text-[9px] uppercase text-emerald-600 sticky left-0 bg-emerald-50 z-10 border-r border-emerald-100">Total Value (Rs)</td>
+                    {filteredDistributors.map(d => {
+                      const totalValue = Object.entries(stockOrders[d.distributor] || {}).reduce((sum: number, [skuId, s]: [string, any]) => {
+                        const sku = SKUS.find(sk => sk.id === skuId);
+                        return sum + (Number(s.ctn) || 0) * (sku?.pricePerCarton || 0);
+                      }, 0) as number;
+                      return (
+                        <td key={d.distributor} className="px-4 py-3 text-center text-[10px] text-emerald-700 border-r border-emerald-100">
+                          {totalValue > 0 ? totalValue.toLocaleString() : '-'}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tbody>
+              </table>
             </div>
           </div>
-
-          <div className="space-y-4">
-            {CATEGORIES.map(cat => (
-              <div key={cat} className="card-clean overflow-hidden">
-                <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex justify-between items-center">
-                  <h3 className="text-xs font-black text-slate-500 uppercase tracking-wider">{cat}</h3>
-                </div>
-                <div className="divide-y divide-slate-50">
-                  {SKUS.filter(s => s.category === cat).map(sku => (
-                    <div key={sku.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                      <div className="flex-1">
-                        <div className="text-sm font-bold text-slate-700">{sku.name}</div>
-                        <div className="text-[10px] text-slate-400 uppercase font-bold">Stock at Distributor</div>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-[8px] font-bold text-slate-400 uppercase">CTN</span>
-                          <input 
-                            type="number" 
-                            placeholder="0"
-                            value={stockOrder.items[sku.id]?.ctn || ''}
-                            onChange={e => {
-                              const val = parseInt(e.target.value) || 0;
-                              setStockOrder(prev => ({
-                                ...prev,
-                                items: {
-                                  ...prev.items,
-                                  [sku.id]: { ...(prev.items[sku.id] || { ctn: 0, dzn: 0, pks: 0 }), ctn: val }
-                                }
-                              }));
-                            }}
-                            className="w-16 text-center py-2 border border-slate-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all"
-                          />
-                        </div>
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-[8px] font-bold text-slate-400 uppercase">DZN</span>
-                          <input 
-                            type="number" 
-                            placeholder="0"
-                            value={stockOrder.items[sku.id]?.dzn || ''}
-                            onChange={e => {
-                              const val = parseInt(e.target.value) || 0;
-                              setStockOrder(prev => ({
-                                ...prev,
-                                items: {
-                                  ...prev.items,
-                                  [sku.id]: { ...(prev.items[sku.id] || { ctn: 0, dzn: 0, pks: 0 }), dzn: val }
-                                }
-                              }));
-                            }}
-                            className="w-16 text-center py-2 border border-slate-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all"
-                          />
-                        </div>
-                        <div className="flex flex-col items-center gap-1">
-                          <span className="text-[8px] font-bold text-slate-400 uppercase">PKS</span>
-                          <input 
-                            type="number" 
-                            placeholder="0"
-                            value={stockOrder.items[sku.id]?.pks || ''}
-                            onChange={e => {
-                              const val = parseInt(e.target.value) || 0;
-                              setStockOrder(prev => ({
-                                ...prev,
-                                items: {
-                                  ...prev.items,
-                                  [sku.id]: { ...(prev.items[sku.id] || { ctn: 0, dzn: 0, pks: 0 }), pks: val }
-                                }
-                              }));
-                            }}
-                            className="w-16 text-center py-2 border border-slate-200 rounded-lg text-sm font-bold focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
+          <div className="mt-4 text-[10px] text-slate-400 italic">
+            * Enter stock in Cartons/Bags only. Scroll right to see all distributors. SKU column is frozen.
           </div>
-
-          <button 
-            onClick={handleSubmitStocks}
-            disabled={isSubmittingStocks}
-            className="w-full btn-seablue py-4 rounded-2xl shadow-lg shadow-blue-200 flex items-center justify-center gap-3 text-base font-black uppercase tracking-widest"
-          >
-            {isSubmittingStocks ? <Loader2 className="w-6 h-6 animate-spin" /> : <Save className="w-6 h-6" />}
-            Submit Stock Report
-          </button>
         </main>
-
-        <AnimatePresence>
-          {message && (
-            <motion.div 
-              initial={{ opacity: 0, y: 50 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 50 }}
-              className={`fixed bottom-24 left-4 right-4 p-4 rounded-2xl shadow-2xl flex items-center gap-3 z-50 ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white'}`}
-            >
-              {message.type === 'success' ? <CheckCircle2 className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
-              <span className="text-sm font-bold">{message.text}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </div>
     );
   }
@@ -2181,10 +2256,17 @@ export default function App() {
                                 return detail + parts.join(", ");
                               }).filter(Boolean).join('\n');
 
+                              const catProdDetails = CATEGORIES.map(cat => {
+                                const prod = h.category_productive_data?.[cat] || 0;
+                                return `*${cat} Prod:* ${prod}`;
+                              }).join('\n');
+
                               const summary = `*Sales Summary - ${h.date}*\n` +
                                 `*OB:* ${h.order_booker}\n` +
                                 `*Route:* ${h.route}\n` +
                                 `*Shops (T/V/P):* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
+                                `------------------\n` +
+                                `*Brand-wise Productive Shops:*\n${catProdDetails}\n` +
                                 `------------------\n` +
                                 `*SKU Details:*\n${skuDetails}\n` +
                                 `------------------\n` +
@@ -2468,10 +2550,17 @@ export default function App() {
                       return detail + parts.join(", ");
                     }).filter(Boolean).join('\n');
 
+                    const catProdDetails = CATEGORIES.map(cat => {
+                      const prod = lastSubmittedOrder.categoryProductiveShops?.[cat] || 0;
+                      return `*${cat} Prod:* ${prod}`;
+                    }).join('\n');
+
                     const summary = `*Sales Summary - ${lastSubmittedOrder.date}*\n` +
                       `*OB:* ${lastSubmittedOrder.orderBooker}\n` +
                       `*Route:* ${lastSubmittedOrder.route}\n` +
                       `*Shops:* ${lastSubmittedOrder.productiveShops}/${lastSubmittedOrder.visitedShops}/${lastSubmittedOrder.totalShops}\n` +
+                      `------------------\n` +
+                      `*Brand-wise Productive Shops:*\n${catProdDetails}\n` +
                       `------------------\n` +
                       `*SKU Details:*\n${skuDetails}\n` +
                       `------------------\n` +
