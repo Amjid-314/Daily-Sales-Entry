@@ -90,7 +90,6 @@ export const CATEGORIES = [
   "Kite Glow",
   "Burq Action",
   "Vero",
-  "Washing Powder",
   "DWB",
   "Match"
 ];

@@ -10,7 +10,6 @@ const CATEGORIES = [
   "Kite Glow",
   "Burq Action",
   "Vero",
-  "Washing Powder",
   "DWB",
   "Match"
 ];
@@ -208,15 +207,6 @@ async function startServer() {
       UNIQUE(ob_contact, brand_name)
     );
 
-    -- Migration: Group old categories into "Washing Powder"
-    INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn)
-    SELECT ob_contact, 'Washing Powder', SUM(target_ctn)
-    FROM brand_targets
-    WHERE brand_name IN ('Kite Glow', 'Burq Action', 'Vero')
-    GROUP BY ob_contact;
-
-    DELETE FROM brand_targets WHERE brand_name IN ('Kite Glow', 'Burq Action', 'Vero');
-
     CREATE TABLE IF NOT EXISTS app_config (
       key TEXT PRIMARY KEY,
       value TEXT
@@ -225,9 +215,9 @@ async function startServer() {
 
   // Initial Config
   db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("total_working_days", "25");
-  db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("google_spreadsheet_id", "");
-  db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("google_service_account_email", "");
-  db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("google_private_key", "");
+  db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_spreadsheet_id", "1xdVdlzC1lfJfrH2v_LsOJMgCyRaEJbImMNDd_HvysIA");
+  db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_service_account_email", "sheets-sync@salesappintegration.iam.gserviceaccount.com");
+  db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_private_key", "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDK7Cr/uJugpYCu\n502wYaYlZM896/0XBbRF9xj1NeYpNKjgPMmXwwclLoH4B0GleDUo+Ymr2Dw7x8Oh\naw0imKghRRU2JlpvUwpDytFqvQ5cj9jS/vQgV8dAGXxHvjttI37y+GMmemB8np1t\nZTvh7sqYe/AHAz/lAaxF8vdpwrDq3QmHW7eB5Ztkz8J27tMiJ5Dm5CIKR4MawH0f\nTxoM1Vd+3nOWme63yOPy2woB6MEpdgbWS5hpTmFGeZv1PhdffIcz3QPTzHLyyU54\nHC5i7AiXc8EKQ7cZ0J8FUXB9yp5It0bp3fsiy3+18Y4U76pR8UDlb/o2TQhIVfM0\nvFSt6isfAgMBAAECggEARwcWX+8izj7QBaih2WC8sq8QGVkOfC37dVfx7PbCSt8L\nU34DhDL4P8wBIyuLD1u9o8uApF1qa/RW5hvd+6Oaihavv4X6NqhG2gbWeXmWWtDg\n8K3cDqwa6rVg+o28KE355BsMPY4tUsGEUiPSq5kVYf1TvWimR0boIY3TizniCjrX\nsSu5MPOZkfGaRFyJsyULq8f3LbOQl7XH1GMQE225wbiwHMIGGsGTDOOv2e80hslm\nN6MHbDrlfXwxIbz52stxXy9/iwNvRWutgmlCXZg45D2eXXxr1+flEZ5k2QCH6q0R\n4Ys6T7+Fp4pOZUnsh1ojnS95khYJsmxA9ymDznzvnQKBgQDr8TpFp2T1SeZriduj\nbYhN78m3ZQcoOqW/KHXx5ZPpy186LxhQ2340ddlq7ctqPPYElWsacpoUksugA/oi\ngM80Fbw52aiTEJGqXcioBOfpSqzCOjU8jLqimcO+/huTcVaQbMJ+wYWZhtipUxbq\n5LYBSdCCPwPNGpEEn0c6gOei5QKBgQDcLFY3IPZSsNdhj88mZt5+uOcPR0iCbw03\nR8wIiaoxzqHzJJRcbXNhv+aq9l+F6vSKDnckmUmnehfT73TUbOCaIEFmoe2F7/d+\nzkqnw7m26s+deGSpfyfi+FcZnA8SwFU9bRBfUIeWNlRH93iyjm4QoIyJ69+8CSYi\njk9PWijhswKBgCrc/hsdWAf/zu6GcvJzual/AIRixDQYw3fA3/x8Gq0El144pBA8\nb+cT6dW1MZkxTfhzNKvvWfKW4ItHba/K+tmZgUJ5OljNT8lFlGiBy6fkOxJmBLnl\nTxqvGJKgE15r3rAKMiNZAO5tQvsv7x/pQO9m+4xN6mDejK3sScJlHK/JAoGBAJ2w\ne4c8am9LDNdpQjoEzzH/iC2fJkWU9+gx2eX7gxPtJHyaJFAWa98ErFah4kRtxPrj\n5V0nFGOIxGwcQpap7Cs3EuBI9W9KMP53DW0ed3KUtmHYCnCDC7Q5nVhQN1N8wRAf\nfuxlJtbkznREwANSk24BLubRMwrfmpqBRjhVIJaVAoGAcS8uL5nP/CIQklr1ccYm\nEth+MgJkLmp8QmX89IvntjkuWfmn8YJ0rqS4jxnqJ8FUyAYpmmu3DdsFCul6uoV9\naF6nJNTwcS8WZHdgcLDOt/bNZ7A15SJrjHm8Bnrk9YgxZBCrkEA02QfzcdiUumVA\nLeowuk+ZPShGOhiSycAe6JQ=\n-----END PRIVATE KEY-----");
 
   // Google Sheets Helper
   async function appendToSheet(order: any) {
@@ -737,11 +727,48 @@ async function startServer() {
     }
   });
 
+  app.get("/api/admin/test-google", async (req, res) => {
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      
+      let spreadsheetId = config.google_spreadsheet_id;
+      let clientEmail = config.google_service_account_email;
+      let privateKeyRaw = config.google_private_key;
+
+      if (!spreadsheetId || !clientEmail || !privateKeyRaw) {
+        return res.status(400).json({ error: "Missing Google configuration" });
+      }
+
+      const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+      
+      const response = await sheets.spreadsheets.get({ spreadsheetId });
+      res.json({ success: true, title: response.data.properties?.title });
+    } catch (err: any) {
+      console.error("Google Test Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/google/status", (req, res) => {
-    const row = db.prepare("SELECT value FROM app_config WHERE key = 'google_tokens'").get() as any;
+    const tokensRow = db.prepare("SELECT value FROM app_config WHERE key = 'google_tokens'").get() as any;
     const sheetIdRow = db.prepare("SELECT value FROM app_config WHERE key = 'google_spreadsheet_id'").get() as any;
+    const saEmailRow = db.prepare("SELECT value FROM app_config WHERE key = 'google_service_account_email'").get() as any;
+    const saKeyRow = db.prepare("SELECT value FROM app_config WHERE key = 'google_private_key'").get() as any;
+    
+    const hasSA = saEmailRow?.value && saKeyRow?.value;
+    const hasOAuth = !!tokensRow;
+
     res.json({ 
-      connected: !!row, 
+      connected: hasSA || hasOAuth,
+      method: hasSA ? 'Service Account' : (hasOAuth ? 'OAuth2' : 'None'),
       spreadsheetId: sheetIdRow ? sheetIdRow.value : null 
     });
   });
@@ -866,7 +893,7 @@ async function startServer() {
       seedOBs.forEach(ob => {
         insertOB.run(ob.name, ob.contact, ob.town, ob.distributor, ob.tsm, ob.totalShops, ob.routes);
         // Add default targets
-        ["Kite Glow", "Burq Action", "Vero", "Washing Powder", "DWB", "Match"].forEach(brand => {
+        ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].forEach(brand => {
           insertTarget.run(ob.contact, brand, (Math.random() * 10).toFixed(1));
         });
       });
@@ -1015,6 +1042,36 @@ async function startServer() {
     } catch (err) {
       console.error("Submission error:", err);
       res.status(500).json({ error: "Failed to submit order: " + err.message });
+    }
+  });
+
+  app.post("/api/admin/distributors/bulk-upload", (req, res) => {
+    const { distributors, clearExisting } = req.body;
+    if (!Array.isArray(distributors)) return res.status(400).json({ error: "Invalid data" });
+
+    const transaction = db.transaction(() => {
+      if (clearExisting) {
+        db.prepare("DELETE FROM distributors").run();
+      }
+
+      for (const item of distributors) {
+        const { name, town, tsm } = item;
+        if (!name) continue;
+        db.prepare(`
+          INSERT INTO distributors (name, town, tsm)
+          VALUES (?, ?, ?)
+          ON CONFLICT(name) DO UPDATE SET
+            town=excluded.town,
+            tsm=excluded.tsm
+        `).run(name, town, tsm);
+      }
+    });
+
+    try {
+      transaction();
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -1284,7 +1341,7 @@ async function startServer() {
         db.prepare("DELETE FROM brand_targets").run();
 
         for (const row of rows) {
-          const [name, contact, town, distributor, tsm, totalShops, routesRaw, kiteT, burqT, veroT, wpT, dwbT, matchT] = row;
+          const [name, contact, town, distributor, tsm, totalShops, routesRaw, kiteT, burqT, veroT, dwbT, matchT] = row;
           if (!name || !contact) continue;
 
           const routes = routesRaw ? routesRaw.split(",").map((r: string) => r.trim()) : [];
@@ -1298,7 +1355,6 @@ async function startServer() {
             "Kite Glow": kiteT,
             "Burq Action": burqT,
             "Vero": veroT,
-            "Washing Powder": wpT,
             "DWB": dwbT,
             "Match": matchT
           };

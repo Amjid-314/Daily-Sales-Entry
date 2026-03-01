@@ -28,6 +28,7 @@ import {
   ClipboardList,
   Settings,
   Plus,
+  ShieldCheck,
   Trash,
   Search,
   Lock,
@@ -109,7 +110,7 @@ export default function App() {
   });
   const [selectedOBForTargets, setSelectedOBForTargets] = useState<string | null>(null);
   const [obTargetsEdit, setObTargetsEdit] = useState<Record<string, number>>({});
-  const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; spreadsheetId: string | null }>({ connected: false, spreadsheetId: null });
+  const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; spreadsheetId: string | null; method?: string }>({ connected: false, spreadsheetId: null });
   const [isSyncing, setIsSyncing] = useState(false);
   const [isGoogleConfigLocked, setIsGoogleConfigLocked] = useState(true);
 
@@ -567,6 +568,81 @@ export default function App() {
     }
   };
 
+  const handleDistributorBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setMessage({ text: 'Parsing CSV...', type: 'info' });
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      error: (err) => {
+        setMessage({ text: 'CSV Parse Error: ' + err.message, type: 'error' });
+        setTimeout(() => setMessage(null), 3000);
+      },
+      complete: async (results) => {
+        if (results.errors.length > 0) {
+          setMessage({ text: 'CSV has errors. Check format.', type: 'error' });
+          console.error("PapaParse Errors:", results.errors);
+          setTimeout(() => setMessage(null), 3000);
+          return;
+        }
+
+        const dists = results.data.map((row: any) => {
+          const normalizedRow: any = {};
+          Object.keys(row).forEach(key => {
+            normalizedRow[key.trim().toLowerCase()] = row[key];
+          });
+
+          const getVal = (possibleKeys: string[]) => {
+            for (const key of possibleKeys) {
+              const normalizedKey = key.toLowerCase();
+              if (normalizedRow[normalizedKey] !== undefined) return normalizedRow[normalizedKey];
+            }
+            return null;
+          };
+
+          return {
+            name: getVal(['Name', 'name', 'Distributor', 'distributor']),
+            town: getVal(['Town', 'town']),
+            tsm: getVal(['TSM', 'tsm'])
+          };
+        }).filter((item: any) => item.name);
+
+        if (dists.length === 0) {
+          setMessage({ text: 'No valid records found in CSV', type: 'error' });
+          setTimeout(() => setMessage(null), 3000);
+          return;
+        }
+
+        const clearExisting = window.confirm("Do you want to REPLACE the entire distributor list with this new file? (Click Cancel to just ADD/UPDATE without deleting others)");
+
+        setMessage({ text: `Uploading ${dists.length} records...`, type: 'info' });
+
+        try {
+          const res = await fetch('/api/admin/distributors/bulk-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ distributors: dists, clearExisting })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setMessage({ text: `Successfully uploaded ${dists.length} distributors!`, type: 'success' });
+            fetchAdminData();
+          } else {
+            throw new Error(data.error || 'Upload failed');
+          }
+        } catch (err: any) {
+          setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+        } finally {
+          setTimeout(() => setMessage(null), 3000);
+          if (e.target) e.target.value = '';
+        }
+      }
+    });
+  };
+
   const handleBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -615,10 +691,6 @@ export default function App() {
               "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow', 'kite target'])) || 0,
               "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action', 'burq target'])) || 0,
               "Vero": parseFloat(getVal(['Vero Target', 'vero_target', 'vero', 'vero target'])) || 0,
-              "Washing Powder": parseFloat(getVal(['Washing Powder Target', 'washing_powder_target', 'washing powder', 'wp target'])) || 
-                                ((parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow'])) || 0) + 
-                                 (parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action'])) || 0) + 
-                                 (parseFloat(getVal(['Vero Target', 'vero_target', 'vero'])) || 0)),
               "DWB": parseFloat(getVal(['DWB Target', 'dwb_target', 'dwb', 'dwb target'])) || 0,
               "Match": parseFloat(getVal(['Match Target', 'match_target', 'match', 'match target'])) || 0
             }
@@ -1494,6 +1566,12 @@ export default function App() {
                 <span className="text-[10px] font-bold text-emerald-600 uppercase">Connected</span>
               </div>
               <div className="flex justify-between items-center">
+                <span className="text-xs font-bold text-slate-600">Google Sheets:</span>
+                <span className={`text-[10px] font-bold uppercase ${googleStatus.connected ? 'text-emerald-600' : 'text-slate-400'}`}>
+                  {googleStatus.connected ? 'Connected' : 'Disconnected'}
+                </span>
+              </div>
+              <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-600">Retention:</span>
                 <span className="text-[10px] font-bold text-emerald-600 uppercase">90 Days+</span>
               </div>
@@ -1519,6 +1597,12 @@ export default function App() {
                 >
                   {isGoogleConfigLocked ? <Lock className="w-3.5 h-3.5" /> : <Settings className="w-3.5 h-3.5 animate-pulse" />}
                 </button>
+                <div className="flex items-center gap-2">
+                  <div className={`w-2 h-2 rounded-full ${googleStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                    {googleStatus.connected ? `Connected (${googleStatus.method || 'OAuth2'})` : 'Not Connected'}
+                  </span>
+                </div>
               </div>
               
               <div className={`space-y-3 transition-all duration-300 ${isGoogleConfigLocked ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
@@ -1560,6 +1644,31 @@ export default function App() {
               </div>
 
               <div className="pt-2 grid grid-cols-2 gap-2">
+                <button 
+                  onClick={async () => {
+                    setIsSyncing(true);
+                    setMessage({ text: 'Testing connection...', type: 'info' });
+                    try {
+                      const res = await fetch('/api/admin/test-google');
+                      const data = await res.json();
+                      if (res.ok) {
+                        setMessage({ text: `Connected successfully! Sheet: ${data.title}`, type: 'success' });
+                      } else {
+                        throw new Error(data.error || 'Connection failed');
+                      }
+                    } catch (err: any) {
+                      setMessage({ text: 'Connection failed: ' + err.message, type: 'error' });
+                    } finally {
+                      setIsSyncing(false);
+                      setTimeout(() => setMessage(null), 3000);
+                    }
+                  }}
+                  disabled={isSyncing}
+                  className="btn-clean bg-slate-100 text-slate-600 hover:bg-slate-200 text-[10px] flex items-center justify-center gap-2"
+                >
+                  {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                  Test Connection
+                </button>
                 <button 
                   onClick={async () => {
                     setIsSyncing(true);
@@ -1619,9 +1728,9 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => {
-                      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Total Shops', 'Routes', 'Washing Powder Target', 'DWB Target', 'Match Target'];
+                      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
                       const csvContent = headers.join(",") + "\n" + 
-                        "Sample Name,S-01,Sample Town,Sample Dist,Sample TSM,50,\"Route 1, Route 2\",10.5,1.0,0.5";
+                        "Sample Name,S-01,Sample Town,Sample Dist,Sample TSM,50,\"Route 1, Route 2\",10,5,2,1,0.5";
                       const blob = new Blob([csvContent], { type: 'text/csv' });
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
@@ -1759,7 +1868,14 @@ export default function App() {
           <section className="card-clean overflow-hidden">
             <div className="bg-emerald-600 text-white px-4 py-2 flex justify-between items-center">
               <h2 className="text-sm font-bold uppercase tracking-widest">Distributors (Independent)</h2>
-              <button onClick={async () => { const name = prompt("Distributor Name:"); const town = prompt("Town:"); const tsm = prompt("TSM:"); if (name && town) { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, town, tsm }) }); fetchAdminData(); } }} className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30">+ Add</button>
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30 cursor-pointer flex items-center gap-1">
+                  <Upload className="w-3 h-3" />
+                  Bulk Upload
+                  <input type="file" accept=".csv" onChange={handleDistributorBulkUpload} className="hidden" />
+                </label>
+                <button onClick={async () => { const name = prompt("Distributor Name:"); const town = prompt("Town:"); const tsm = prompt("TSM:"); if (name && town) { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, town, tsm }) }); fetchAdminData(); } }} className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30">+ Add</button>
+              </div>
             </div>
             <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
               {distributors.map(dist => (
@@ -1874,9 +1990,10 @@ export default function App() {
     const tsmList = Array.from(new Set([...obAssignments.map(ob => ob.tsm), ...distributors.map(d => d.tsm)].filter(Boolean)));
     
     // Combine distributors from OB assignments and the explicit distributors table
+    // Prioritize explicit distributors table for town/tsm info
     const allDistributors = [
-      ...obAssignments.map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm })),
-      ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm }))
+      ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm })),
+      ...obAssignments.map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm }))
     ].filter((v, i, a) => a.findIndex(t => t.distributor === v.distributor) === i);
 
     const filteredDistributors = allDistributors
@@ -2000,20 +2117,6 @@ export default function App() {
                       return (
                         <td key={d.distributor} className="px-4 py-3 text-center text-[10px] text-seablue border-r border-slate-200">
                           {total > 0 ? total.toFixed(1) : '-'}
-                        </td>
-                      );
-                    })}
-                  </tr>
-                  <tr className="bg-emerald-50 font-black border-t border-emerald-100 sticky bottom-0 z-10 translate-y-[-1px]">
-                    <td className="px-4 py-3 text-[9px] uppercase text-emerald-600 sticky left-0 bg-emerald-50 z-10 border-r border-emerald-100">Total Value (Rs)</td>
-                    {filteredDistributors.map(d => {
-                      const totalValue = Object.entries(stockOrders[d.distributor] || {}).reduce((sum: number, [skuId, s]: [string, any]) => {
-                        const sku = SKUS.find(sk => sk.id === skuId);
-                        return sum + (Number(s.ctn) || 0) * (sku?.pricePerCarton || 0);
-                      }, 0) as number;
-                      return (
-                        <td key={d.distributor} className="px-4 py-3 text-center text-[10px] text-emerald-700 border-r border-emerald-100">
-                          {totalValue > 0 ? totalValue.toLocaleString() : '-'}
                         </td>
                       );
                     })}
@@ -2270,7 +2373,7 @@ export default function App() {
                                 `------------------\n` +
                                 `*SKU Details:*\n${skuDetails}\n` +
                                 `------------------\n` +
-                                CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} ${cat === 'Washing Powder' ? 'Bags' : 'Ctns'}`).join('\n') +
+                                CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} Ctns`).join('\n') +
                                 `\n------------------\n` +
                                 `*Total Achievement:* ${totalAch.toFixed(2)}`;
                               const encodedMsg = encodeURIComponent(summary);
@@ -2466,7 +2569,7 @@ export default function App() {
                   <thead>
                     <tr className="bg-slate-50 text-[9px] uppercase font-bold text-slate-400">
                       <th className="px-4 py-2">SKU</th>
-                      <th className="px-2 py-2 text-center w-20">{category === "Washing Powder" ? 'Bag' : 'Ctn'}</th>
+                      <th className="px-2 py-2 text-center w-20">Ctn</th>
                       {category !== "Match" && <th className="px-2 py-2 text-center w-20">Dzn</th>}
                       <th className="px-2 py-2 text-center w-20">Pks</th>
                       <th className="px-4 py-2 text-right w-24">Total</th>
@@ -2564,7 +2667,7 @@ export default function App() {
                       `------------------\n` +
                       `*SKU Details:*\n${skuDetails}\n` +
                       `------------------\n` +
-                      CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} ${cat === 'Washing Powder' ? 'Bags' : 'Ctns'}`).join('\n') +
+                      CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} Ctns`).join('\n') +
                       `\n------------------\n` +
                       `*Total Achievement:* ${totalAch.toFixed(2)}`;
                     
