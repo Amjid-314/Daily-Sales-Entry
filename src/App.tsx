@@ -87,7 +87,12 @@ const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void })
 export default function App() {
   const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks'>('entry');
   const [history, setHistory] = useState<any[]>([]);
-  const [historyFilters, setHistoryFilters] = useState({ ob: '', tsm: '', from: '', to: '' });
+  const [historyFilters, setHistoryFilters] = useState({ 
+    ob: '', 
+    tsm: '', 
+    from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], 
+    to: new Date().toISOString().split('T')[0] 
+  });
   const [historyPage, setHistoryPage] = useState(1);
   const itemsPerPage = 10;
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
@@ -99,6 +104,8 @@ export default function App() {
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [adminPassInput, setAdminPassInput] = useState('');
   const [selectedTSM, setSelectedTSM] = useState<string>('');
+  const [selectedAdminDistTSM, setSelectedAdminDistTSM] = useState<string>('');
+  const [targetMonth, setTargetMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [distributors, setDistributors] = useState<any[]>([]);
   const [mtdAchievement, setMtdAchievement] = useState<Record<string, number>>({});
   const [appLogo, setAppLogo] = useState<string | null>(() => {
@@ -113,6 +120,8 @@ export default function App() {
   const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; spreadsheetId: string | null; method?: string }>({ connected: false, spreadsheetId: null });
   const [isSyncing, setIsSyncing] = useState(false);
   const [isGoogleConfigLocked, setIsGoogleConfigLocked] = useState(true);
+  const [dailyStatus, setDailyStatus] = useState<any[]>([]);
+  const [isLoadingDailyStatus, setIsLoadingDailyStatus] = useState(false);
 
   const [order, setOrder] = useState<OrderState>(() => {
     const defaultState: OrderState = {
@@ -128,7 +137,9 @@ export default function App() {
       productiveShops: 0,
       categoryProductiveShops: {},
       items: {},
-      targets: {}
+      targets: {},
+      isAbsent: false,
+      withTSM: false
     };
 
     try {
@@ -140,7 +151,9 @@ export default function App() {
           ...parsed,
           items: parsed.items || {},
           targets: parsed.targets || {},
-          categoryProductiveShops: parsed.categoryProductiveShops || {}
+          categoryProductiveShops: parsed.categoryProductiveShops || {},
+          isAbsent: parsed.isAbsent || false,
+          withTSM: parsed.withTSM || false
         };
       }
     } catch (e) {
@@ -211,24 +224,105 @@ export default function App() {
     }));
   };
 
-  const handleMetaChange = (field: keyof Omit<OrderState, 'items' | 'targets' | 'categoryProductiveShops'>, value: string | number) => {
-    setOrder(prev => {
-      const newState = { ...prev, [field]: value };
-      if (field === 'obContact') {
-        const assignment = obAssignments.find(a => a.contact === value);
-        if (assignment) {
-          newState.orderBooker = assignment.name;
-          newState.town = assignment.town;
-          newState.distributor = assignment.distributor;
-          newState.tsm = assignment.tsm || '';
-          newState.route = ''; 
-          newState.totalShops = assignment.total_shops || 50;
-          fetchTargetsForOB(value as string);
-          fetchMTDForOB(value as string);
+  const checkDuplicate = async (date: string, obContact: string) => {
+    try {
+      const res = await fetch(`/api/check-duplicate?date=${date}&ob_contact=${obContact}`);
+      const data = await res.json();
+      return data.exists;
+    } catch (e) {
+      return false;
+    }
+  };
+
+  const fetchDailyStatus = async (date: string) => {
+    setIsLoadingDailyStatus(true);
+    try {
+      const res = await fetch(`/api/daily-status?date=${date}`);
+      if (res.ok) {
+        const data = await res.json();
+        setDailyStatus(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setIsLoadingDailyStatus(false);
+    }
+  };
+
+  const handleMetaChange = async (field: keyof Omit<OrderState, 'items' | 'targets' | 'categoryProductiveShops'>, value: string | number) => {
+    if (field === 'obContact') {
+      const assignment = obAssignments.find(a => a.contact === value);
+      if (assignment) {
+        const isDuplicate = await checkDuplicate(order.date, String(value));
+        if (isDuplicate) {
+          setMessage({ text: "Entry already exists for this OB today!", type: 'error' });
+          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {} }));
+          setTimeout(() => setMessage(null), 3000);
+          return;
+        }
+
+        setOrder(prev => ({
+          ...prev,
+          obContact: String(value),
+          orderBooker: assignment.name,
+          town: assignment.town,
+          distributor: assignment.distributor,
+          tsm: assignment.tsm || '',
+          route: '',
+          totalShops: assignment.total_shops || 50,
+          targets: {},
+          items: {},
+          categoryProductiveShops: {},
+          isAbsent: false,
+          withTSM: false
+        }));
+        fetchTargetsForOB(String(value));
+      } else {
+        setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {} }));
+      }
+    } else {
+      setOrder(prev => ({ ...prev, [field]: value }));
+      if (field === 'date' && order.obContact) {
+        const isDuplicate = await checkDuplicate(String(value), order.obContact);
+        if (isDuplicate) {
+          setMessage({ text: "Entry already exists for this OB on this date!", type: 'error' });
+          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {} }));
+          setTimeout(() => setMessage(null), 3000);
         }
       }
-      return newState;
-    });
+    }
+  };
+
+  useEffect(() => {
+    if (order.obContact) {
+      fetchTargetsForOB(order.obContact);
+      fetchMTDForOB(order.obContact);
+    }
+  }, [order.obContact]);
+
+  const handleTargetChange = async (category: string, value: number) => {
+    setOrder(prev => ({
+      ...prev,
+      targets: { ...prev.targets, [category]: value }
+    }));
+    
+    // Persist to database if OB is selected
+    if (order.obContact) {
+      try {
+        await fetch('/api/admin/targets', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            obContact: order.obContact,
+            brandName: category,
+            targetCtn: value,
+            month: new Date().toISOString().slice(0, 7)
+          })
+        });
+      } catch (err) {
+        console.error("Failed to save target:", err);
+      }
+    }
   };
 
   const calculateTotalPacks = (skuId: string) => {
@@ -444,7 +538,8 @@ export default function App() {
 
   const fetchTargetsForOB = async (contact: string) => {
     try {
-      const res = await fetch(`/api/admin/targets/${contact}`);
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const res = await fetch(`/api/admin/targets/${contact}?month=${currentMonth}`);
       if (res.ok) {
         const targets = await res.json();
         const targetMap: Record<string, number> = {};
@@ -481,9 +576,10 @@ export default function App() {
     } catch (err) { console.error(err); }
   };
 
-  const fetchTargetsForOBEdit = async (contact: string) => {
+  const fetchTargetsForOBEdit = async (contact: string, month?: string) => {
     try {
-      const res = await fetch(`/api/admin/targets/${contact}`);
+      const m = month || targetMonth;
+      const res = await fetch(`/api/admin/targets/${contact}?month=${m}`);
       if (res.ok) {
         const targets = await res.json();
         const targetMap: Record<string, number> = {};
@@ -500,7 +596,7 @@ export default function App() {
       await fetch('/api/admin/targets', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ obContact, brandName, targetCtn })
+        body: JSON.stringify({ obContact, brandName, targetCtn, month: targetMonth })
       });
     } catch (err) { console.error(err); }
   };
@@ -512,6 +608,7 @@ export default function App() {
     if (view === 'admin' && adminAuthenticated) {
       fetchAdminData();
       fetchHistory(true); // Fetch all history for the download button
+      fetchDailyStatus(new Date().toISOString().split('T')[0]);
     }
     if (view === 'dashboard') fetchAdminData();
   }, [view, adminAuthenticated]);
@@ -643,6 +740,59 @@ export default function App() {
     });
   };
 
+  const handleTargetBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      Papa.parse(file, {
+        header: true,
+        complete: async (results) => {
+          const rows = results.data as any[];
+          const targets: any[] = [];
+          
+          rows.forEach(row => {
+            const contact = row['ID'] || row['id'] || row['Contact'] || row['contact'];
+            if (!contact) return;
+            
+            CATEGORIES.forEach(cat => {
+              const targetVal = row[cat] || row[`${cat} Target`] || row[cat.toLowerCase()] || row[`${cat.toLowerCase()}_target`];
+              if (targetVal !== undefined && targetVal !== '') {
+                targets.push({
+                  ob_contact: String(contact),
+                  brand_name: cat,
+                  target_ctn: parseFloat(targetVal) || 0
+                });
+              }
+            });
+          });
+          
+          if (targets.length === 0) {
+            setMessage({ text: 'No valid targets found in CSV', type: 'error' });
+            return;
+          }
+          
+          setMessage({ text: `Uploading ${targets.length} targets for ${targetMonth}...`, type: 'info' });
+          try {
+            const res = await fetch('/api/admin/targets/bulk', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ targets, month: targetMonth })
+            });
+            if (res.ok) {
+              setMessage({ text: `Successfully uploaded ${targets.length} targets!`, type: 'success' });
+              fetchAdminData();
+            } else {
+              const data = await res.json();
+              throw new Error(data.error || 'Upload failed');
+            }
+          } catch (err: any) {
+            setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+          }
+          if (e.target) e.target.value = '';
+        }
+      });
+    }
+  };
+
   const handleBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -738,13 +888,19 @@ export default function App() {
     const today = now.getDate();
     
     const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const holidaysStr = appConfig.holidays || '';
+    const holidays = holidaysStr.split(',').map(h => h.trim()).filter(h => h);
     
     let totalWorkingDays = 0;
     let workingDaysPassed = 0;
     
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
-      if (date.getDay() !== 0) { // Not Sunday
+      const dateStr = date.toISOString().split('T')[0];
+      const isSunday = date.getDay() === 0;
+      const isHoliday = holidays.includes(dateStr);
+      
+      if (!isSunday && !isHoliday) {
         totalWorkingDays++;
         if (d <= today) {
           workingDaysPassed++;
@@ -753,7 +909,7 @@ export default function App() {
     }
     
     return {
-      percentage: (workingDaysPassed / totalWorkingDays) * 100,
+      percentage: totalWorkingDays > 0 ? (workingDaysPassed / totalWorkingDays) * 100 : 0,
       passed: workingDaysPassed,
       total: totalWorkingDays
     };
@@ -1722,6 +1878,58 @@ export default function App() {
                 </button>
               </div>
             </div>
+            <div className="card-clean p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monthly Holidays</h3>
+                <div className="text-[8px] text-slate-400 italic">Comma separated dates (YYYY-MM-DD)</div>
+              </div>
+              <textarea 
+                placeholder="e.g. 2026-03-20, 2026-03-21"
+                value={appConfig.holidays || ''} 
+                onChange={(e) => updateConfig('holidays', e.target.value)}
+                className="input-clean w-full h-20 text-[10px] font-mono"
+              />
+            </div>
+
+            <div className="card-clean p-4 space-y-4">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bulk Targets Upload</h3>
+              <div className="flex flex-col gap-2">
+                <div className="flex items-center gap-2">
+                  <label className="text-[8px] font-bold text-slate-400 uppercase">Target Month:</label>
+                  <input 
+                    type="month" 
+                    value={targetMonth} 
+                    onChange={(e) => setTargetMonth(e.target.value)}
+                    className="input-clean text-[10px] py-0.5 px-2"
+                  />
+                </div>
+                <div className="flex gap-2">
+                  <label className="btn-seablue text-[10px] cursor-pointer flex items-center justify-center gap-2 flex-1">
+                    <Upload className="w-3 h-3" />
+                    Upload Targets CSV
+                    <input type="file" accept=".csv" className="hidden" onChange={handleTargetBulkUpload} />
+                  </label>
+                  <button 
+                    onClick={() => {
+                      const headers = ['ID', ...CATEGORIES];
+                      const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
+                      const encodedUri = encodeURI(csvContent);
+                      const link = document.createElement("a");
+                      link.setAttribute("href", encodedUri);
+                      link.setAttribute("download", "targets_template.csv");
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                    className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-400"
+                    title="Download Template"
+                  >
+                    <Download className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div className="card-clean p-4 space-y-3">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bulk Team & Targets</h3>
               <div className="flex flex-col gap-2">
@@ -1771,6 +1979,29 @@ export default function App() {
                     className="text-[9px] font-bold text-emerald-600 border border-emerald-200 py-1.5 rounded hover:bg-emerald-50 flex items-center justify-center gap-1 disabled:opacity-50"
                   >
                     <Share2 className="w-3 h-3" /> Export to Sheets
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      if (!confirm("This will import sales history from the 'Sales_Data' tab in Google Sheets. It will skip records that already exist in the app. Continue?")) return;
+                      setIsSyncing(true);
+                      try {
+                        const res = await fetch('/api/admin/sync-sales-from-sheets', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok) {
+                          setMessage({ text: data.message, type: 'success' });
+                          fetchHistory(true);
+                        } else throw new Error(data.error);
+                      } catch (err: any) {
+                        setMessage({ text: 'Import Error: ' + err.message, type: 'error' });
+                      } finally {
+                        setIsSyncing(false);
+                        setTimeout(() => setMessage(null), 3000);
+                      }
+                    }}
+                    disabled={isSyncing || !appConfig.google_spreadsheet_id}
+                    className="text-[9px] font-bold text-blue-600 border border-blue-200 py-1.5 rounded hover:bg-blue-50 flex items-center justify-center gap-1 disabled:opacity-50"
+                  >
+                    <History className="w-3 h-3" /> Import Sales History
                   </button>
                   <button 
                     onClick={async () => {
@@ -1866,9 +2097,120 @@ export default function App() {
           </div>
 
           <section className="card-clean overflow-hidden">
-            <div className="bg-emerald-600 text-white px-4 py-2 flex justify-between items-center">
-              <h2 className="text-sm font-bold uppercase tracking-widest">Distributors (Independent)</h2>
+            <div className="bg-slate-800 text-white px-4 py-2 flex justify-between items-center">
               <div className="flex items-center gap-2">
+                <ShieldCheck className="w-4 h-4" />
+                <h2 className="text-sm font-bold uppercase tracking-widest">Daily Submission Status</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="date" 
+                  defaultValue={new Date().toISOString().split('T')[0]} 
+                  onChange={(e) => fetchDailyStatus(e.target.value)}
+                  className="bg-white/10 text-white text-[10px] font-bold px-2 py-1 rounded border border-white/20 focus:outline-none"
+                />
+                <button onClick={() => fetchDailyStatus(new Date().toISOString().split('T')[0])} className="p-1 hover:bg-white/10 rounded transition-colors">
+                  <RefreshCw className={`w-3 h-3 ${isLoadingDailyStatus ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Total Team</div>
+                  <div className="text-xl font-black text-slate-700">{dailyStatus.length}</div>
+                </div>
+                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
+                  <div className="text-[8px] font-black text-emerald-400 uppercase tracking-widest">Submitted</div>
+                  <div className="text-xl font-black text-emerald-600">{dailyStatus.filter(s => s.submitted && !s.is_absent).length}</div>
+                </div>
+                <div className="p-3 bg-red-50 rounded-xl border border-red-100">
+                  <div className="text-[8px] font-black text-red-400 uppercase tracking-widest">Absent</div>
+                  <div className="text-xl font-black text-red-600">{dailyStatus.filter(s => s.is_absent).length}</div>
+                </div>
+                <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
+                  <div className="text-[8px] font-black text-amber-400 uppercase tracking-widest">Pending</div>
+                  <div className="text-xl font-black text-amber-600">{dailyStatus.filter(s => !s.submitted).length}</div>
+                </div>
+              </div>
+              
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[10px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                      <th className="py-2">OB Name</th>
+                      <th className="py-2">TSM</th>
+                      <th className="py-2 text-center">Status</th>
+                      <th className="py-2 text-center">Visit Type</th>
+                      <th className="py-2 text-right">Last Entry</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {dailyStatus.map(ob => (
+                      <tr key={ob.contact} className="hover:bg-slate-50">
+                        <td className="py-2">
+                          <div className="font-bold text-slate-700">{ob.name}</div>
+                          <div className="text-[8px] text-slate-400">{ob.contact}</div>
+                        </td>
+                        <td className="py-2 text-slate-500">{ob.tsm}</td>
+                        <td className="py-2 text-center">
+                          {ob.submitted ? (
+                            ob.is_absent ? (
+                              <span className="px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 font-bold text-[8px] uppercase">Absent</span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-bold text-[8px] uppercase">Submitted</span>
+                            )
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-bold text-[8px] uppercase">Pending</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-center">
+                          {ob.submitted && !ob.is_absent && (
+                            ob.with_tsm ? (
+                              <span className="px-1.5 py-0.5 rounded-full bg-seablue/10 text-seablue font-bold text-[8px] uppercase">With TSM</span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-400 font-bold text-[8px] uppercase">Alone</span>
+                            )
+                          )}
+                        </td>
+                        <td className="py-2 text-right font-mono text-slate-400">
+                          {ob.submitted_at ? new Date(ob.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section className="card-clean overflow-hidden">
+            <div className="bg-emerald-600 text-white px-4 py-2 flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <h2 className="text-sm font-bold uppercase tracking-widest">Distributors (Independent)</h2>
+                <select 
+                  value={selectedAdminDistTSM} 
+                  onChange={(e) => setSelectedAdminDistTSM(e.target.value)}
+                  className="bg-white/10 text-white text-[10px] font-bold px-2 py-1 rounded border border-white/20 focus:outline-none"
+                >
+                  <option value="" className="text-slate-900">All TSMs</option>
+                  {Array.from(new Set(distributors.map(d => d.tsm).filter(Boolean))).map(tsm => (
+                    <option key={tsm} value={tsm} className="text-slate-900">{tsm}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={async () => {
+                    if (confirm("Are you sure you want to DELETE ALL distributors? This cannot be undone.")) {
+                      await fetch('/api/admin/distributors/clear', { method: 'POST' });
+                      fetchAdminData();
+                    }
+                  }}
+                  className="text-[9px] font-black bg-red-500/20 px-2 py-1 rounded hover:bg-red-500/40 text-red-100 uppercase tracking-widest"
+                >
+                  Clear All
+                </button>
                 <label className="text-[10px] font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30 cursor-pointer flex items-center gap-1">
                   <Upload className="w-3 h-3" />
                   Bulk Upload
@@ -1878,7 +2220,9 @@ export default function App() {
               </div>
             </div>
             <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
-              {distributors.map(dist => (
+              {distributors
+                .filter(dist => !selectedAdminDistTSM || dist.tsm === selectedAdminDistTSM)
+                .map(dist => (
                 <div key={dist.id} className="p-4 flex items-center justify-between gap-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
                     <div className="space-y-1">
@@ -1960,7 +2304,21 @@ export default function App() {
 
                   {selectedOBForTargets === ob.contact && (
                     <motion.div initial={{ height: 0, opacity: 0 }} animate={{ height: 'auto', opacity: 1 }} className="bg-slate-50 p-4 rounded-xl space-y-4 border border-slate-200">
-                      <h4 className="text-[10px] font-black text-seablue uppercase tracking-widest">Brand Targets for {ob.name} (Ctn)</h4>
+                      <div className="flex justify-between items-center">
+                        <h4 className="text-[10px] font-black text-seablue uppercase tracking-widest">Brand Targets for {ob.name} (Ctn)</h4>
+                        <div className="flex items-center gap-2">
+                          <label className="text-[8px] font-bold text-slate-400 uppercase">Month:</label>
+                          <input 
+                            type="month" 
+                            value={targetMonth} 
+                            onChange={(e) => {
+                              setTargetMonth(e.target.value);
+                              fetchTargetsForOBEdit(ob.contact, e.target.value);
+                            }}
+                            className="input-clean text-[10px] py-0.5 px-2"
+                          />
+                        </div>
+                      </div>
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                         {CATEGORIES.map(cat => (
                           <div key={cat} className="space-y-1">
@@ -2507,6 +2865,22 @@ export default function App() {
             <label className="text-[9px] font-bold text-slate-400 uppercase">Prod</label>
             <input type="number" inputMode="numeric" autoComplete="off" value={order.productiveShops || ''} onChange={(e) => handleMetaChange('productiveShops', parseInt(e.target.value) || 0)} className={`input-clean w-full text-[10px] py-1 ${order.visitedShops > 0 && (order.productiveShops / order.visitedShops) < 0.7 ? 'border-red-300' : ''}`} />
           </div>
+          <div className="md:col-span-6 flex flex-wrap gap-4 pt-2 border-t border-slate-50">
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${order.isAbsent ? 'bg-red-500 border-red-500' : 'bg-white border-slate-200 group-hover:border-red-300'}`}>
+                <input type="checkbox" checked={order.isAbsent} onChange={(e) => setOrder(prev => ({ ...prev, isAbsent: e.target.checked, withTSM: e.target.checked ? false : prev.withTSM }))} className="hidden" />
+                {order.isAbsent && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+              </div>
+              <span className={`text-[10px] font-black uppercase tracking-widest ${order.isAbsent ? 'text-red-600' : 'text-slate-400'}`}>Mark as Absent / Leave</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer group">
+              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${order.withTSM ? 'bg-seablue border-seablue' : 'bg-white border-slate-200 group-hover:border-seablue/30'}`}>
+                <input type="checkbox" checked={order.withTSM} onChange={(e) => setOrder(prev => ({ ...prev, withTSM: e.target.checked, isAbsent: e.target.checked ? false : prev.isAbsent }))} className="hidden" />
+                {order.withTSM && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+              </div>
+              <span className={`text-[10px] font-black uppercase tracking-widest ${order.withTSM ? 'text-seablue' : 'text-slate-400'}`}>Route Riding with TSM</span>
+            </label>
+          </div>
         </div>
 
         {/* Never Visited Indicator */}
@@ -2519,22 +2893,24 @@ export default function App() {
           </div>
         )}
 
-          <div className="card-clean p-1.5 flex flex-wrap items-center justify-center gap-1.5 md:gap-3 bg-slate-50/50">
-            {CATEGORIES.map(cat => (
-              <div key={cat} className="flex flex-col items-center bg-white border border-slate-200 rounded-md px-2 py-1 shadow-sm min-w-[80px]">
-                <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">{cat}</span>
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] font-black text-seablue">{categoryTotals[cat].toFixed(2)}</span>
-                  <span className="text-[8px] font-bold text-slate-400">/ {(order.targets[cat] || 0).toFixed(2)}</span>
+        {order.obContact ? (
+          <>
+            <div className="card-clean p-1.5 flex flex-wrap items-center justify-center gap-1.5 md:gap-3 bg-slate-50/50">
+              {CATEGORIES.map(cat => (
+                <div key={cat} className="flex flex-col items-center bg-white border border-slate-200 rounded-md px-2 py-1 shadow-sm min-w-[80px]">
+                  <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">{cat}</span>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] font-black text-seablue">{categoryTotals[cat].toFixed(2)}</span>
+                    <span className="text-[8px] font-bold text-slate-400">/ {(order.targets[cat] || 0).toFixed(2)}</span>
+                  </div>
                 </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
 
-        {/* Categories Section */}
-        <div className="space-y-4">
-          {CATEGORIES.map(category => (
-            <section key={category} className="card-clean overflow-hidden">
+            {/* Categories Section */}
+            <div className="space-y-4">
+              {CATEGORIES.map(category => (
+                <section key={category} className="card-clean overflow-hidden">
               <div className="bg-seablue/5 px-4 py-2 flex justify-between items-center border-b border-slate-100">
                 <h2 className="text-[11px] font-black text-seablue uppercase tracking-tighter w-20">{category}</h2>
                 
@@ -2554,7 +2930,15 @@ export default function App() {
                   {/* 4th: Target */}
                   <div className="flex flex-col items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 min-w-[50px]">
                     <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Target</span>
-                    <span className="text-[11px] font-bold text-slate-600">{(order.targets[category] || 0)}</span>
+                    <input 
+                      type="number" 
+                      inputMode="decimal"
+                      autoComplete="off"
+                      value={order.targets[category] || ''} 
+                      onChange={(e) => handleTargetChange(category, parseFloat(e.target.value) || 0)}
+                      className="w-10 text-center text-[11px] font-bold text-slate-600 bg-transparent focus:outline-none"
+                      placeholder="0"
+                    />
                   </div>
 
                   {/* 5th: MTD Sales */}
@@ -2596,9 +2980,16 @@ export default function App() {
                   </tbody>
                 </table>
               </div>
-            </section>
-          ))}
-        </div>
+              </section>
+            ))}
+          </div>
+        </>
+      ) : (
+          <div className="card-clean p-12 flex flex-col items-center justify-center text-slate-400 space-y-4">
+            <Store className="w-12 h-12 opacity-20" />
+            <p className="text-xs font-bold uppercase tracking-widest">Select an Order Booker to start</p>
+          </div>
+        )}
       </main>
 
       <AnimatePresence>

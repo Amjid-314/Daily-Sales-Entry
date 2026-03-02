@@ -28,6 +28,11 @@ export interface OrderState {
   categoryProductiveShops: Record<string, number>; // Brand-wise productive shops
   items: Record<string, OrderItem>;
   targets: Record<string, number>;
+  isAbsent?: boolean;
+  withTSM?: boolean;
+  latitude?: number;
+  longitude?: number;
+  accuracy?: number;
 }
 
 export interface OBAssignment {

@@ -53,7 +53,10 @@ function calculateAchievement(orderData: any) {
       .filter(sku => sku.category === cat)
       .reduce((sum, sku) => {
         const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-        const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+        const ctn = Number(item.ctn || 0);
+        const dzn = Number(item.dzn || 0);
+        const pks = Number(item.pks || 0);
+        const packs = (ctn * sku.unitsPerCarton) + (dzn * sku.unitsPerDozen) + pks;
         return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
       }, 0);
   });
@@ -111,6 +114,8 @@ db.exec(`
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN latitude REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN longitude REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN accuracy REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN is_absent INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN with_tsm INTEGER DEFAULT 0"); } catch (e) {}
 
 async function startServer() {
   const app = express();
@@ -204,7 +209,8 @@ async function startServer() {
       ob_contact TEXT,
       brand_name TEXT,
       target_ctn REAL DEFAULT 0,
-      UNIQUE(ob_contact, brand_name)
+      month TEXT,
+      UNIQUE(ob_contact, brand_name, month)
     );
 
     CREATE TABLE IF NOT EXISTS app_config (
@@ -212,6 +218,42 @@ async function startServer() {
       value TEXT
     );
   `);
+
+  // Migration: Ensure brand_targets has correct UNIQUE constraint and month column
+  try {
+    const tableInfo = db.prepare("PRAGMA table_info(brand_targets)").all() as any[];
+    const hasMonth = tableInfo.some(col => col.name === 'month');
+    if (!hasMonth) {
+      db.exec("ALTER TABLE brand_targets ADD COLUMN month TEXT");
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      db.prepare("UPDATE brand_targets SET month = ? WHERE month IS NULL").run(currentMonth);
+    }
+    
+    // Check for unique constraint (simplified check)
+    const indexInfo = db.prepare("PRAGMA index_list(brand_targets)").all() as any[];
+    const hasCorrectIndex = indexInfo.some(idx => idx.unique === 1 && idx.origin === 'u');
+    
+    if (!hasCorrectIndex) {
+      // Recreate table to ensure correct UNIQUE constraint
+      db.exec(`
+        CREATE TABLE brand_targets_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          ob_contact TEXT,
+          brand_name TEXT,
+          target_ctn REAL DEFAULT 0,
+          month TEXT,
+          UNIQUE(ob_contact, brand_name, month)
+        );
+        INSERT OR IGNORE INTO brand_targets_new (ob_contact, brand_name, target_ctn, month)
+        SELECT ob_contact, brand_name, target_ctn, COALESCE(month, strftime('%Y-%m', 'now')) FROM brand_targets;
+        DROP TABLE brand_targets;
+        ALTER TABLE brand_targets_new RENAME TO brand_targets;
+      `);
+    }
+  } catch (e) {
+    console.error("Migration error for brand_targets:", e);
+  }
+  } catch (e) {}
 
   // Initial Config
   db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("total_working_days", "25");
@@ -318,11 +360,12 @@ async function startServer() {
   }
 
   async function refreshSummarySheets(sheets: any, spreadsheetId: string) {
-    const orders = db.prepare("SELECT * FROM submitted_orders").all() as any[];
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const orders = db.prepare("SELECT * FROM submitted_orders WHERE date LIKE ?").all(`${currentMonth}%`) as any[];
     const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
 
     // --- SHEET 2: Targets_vs_Achievement (Town, OB, Brand Wise) ---
-    const targetHeaders = ['Town', 'OB Name', 'OB Contact', 'TSM', 'Distributor', ...CATEGORIES.flatMap(cat => [`${cat} Target`, `${cat} Ach`, `${cat} %`]), 'Total Target', 'Total Ach', 'Total %'];
+    const targetHeaders = ['Month', 'Town', 'OB Name', 'OB Contact', 'TSM', 'Distributor', ...CATEGORIES.flatMap(cat => [`${cat} Target`, `${cat} Ach`, `${cat} %`]), 'Total Target', 'Total Ach', 'Total %'];
     const targetRows: any[] = [];
 
     // Pre-calculate achievements per OB and Brand for efficiency
@@ -341,6 +384,7 @@ async function startServer() {
 
     for (const ob of obs) {
       const row = [
+        currentMonth,
         ob.town || '',
         ob.name || '',
         ob.contact || '',
@@ -352,7 +396,7 @@ async function startServer() {
       let totalA = 0;
 
       for (const cat of CATEGORIES) {
-        const obTargets = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ?").get(ob.contact, cat) as any;
+        const obTargets = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ? AND month = ?").get(ob.contact, cat, currentMonth) as any;
         const target = obTargets ? obTargets.target_ctn : 0;
         const ach = achievementMap[ob.contact]?.[cat] || 0;
 
@@ -579,8 +623,9 @@ async function startServer() {
 
   app.get("/api/admin/obs", (req, res) => {
     try {
-      const obs = db.prepare("SELECT * FROM ob_assignments").all();
-      const targets = db.prepare("SELECT * FROM brand_targets").all();
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+      const targets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(currentMonth) as any[];
       
       const obsWithTargets = obs.map((ob: any) => {
         const obTargets: Record<string, number> = {};
@@ -620,8 +665,14 @@ async function startServer() {
     const shops = total_shops !== undefined ? total_shops : req.body.totalShops;
     try {
       if (id) {
+        const oldOB = db.prepare("SELECT contact FROM ob_assignments WHERE id = ?").get(id) as any;
         db.prepare("UPDATE ob_assignments SET name = ?, contact = ?, town = ?, distributor = ?, tsm = ?, total_shops = ?, routes = ? WHERE id = ?")
           .run(name, contact, town, distributor, tsm, shops || 0, JSON.stringify(routes), id);
+        
+        if (oldOB && oldOB.contact !== contact) {
+          db.prepare("UPDATE brand_targets SET ob_contact = ? WHERE ob_contact = ?").run(contact, oldOB.contact);
+          db.prepare("UPDATE submitted_orders SET ob_contact = ? WHERE ob_contact = ?").run(contact, oldOB.contact);
+        }
       } else {
         db.prepare("INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?)")
           .run(name, contact, town, distributor, tsm, shops || 0, JSON.stringify(routes));
@@ -633,15 +684,34 @@ async function startServer() {
   });
 
   app.post("/api/admin/targets", (req, res) => {
-    const { obContact, brandName, targetCtn } = req.body;
+    const { obContact, brandName, targetCtn, month } = req.body;
     const contact = obContact || req.body.ob_contact;
     const brand = brandName || req.body.brand_name;
     const target = targetCtn !== undefined ? targetCtn : req.body.target_ctn;
+    const targetMonth = month || new Date().toISOString().slice(0, 7);
     
     try {
-      db.prepare("INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn) VALUES (?, ?, ?)")
-        .run(contact, brand, target);
+      db.prepare("INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn, month) VALUES (?, ?, ?, ?)")
+        .run(contact, brand, target, targetMonth);
       res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/targets/bulk", (req, res) => {
+    const { targets, month } = req.body;
+    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    
+    try {
+      const insert = db.prepare("INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn, month) VALUES (?, ?, ?, ?)");
+      const transaction = db.transaction((data) => {
+        for (const t of data) {
+          insert.run(t.ob_contact, t.brand_name, t.target_ctn, targetMonth);
+        }
+      });
+      transaction(targets);
+      res.json({ success: true, count: targets.length });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -665,7 +735,11 @@ async function startServer() {
     const { id, town, name, tsm } = req.body;
     try {
       if (id) {
+        const oldDist = db.prepare("SELECT name FROM distributors WHERE id = ?").get(id) as any;
         db.prepare("UPDATE distributors SET town = ?, name = ?, tsm = ? WHERE id = ?").run(town, name, tsm, id);
+        if (oldDist && oldDist.name !== name) {
+          db.prepare("UPDATE ob_assignments SET distributor = ? WHERE distributor = ?").run(name, oldDist.name);
+        }
       } else {
         db.prepare("INSERT OR REPLACE INTO distributors (town, name, tsm) VALUES (?, ?, ?)").run(town, name, tsm);
       }
@@ -680,9 +754,19 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.get("/api/admin/targets/:ob_contact", (req, res) => {
+  app.post("/api/admin/distributors/clear", (req, res) => {
     try {
-      const targets = db.prepare("SELECT * FROM brand_targets WHERE ob_contact = ?").all(req.params.ob_contact);
+      db.prepare("DELETE FROM distributors").run();
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/targets/:ob_contact", (req, res) => {
+    const month = req.query.month || new Date().toISOString().slice(0, 7);
+    try {
+      const targets = db.prepare("SELECT * FROM brand_targets WHERE ob_contact = ? AND month = ?").all(req.params.ob_contact, month);
       res.json(targets);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch targets" });
@@ -995,6 +1079,39 @@ async function startServer() {
     }
   });
 
+  app.get("/api/check-duplicate", (req, res) => {
+    const { date, ob_contact } = req.query;
+    try {
+      const row = db.prepare("SELECT id FROM submitted_orders WHERE date = ? AND ob_contact = ?").get(date, ob_contact);
+      res.json({ exists: !!row });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to check duplicate" });
+    }
+  });
+
+  app.get("/api/daily-status", (req, res) => {
+    const { date } = req.query;
+    try {
+      const allOBs = db.prepare("SELECT * FROM ob_assignments").all();
+      const submissions = db.prepare("SELECT order_booker, ob_contact, is_absent, with_tsm, submitted_at FROM submitted_orders WHERE date = ?").all(date);
+      
+      const status = allOBs.map(ob => {
+        const submission = submissions.find(s => s.ob_contact === ob.contact);
+        return {
+          ...ob,
+          submitted: !!submission,
+          is_absent: submission ? !!submission.is_absent : false,
+          with_tsm: submission ? !!submission.with_tsm : false,
+          submitted_at: submission ? submission.submitted_at : null
+        };
+      });
+      
+      res.json(status);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to fetch daily status" });
+    }
+  });
+
   app.post("/api/submit", (req, res) => {
     try {
       const { data } = req.body;
@@ -1004,7 +1121,7 @@ async function startServer() {
         date, tsm, town, distributor, orderBooker, obContact, route, 
         totalShops, visitedShops, productiveShops, 
         categoryProductiveShops, items, targets,
-        latitude, longitude, accuracy
+        latitude, longitude, accuracy, isAbsent, withTSM
       } = data;
       
       const info = db.prepare(`
@@ -1012,9 +1129,9 @@ async function startServer() {
           date, tsm, town, distributor, order_booker, ob_contact, route, 
           total_shops, visited_shops, productive_shops, 
           category_productive_data, order_data, targets_data,
-          latitude, longitude, accuracy
+          latitude, longitude, accuracy, is_absent, with_tsm
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         date || new Date().toISOString().split('T')[0], 
         tsm || '', 
@@ -1029,9 +1146,11 @@ async function startServer() {
         JSON.stringify(categoryProductiveShops || {}), 
         JSON.stringify(items || {}), 
         JSON.stringify(targets || {}),
-        latitude || null,
-        longitude || null,
-        accuracy || null
+        latitude || null, 
+        longitude || null, 
+        accuracy || null,
+        isAbsent ? 1 : 0,
+        withTSM ? 1 : 0
       );
 
       // Async sync to Google Sheets
@@ -1338,7 +1457,9 @@ async function startServer() {
 
       const transaction = db.transaction(() => {
         db.prepare("DELETE FROM ob_assignments").run();
-        db.prepare("DELETE FROM brand_targets").run();
+        // Note: We don't delete all targets, only for the current month if we're importing fresh
+        const currentMonth = new Date().toISOString().slice(0, 7);
+        db.prepare("DELETE FROM brand_targets WHERE month = ?").run(currentMonth);
 
         for (const row of rows) {
           const [name, contact, town, distributor, tsm, totalShops, routesRaw, kiteT, burqT, veroT, dwbT, matchT] = row;
@@ -1362,9 +1483,9 @@ async function startServer() {
           for (const [brand, target] of Object.entries(targets)) {
             if (target) {
               db.prepare(`
-                INSERT INTO brand_targets (ob_contact, brand_name, target_ctn)
-                VALUES (?, ?, ?)
-              `).run(contact, brand, parseFloat(target) || 0);
+                INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn, month)
+                VALUES (?, ?, ?, ?)
+              `).run(contact, brand, parseFloat(target) || 0, currentMonth);
             }
           }
         }
@@ -1374,6 +1495,106 @@ async function startServer() {
       res.json({ success: true, message: `Successfully imported ${rows.length} team members from Google Sheets.` });
     } catch (err: any) {
       console.error("Import Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/sync-sales-from-sheets", async (req, res) => {
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      
+      let spreadsheetId = config.google_spreadsheet_id;
+      let clientEmail = config.google_service_account_email;
+      let privateKeyRaw = config.google_private_key;
+
+      try {
+        const parsed = JSON.parse(privateKeyRaw);
+        if (parsed.private_key) privateKeyRaw = parsed.private_key;
+        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+      } catch (e) {}
+
+      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+
+      if (!spreadsheetId || !clientEmail || !privateKey) {
+        return res.status(400).json({ error: "Google Sheets configuration missing." });
+      }
+
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "Sales_Data!A2:ZZ", 
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length === 0) {
+        return res.status(400).json({ error: "No data found in 'Sales_Data' sheet." });
+      }
+
+      // Headers are: Date, TSM, Town, Distributor, OB Name, OB Contact, Route, Total Shops, Visited Shops, Productive Shops, ...SKUS, Submitted At, Lat, Lng, Acc
+      const skuCount = SKUS.length;
+      const baseColCount = 10; // Date to Productive Shops
+
+      const transaction = db.transaction(() => {
+        // Optional: Clear existing history? User might want to append. 
+        // Let's append but avoid exact duplicates (same OB, Date, and Submitted At)
+        const insertOrder = db.prepare(`
+          INSERT INTO submitted_orders (
+            date, tsm, town, distributor, order_booker, ob_contact, route, 
+            total_shops, visited_shops, productive_shops, 
+            category_productive_data, order_data, targets_data,
+            submitted_at, latitude, longitude, accuracy
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        for (const row of rows) {
+          const [date, tsm, town, distributor, obName, obContact, route, tShops, vShops, pShops] = row;
+          if (!date || !obContact) continue;
+
+          // Reconstruct order_data
+          const orderData: Record<string, any> = {};
+          for (let i = 0; i < skuCount; i++) {
+            const sku = SKUS[i];
+            const val = parseFloat(row[baseColCount + i]) || 0;
+            if (val > 0) {
+              // We only have the "total" in cartons from the sheet. 
+              // We'll store it as ctn for simplicity.
+              orderData[sku.id] = { ctn: val, dzn: 0, pks: 0 };
+            }
+          }
+
+          const submittedAt = row[baseColCount + skuCount] || new Date().toISOString();
+          const lat = row[baseColCount + skuCount + 1] || null;
+          const lng = row[baseColCount + skuCount + 2] || null;
+          const acc = row[baseColCount + skuCount + 3] || null;
+
+          // Check for duplicate
+          const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND submitted_at = ?").get(obContact, date, submittedAt);
+          if (existing) continue;
+
+          insertOrder.run(
+            date, tsm, town, distributor, obName, obContact, route,
+            parseInt(tShops) || 0, parseInt(vShops) || 0, parseInt(pShops) || 0,
+            JSON.stringify({}), // category_productive_data is not easily reconstructed from the sheet
+            JSON.stringify(orderData),
+            JSON.stringify({}), // targets_data
+            submittedAt,
+            lat, lng, acc
+          );
+        }
+      });
+
+      transaction();
+      res.json({ success: true, message: `Successfully imported ${rows.length} sales records from Google Sheets.` });
+    } catch (err: any) {
+      console.error("Import Sales Error:", err);
       res.status(500).json({ error: err.message });
     }
   });
