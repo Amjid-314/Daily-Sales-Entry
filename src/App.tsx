@@ -48,6 +48,14 @@ const STORAGE_KEY = 'ob_order_draft';
 const ADMIN_PASSWORD = 'admin';
 const LOGO_STORAGE_KEY = 'app_logo_base64';
 
+const getPSTDate = () => {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
+};
+
+const getPSTTimestamp = () => {
+  return new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
+};
+
 const WhatsAppIcon = () => (
   <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413Z"/>
@@ -101,10 +109,11 @@ export default function App() {
   const [obSearch, setObSearch] = useState('');
   const [appConfig, setAppConfig] = useState<Record<string, string>>({ total_working_days: '25' });
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
+  const [stockHistory, setStockHistory] = useState<any[]>([]);
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [adminPassInput, setAdminPassInput] = useState('');
   const [selectedTSM, setSelectedTSM] = useState<string>('');
-  const [selectedAdminDistTSM, setSelectedAdminDistTSM] = useState<string>('');
+  const [selectedAdminTSM, setSelectedAdminTSM] = useState<string>('');
   const [targetMonth, setTargetMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [distributors, setDistributors] = useState<any[]>([]);
   const [mtdAchievement, setMtdAchievement] = useState<Record<string, number>>({});
@@ -125,7 +134,7 @@ export default function App() {
 
   const [order, setOrder] = useState<OrderState>(() => {
     const defaultState: OrderState = {
-      date: new Date().toISOString().split('T')[0],
+      date: getPSTDate(),
       tsm: '',
       town: '',
       distributor: '',
@@ -138,8 +147,7 @@ export default function App() {
       categoryProductiveShops: {},
       items: {},
       targets: {},
-      isAbsent: false,
-      withTSM: false
+      visitType: 'A'
     };
 
     try {
@@ -152,8 +160,7 @@ export default function App() {
           items: parsed.items || {},
           targets: parsed.targets || {},
           categoryProductiveShops: parsed.categoryProductiveShops || {},
-          isAbsent: parsed.isAbsent || false,
-          withTSM: parsed.withTSM || false
+          visitType: parsed.visitType || (parsed.isAbsent ? 'Absent' : (parsed.withTSM ? 'RR' : 'A'))
         };
       }
     } catch (e) {
@@ -261,25 +268,46 @@ export default function App() {
           return;
         }
 
+        // Filter distributors for this town
+        const townDists = distributors.filter(d => d.town === assignment.town);
+        let autoDist = assignment.distributor;
+        
+        // If town has distributors in the independent list, use those
+        if (townDists.length === 1) {
+          autoDist = townDists[0].name;
+        } else if (townDists.length > 1) {
+          // If multiple, and the assignment distributor is one of them, keep it.
+          // Otherwise, let the user select.
+          if (!townDists.some(d => d.name === assignment.distributor)) {
+            autoDist = '';
+          }
+        }
+
         setOrder(prev => ({
           ...prev,
           obContact: String(value),
           orderBooker: assignment.name,
           town: assignment.town,
-          distributor: assignment.distributor,
+          distributor: autoDist,
           tsm: assignment.tsm || '',
-          route: '',
+          route: assignment.routes[0] || '',
           totalShops: assignment.total_shops || 50,
           targets: {},
           items: {},
           categoryProductiveShops: {},
-          isAbsent: false,
-          withTSM: false
+          visitType: 'A'
         }));
         fetchTargetsForOB(String(value));
       } else {
         setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {} }));
       }
+    } else if (field === 'town') {
+      const townDists = distributors.filter(d => d.town === value);
+      let autoDist = '';
+      if (townDists.length === 1) {
+        autoDist = townDists[0].name;
+      }
+      setOrder(prev => ({ ...prev, town: String(value), distributor: autoDist }));
     } else {
       setOrder(prev => ({ ...prev, [field]: value }));
       if (field === 'date' && order.obContact) {
@@ -390,7 +418,7 @@ export default function App() {
       return;
     }
     const totalPacks = (Object.values(categoryTotals) as number[]).reduce((a, b) => a + b, 0);
-    if (totalPacks === 0) {
+    if (!order.isAbsent && totalPacks === 0) {
       setMessage({ text: 'Order is empty', type: 'error' });
       setTimeout(() => setMessage(null), 3000);
       return;
@@ -399,6 +427,23 @@ export default function App() {
   };
 
   const confirmSubmit = async () => {
+    // Validation: Brand-wise productive shops must be entered if sales > 0
+    const invalidCategories = CATEGORIES.filter(cat => {
+      const catTotal = categoryTotals[cat];
+      const catProd = order.categoryProductiveShops[cat] || 0;
+      return catTotal > 0 && catProd <= 0;
+    });
+
+    if (invalidCategories.length > 0) {
+      setMessage({ 
+        text: `MANDATORY: Enter productive shops for brands with sales: ${invalidCategories.join(', ')}`, 
+        type: 'error' 
+      });
+      setTimeout(() => setMessage(null), 5000);
+      setIsConfirming(false);
+      return;
+    }
+
     setIsConfirming(false);
     setIsSubmitting(true);
     
@@ -437,9 +482,10 @@ export default function App() {
         syncGoogle();
         fetchHistory(true);
         setOrder({
-          date: new Date().toISOString().split('T')[0],
+          date: getPSTDate(),
           tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
-          totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {}
+          totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {},
+          visitType: 'A'
         });
         localStorage.removeItem(STORAGE_KEY);
       } else throw new Error('Failed to submit');
@@ -518,20 +564,53 @@ export default function App() {
     }
   };
 
+  const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
+
+  const syncEverything = async () => {
+    setIsSyncingGlobal(true);
+    try {
+      // 1. Push local data to Google Sheets
+      const pushRes = await fetch('/api/admin/sync-sheets', { method: 'POST' });
+      const pushData = await pushRes.json();
+      if (!pushRes.ok) throw new Error(pushData.error || 'Push failed');
+
+      // 2. Pull Team & Targets from Google Sheets (Source of Truth for config)
+      const pullTeamRes = await fetch('/api/admin/sync-team-from-sheets', { method: 'POST' });
+      const pullTeamData = await pullTeamRes.json();
+      if (!pullTeamRes.ok) throw new Error(pullTeamData.error || 'Team Pull failed');
+
+      // 3. Pull Sales History from Google Sheets (to ensure Stats are up to date)
+      const pullSalesRes = await fetch('/api/admin/sync-sales-from-sheets', { method: 'POST' });
+      const pullSalesData = await pullSalesRes.json();
+      // We don't throw if sales pull fails, as it might be empty or have minor issues
+      
+      setMessage({ text: 'Full Sync Complete! Data pushed to Sheets, Team & Sales History updated from Sheets.', type: 'success' });
+      fetchAdminData();
+      fetchHistory(true);
+    } catch (err: any) {
+      setMessage({ text: 'Sync Error: ' + err.message, type: 'error' });
+    } finally {
+      setIsSyncingGlobal(false);
+      setTimeout(() => setMessage(null), 5000);
+    }
+  };
+
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
-      const [obsRes, distsRes, configRes, googleRes] = await Promise.all([
+      const [obsRes, distsRes, configRes, googleRes, stocksRes] = await Promise.all([
         fetch('/api/admin/obs'),
         fetch('/api/admin/distributors'),
         fetch('/api/admin/config'),
-        fetch('/api/google/status')
+        fetch('/api/google/status'),
+        fetch('/api/stocks')
       ]);
       
       if (obsRes.ok) setObAssignments(await obsRes.json());
       if (distsRes.ok) setDistributors(await distsRes.json());
       if (configRes.ok) setAppConfig(await configRes.json());
       if (googleRes.ok) setGoogleStatus(await googleRes.json());
+      if (stocksRes.ok) setStockHistory(await stocksRes.json());
     } catch (err) { console.error(err); }
     finally { setIsLoadingAdmin(false); }
   };
@@ -601,16 +680,21 @@ export default function App() {
     } catch (err) { console.error(err); }
   };
 
-  useEffect(() => { fetchAdminData(); }, []);
   useEffect(() => {
-    if (view === 'history') fetchHistory();
-    if (view === 'dashboard') fetchHistory(true);
-    if (view === 'admin' && adminAuthenticated) {
-      fetchAdminData();
-      fetchHistory(true); // Fetch all history for the download button
-      fetchDailyStatus(new Date().toISOString().split('T')[0]);
-    }
-    if (view === 'dashboard') fetchAdminData();
+    fetchAdminData();
+    fetchHistory();
+    
+    // Auto-refresh every 2 minutes to keep stats updated from other team members
+    const interval = setInterval(() => {
+      if (view === 'dashboard' || view === 'history' || view === 'admin') {
+        fetchHistory(view === 'dashboard' || view === 'admin');
+        if (view === 'admin' && adminAuthenticated) {
+          fetchDailyStatus(new Date().toISOString().split('T')[0]);
+        }
+      }
+    }, 120000);
+
+    return () => clearInterval(interval);
   }, [view, adminAuthenticated]);
 
   useEffect(() => {
@@ -793,6 +877,65 @@ export default function App() {
     }
   };
 
+  const [manualTSMName, setManualTSMName] = useState('');
+
+  const registerTSMsAsOBs = async (manualName?: string) => {
+    let tsmToRegister: string[] = [];
+    
+    if (manualName) {
+      tsmToRegister = [manualName];
+    } else {
+      const uniqueTSMs = Array.from(new Set(obAssignments.map(ob => ob.tsm).filter(Boolean))) as string[];
+      if (uniqueTSMs.length === 0) {
+        setMessage({ text: "No TSMs found in assignments", type: 'error' });
+        return;
+      }
+      // Filter out TSMs that are already registered as OBs
+      tsmToRegister = uniqueTSMs.filter(tsm => {
+        const contact = `TSM-${tsm.replace(/\s+/g, '-')}`;
+        return !obAssignments.some(ob => ob.contact === contact);
+      });
+    }
+
+    if (tsmToRegister.length === 0) {
+      setMessage({ text: "All TSMs are already registered as Order Bookers", type: 'success' });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+
+    if (!manualName && !window.confirm(`Register ${tsmToRegister.length} new TSMs as Order Bookers so they can enter their own reports?`)) return;
+
+    setIsLoadingAdmin(true);
+    try {
+      for (const tsm of tsmToRegister) {
+        const contact = `TSM-${(tsm as string).replace(/\s+/g, '-')}`;
+        // Find a sample assignment for this TSM to get town/distributor
+        const sample = obAssignments.find(ob => ob.tsm === tsm);
+        await fetch('/api/admin/obs', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: `${tsm} (TSM)`,
+            contact: contact,
+            town: sample?.town || 'General',
+            distributor: sample?.distributor || 'General',
+            tsm: tsm,
+            total_shops: 50,
+            routes: ["TSM Route"]
+          })
+        });
+      }
+      setMessage({ text: manualName ? `${manualName} registered successfully` : "TSMs registered as OBs successfully", type: 'success' });
+      setManualTSMName('');
+      fetchAdminData();
+    } catch (err) {
+      setMessage({ text: "Failed to register TSMs", type: 'error' });
+    } finally {
+      setIsLoadingAdmin(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
   const handleBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -882,7 +1025,7 @@ export default function App() {
   };
 
   const calculateTimeGone = () => {
-    const now = new Date();
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
     const year = now.getFullYear();
     const month = now.getMonth();
     const today = now.getDate();
@@ -918,10 +1061,11 @@ export default function App() {
   const timeGone = calculateTimeGone();
 
   const tsmList = useMemo(() => {
-    const tsms = new Set<string>();
+    const tsms = new Set<string>(['Muhammad Shoaib', 'Waheed Jamal', 'Ikramullah', 'Muhammad Zeeshan', 'Noman Paracha', 'Muhammad Yousaf', 'Qaisar Yousaf']);
     obAssignments.forEach(ob => { if (ob.tsm) tsms.add(ob.tsm); });
+    distributors.forEach(d => { if (d.tsm) tsms.add(d.tsm); });
     return Array.from(tsms).sort();
-  }, [obAssignments]);
+  }, [obAssignments, distributors]);
 
   const filteredOBs = useMemo(() => {
     return selectedTSM ? obAssignments.filter(ob => ob.tsm === selectedTSM) : obAssignments;
@@ -1891,6 +2035,23 @@ export default function App() {
               />
             </div>
 
+            <div className="card-clean p-4 space-y-3">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Unified Synchronization</h3>
+              <div className="flex flex-col gap-3">
+                <button 
+                  onClick={syncEverything}
+                  disabled={isSyncingGlobal || !appConfig.google_spreadsheet_id}
+                  className="w-full py-3 bg-emerald-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
+                >
+                  <Cloud className={`w-4 h-4 ${isSyncingGlobal ? 'animate-spin' : ''}`} />
+                  Sync All Data (App ↔ Google Sheets)
+                </button>
+                <p className="text-[8px] text-slate-400 text-center uppercase font-bold tracking-tighter">
+                  Pushes Sales & Stocks to Sheets | Pulls Team & Targets from Sheets
+                </p>
+              </div>
+            </div>
+
             <div className="card-clean p-4 space-y-4">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bulk Targets Upload</h3>
               <div className="flex flex-col gap-2">
@@ -2077,6 +2238,50 @@ export default function App() {
                 >
                   <Trash2 className="w-3 h-3" /> Clear All Sales History
                 </button>
+
+                <div className="space-y-3 pt-4 border-t border-slate-100">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase">TSM Management</div>
+                  <div className="flex flex-wrap gap-2 items-center">
+                    <select 
+                      onChange={(e) => {
+                        if (e.target.value) {
+                          registerTSMsAsOBs(e.target.value);
+                          e.target.value = '';
+                        }
+                      }}
+                      className="input-clean flex-1 min-w-[200px] text-xs"
+                    >
+                      <option value="">Select TSM to Register as OB</option>
+                      {Array.from(new Set(obAssignments.map(ob => ob.tsm).filter(Boolean)))
+                        .filter(tsm => !obAssignments.some(ob => ob.contact === `TSM-${(tsm as string).replace(/\s+/g, '-')}`))
+                        .map(tsm => (
+                          <option key={tsm as string} value={tsm as string}>{tsm as string}</option>
+                        ))
+                      }
+                      <optgroup label="Quick Add">
+                        {['Muhammad Shoaib', 'Waheed Jamal', 'Ikramullah', 'Muhammad Zeeshan', 'Noman Paracha', 'Muhammad Yousaf', 'Qaisar Yousaf'].map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </optgroup>
+                    </select>
+                    <button 
+                      onClick={() => {
+                        const name = prompt("Enter TSM Name:");
+                        if (name) registerTSMsAsOBs(name);
+                      }}
+                      className="btn-seablue px-4 py-2 text-[10px] font-black uppercase whitespace-nowrap"
+                    >
+                      Manual Add
+                    </button>
+                    <button 
+                      onClick={() => registerTSMsAsOBs()}
+                      disabled={isLoadingAdmin}
+                      className="px-4 py-2 border border-amber-500 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-50 flex items-center justify-center gap-2 disabled:opacity-50 whitespace-nowrap"
+                    >
+                      <Plus className="w-3 h-3" /> Auto-Register All
+                    </button>
+                  </div>
+                </div>
               </div>
             </div>
             <div className="card-clean p-4 flex items-center justify-between">
@@ -2095,6 +2300,65 @@ export default function App() {
               )}
             </div>
           </div>
+
+          <section className="card-clean overflow-hidden">
+            <div className="bg-seablue text-white px-4 py-2 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Store className="w-4 h-4" />
+                <h2 className="text-sm font-bold uppercase tracking-widest">Stock Reports History</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    window.open('/api/stocks/export', '_blank');
+                  }}
+                  className="text-[10px] font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30 flex items-center gap-1"
+                >
+                  <Download className="w-3 h-3" /> Export CSV
+                </button>
+                <button onClick={fetchAdminData} className="p-1 hover:bg-white/10 rounded transition-colors">
+                  <RefreshCw className={`w-3 h-3 ${isLoadingAdmin ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4">
+              <div className="overflow-x-auto max-h-[400px]">
+                <table className="w-full text-left text-[10px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                      <th className="py-2">Date</th>
+                      <th className="py-2">TSM</th>
+                      <th className="py-2">Town</th>
+                      <th className="py-2">Distributor</th>
+                      <th className="py-2 text-right">Total Stock (Ctn)</th>
+                      <th className="py-2 text-right">Submitted At</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {stockHistory.map(report => {
+                      const stockData = typeof report.stock_data === 'string' ? JSON.parse(report.stock_data) : (report.stock_data || {});
+                      const totalCtn = Object.values(stockData).reduce((sum: number, item: any) => sum + (Number(item.ctn) || 0), 0) as number;
+                      return (
+                        <tr key={report.id} className="hover:bg-slate-50">
+                          <td className="py-2 font-bold text-slate-700">{report.date}</td>
+                          <td className="py-2 text-slate-500">{report.tsm}</td>
+                          <td className="py-2 text-slate-500">{report.town}</td>
+                          <td className="py-2 text-slate-500 font-bold">{report.distributor}</td>
+                          <td className="py-2 text-right font-black text-seablue">{totalCtn.toFixed(1)}</td>
+                          <td className="py-2 text-right text-slate-400">{report.submitted_at}</td>
+                        </tr>
+                      );
+                    })}
+                    {stockHistory.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-slate-400 italic">No stock reports found.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
 
           <section className="card-clean overflow-hidden">
             <div className="bg-slate-800 text-white px-4 py-2 flex justify-between items-center">
@@ -2122,11 +2386,11 @@ export default function App() {
                 </div>
                 <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
                   <div className="text-[8px] font-black text-emerald-400 uppercase tracking-widest">Submitted</div>
-                  <div className="text-xl font-black text-emerald-600">{dailyStatus.filter(s => s.submitted && !s.is_absent).length}</div>
+                  <div className="text-xl font-black text-emerald-600">{dailyStatus.filter(s => s.submitted && s.visit_type !== 'Absent').length}</div>
                 </div>
                 <div className="p-3 bg-red-50 rounded-xl border border-red-100">
                   <div className="text-[8px] font-black text-red-400 uppercase tracking-widest">Absent</div>
-                  <div className="text-xl font-black text-red-600">{dailyStatus.filter(s => s.is_absent).length}</div>
+                  <div className="text-xl font-black text-red-600">{dailyStatus.filter(s => s.visit_type === 'Absent').length}</div>
                 </div>
                 <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
                   <div className="text-[8px] font-black text-amber-400 uppercase tracking-widest">Pending</div>
@@ -2155,23 +2419,23 @@ export default function App() {
                         <td className="py-2 text-slate-500">{ob.tsm}</td>
                         <td className="py-2 text-center">
                           {ob.submitted ? (
-                            ob.is_absent ? (
+                            ob.visit_type === 'Absent' ? (
                               <span className="px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 font-bold text-[8px] uppercase">Absent</span>
+                            ) : ob.visit_type === 'RR' ? (
+                              <span className="px-1.5 py-0.5 rounded-full bg-seablue/10 text-seablue font-bold text-[8px] uppercase">Route Riding</span>
+                            ) : ob.visit_type === 'V' ? (
+                              <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-bold text-[8px] uppercase">Van Sales</span>
                             ) : (
-                              <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-bold text-[8px] uppercase">Submitted</span>
+                              <span className="px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-600 font-bold text-[8px] uppercase">Alone</span>
                             )
                           ) : (
                             <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-bold text-[8px] uppercase">Pending</span>
                           )}
                         </td>
                         <td className="py-2 text-center">
-                          {ob.submitted && !ob.is_absent && (
-                            ob.with_tsm ? (
-                              <span className="px-1.5 py-0.5 rounded-full bg-seablue/10 text-seablue font-bold text-[8px] uppercase">With TSM</span>
-                            ) : (
-                              <span className="px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-400 font-bold text-[8px] uppercase">Alone</span>
-                            )
-                          )}
+                          {ob.submitted && ob.visit_type !== 'Absent' ? (
+                            <span className="font-bold text-slate-600">{ob.visit_type}</span>
+                          ) : '-'}
                         </td>
                         <td className="py-2 text-right font-mono text-slate-400">
                           {ob.submitted_at ? new Date(ob.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
@@ -2189,12 +2453,12 @@ export default function App() {
               <div className="flex items-center gap-4">
                 <h2 className="text-sm font-bold uppercase tracking-widest">Distributors (Independent)</h2>
                 <select 
-                  value={selectedAdminDistTSM} 
-                  onChange={(e) => setSelectedAdminDistTSM(e.target.value)}
+                  value={selectedAdminTSM} 
+                  onChange={(e) => setSelectedAdminTSM(e.target.value)}
                   className="bg-white/10 text-white text-[10px] font-bold px-2 py-1 rounded border border-white/20 focus:outline-none"
                 >
                   <option value="" className="text-slate-900">All TSMs</option>
-                  {Array.from(new Set(distributors.map(d => d.tsm).filter(Boolean))).map(tsm => (
+                  {tsmList.map(tsm => (
                     <option key={tsm} value={tsm} className="text-slate-900">{tsm}</option>
                   ))}
                 </select>
@@ -2221,7 +2485,7 @@ export default function App() {
             </div>
             <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
               {distributors
-                .filter(dist => !selectedAdminDistTSM || dist.tsm === selectedAdminDistTSM)
+                .filter(dist => !selectedAdminTSM || dist.tsm === selectedAdminTSM)
                 .map(dist => (
                 <div key={dist.id} className="p-4 flex items-center justify-between gap-4">
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
@@ -2235,7 +2499,14 @@ export default function App() {
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">TSM</label>
-                      <input type="text" defaultValue={dist.tsm} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, tsm: e.target.value }) }); }} className="input-clean w-full" />
+                      <select 
+                        defaultValue={dist.tsm} 
+                        onChange={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, tsm: e.target.value }) }); fetchAdminData(); }} 
+                        className="input-clean w-full text-[10px] py-1"
+                      >
+                        <option value="">Select TSM</option>
+                        {tsmList.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
                     </div>
                   </div>
                   <button onClick={async () => { if (confirm("Delete?")) { await fetch(`/api/admin/distributors/${dist.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
@@ -2247,11 +2518,28 @@ export default function App() {
 
           <section className="card-clean overflow-hidden">
             <div className="bg-seablue text-white px-4 py-2 flex justify-between items-center">
-              <h2 className="text-sm font-bold uppercase tracking-widest">OB Assignments</h2>
+              <div className="flex items-center gap-4">
+                <h2 className="text-sm font-bold uppercase tracking-widest">OB Assignments</h2>
+                <div className="flex items-center gap-2">
+                  <label className="text-[10px] font-black text-white/60 uppercase tracking-widest">Filter:</label>
+                  <select 
+                    value={selectedAdminTSM} 
+                    onChange={(e) => setSelectedAdminTSM(e.target.value)}
+                    className="bg-white/10 border border-white/20 text-white text-[10px] font-bold px-2 py-1 rounded outline-none focus:bg-white/20"
+                  >
+                    <option value="" className="text-slate-900">All TSMs</option>
+                    {tsmList.map(tsm => (
+                      <option key={tsm} value={tsm} className="text-slate-900">{tsm}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
               <button onClick={async () => { const name = prompt("Name:"); const contact = prompt("ID:"); if (name && contact) { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, contact, town: '', distributor: '', routes: [] }) }); fetchAdminData(); } }} className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30">+ Add</button>
             </div>
             <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
-              {obAssignments.map(ob => (
+              {obAssignments
+                .filter(ob => !selectedAdminTSM || ob.tsm === selectedAdminTSM)
+                .map(ob => (
                 <div key={ob.id} className="p-4 space-y-4">
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                     <div className="space-y-1">
@@ -2272,7 +2560,14 @@ export default function App() {
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">TSM</label>
-                      <input type="text" defaultValue={ob.tsm} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, tsm: e.target.value }) }); }} className="input-clean w-full" />
+                      <select 
+                        defaultValue={ob.tsm} 
+                        onChange={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, tsm: e.target.value }) }); fetchAdminData(); }} 
+                        className="input-clean w-full text-[10px] py-1"
+                      >
+                        <option value="">Select TSM</option>
+                        {tsmList.map(t => <option key={t} value={t}>{t}</option>)}
+                      </select>
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -2345,8 +2640,6 @@ export default function App() {
   }
 
   if (view === 'stocks') {
-    const tsmList = Array.from(new Set([...obAssignments.map(ob => ob.tsm), ...distributors.map(d => d.tsm)].filter(Boolean)));
-    
     // Combine distributors from OB assignments and the explicit distributors table
     // Prioritize explicit distributors table for town/tsm info
     const allDistributors = [
@@ -2412,6 +2705,31 @@ export default function App() {
               <h1 className="text-lg font-bold text-seablue">Distributor Stocks</h1>
             </div>
             <div className="flex items-center gap-2">
+              <button 
+                onClick={() => {
+                  const headers = ['Distributor', 'Town', 'TSM', ...SKUS.map(s => s.name)];
+                  const rows = filteredDistributors.map(d => {
+                    const stocks = stockOrders[d.distributor] || {};
+                    return [
+                      d.distributor, d.town, d.tsm,
+                      ...SKUS.map(sku => stocks[sku.id]?.ctn || 0)
+                    ];
+                  });
+                  const csv = Papa.unparse([headers, ...rows]);
+                  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.setAttribute('download', `Stock_Report_${new Date().toISOString().split('T')[0]}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="btn-seablue px-3 py-1.5 text-xs flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700"
+              >
+                <Download className="w-3 h-3" />
+                Export CSV
+              </button>
               <select 
                 value={selectedStockTSM} 
                 onChange={e => setSelectedStockTSM(e.target.value)}
@@ -2708,13 +3026,10 @@ export default function App() {
                               const items = h.order_data || {};
                               const skuDetails = SKUS.map(sku => {
                                 const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
-                                let detail = `*${sku.name}:* `;
-                                const parts = [];
-                                if (item.ctn > 0) parts.push(`${item.ctn} Ctn`);
-                                if (item.dzn > 0) parts.push(`${item.dzn} Dzn`);
-                                if (item.pks > 0) parts.push(`${item.pks} Pks`);
-                                return detail + parts.join(", ");
+                                const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                                const totalCtns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+                                if (totalCtns === 0) return null;
+                                return `*${sku.name}:* ${totalCtns.toFixed(2)} Ctns`;
                               }).filter(Boolean).join('\n');
 
                               const catProdDetails = CATEGORIES.map(cat => {
@@ -2787,9 +3102,17 @@ export default function App() {
             </div>
             <div className="flex gap-1.5">
               <button 
+                onClick={syncEverything}
+                disabled={isSyncingGlobal || !appConfig.google_spreadsheet_id}
+                className={`p-1.5 rounded-full transition-colors ${isSyncingGlobal ? 'text-emerald-500' : 'text-emerald-600 hover:bg-emerald-50'}`}
+                title="Full Sync with Google Sheets"
+              >
+                <Cloud className={`w-4 h-4 ${isSyncingGlobal ? 'animate-spin' : ''}`} />
+              </button>
+              <button 
                 onClick={() => { fetchAdminData(); fetchHistory(true); }}
                 className="p-1.5 hover:bg-slate-100 rounded-full text-seablue transition-colors"
-                title="Refresh Data"
+                title="Refresh Local Data"
               >
                 <RefreshCw className={`w-4 h-4 ${(isLoadingAdmin || isLoadingHistory) ? 'animate-spin' : ''}`} />
               </button>
@@ -2843,48 +3166,66 @@ export default function App() {
             <label className="text-[9px] font-bold text-slate-400 uppercase">OB</label>
             <select value={order.obContact} onChange={(e) => handleMetaChange('obContact', e.target.value)} className="input-clean w-full text-[10px] py-1">
               <option value="">Select OB</option>
-              {filteredOBs.map(ob => <option key={ob.contact} value={ob.contact}>{ob.name}</option>)}
+              {filteredOBs.map(ob => (
+                <option key={ob.contact} value={ob.contact}>
+                  {ob.name}
+                </option>
+              ))}
             </select>
           </div>
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">Route</label>
             <select value={order.route} onChange={(e) => handleMetaChange('route', e.target.value)} className="input-clean w-full text-[10px] py-1" disabled={!order.obContact}>
               <option value="">Select Route</option>
-              {obAssignments.find(a => a.contact === order.obContact)?.routes.map(r => <option key={r} value={r}>{r}</option>)}
+              {Array.from(new Set(obAssignments.find(a => a.contact === order.obContact)?.routes || [])).map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
             </select>
           </div>
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">Shops</label>
-            <input type="number" inputMode="numeric" autoComplete="off" value={order.totalShops || ''} onChange={(e) => handleMetaChange('totalShops', parseInt(e.target.value) || 0)} className="input-clean w-full bg-slate-50 text-[10px] py-1" />
+            <input type="number" inputMode="numeric" autoComplete="off" value={order.totalShops || ''} onChange={(e) => handleMetaChange('totalShops', parseInt(e.target.value) || 0)} className="input-clean w-full bg-slate-50 text-[10px] py-1" disabled={order.visitType === 'Absent'} />
           </div>
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">Visited</label>
-            <input type="number" inputMode="numeric" autoComplete="off" value={order.visitedShops || ''} onChange={(e) => handleMetaChange('visitedShops', parseInt(e.target.value) || 0)} className="input-clean w-full text-[10px] py-1" />
+            <input type="number" inputMode="numeric" autoComplete="off" value={order.visitType === 'Absent' ? 0 : (order.visitedShops || '')} onChange={(e) => handleMetaChange('visitedShops', parseInt(e.target.value) || 0)} className="input-clean w-full text-[10px] py-1" disabled={order.visitType === 'Absent'} />
           </div>
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">Prod</label>
-            <input type="number" inputMode="numeric" autoComplete="off" value={order.productiveShops || ''} onChange={(e) => handleMetaChange('productiveShops', parseInt(e.target.value) || 0)} className={`input-clean w-full text-[10px] py-1 ${order.visitedShops > 0 && (order.productiveShops / order.visitedShops) < 0.7 ? 'border-red-300' : ''}`} />
+            <input type="number" inputMode="numeric" autoComplete="off" value={order.visitType === 'Absent' ? 0 : (order.productiveShops || '')} onChange={(e) => handleMetaChange('productiveShops', parseInt(e.target.value) || 0)} className={`input-clean w-full text-[10px] py-1 ${order.visitType !== 'Absent' && order.visitedShops > 0 && (order.productiveShops / order.visitedShops) < 0.7 ? 'border-red-300' : ''}`} disabled={order.visitType === 'Absent'} />
           </div>
           <div className="md:col-span-6 flex flex-wrap gap-4 pt-2 border-t border-slate-50">
-            <label className="flex items-center gap-2 cursor-pointer group">
-              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${order.isAbsent ? 'bg-red-500 border-red-500' : 'bg-white border-slate-200 group-hover:border-red-300'}`}>
-                <input type="checkbox" checked={order.isAbsent} onChange={(e) => setOrder(prev => ({ ...prev, isAbsent: e.target.checked, withTSM: e.target.checked ? false : prev.withTSM }))} className="hidden" />
-                {order.isAbsent && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
+            <div className="flex items-center gap-4">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Visit Type:</span>
+              <div className="flex gap-2">
+                {[
+                  { id: 'A', label: 'Alone (A)', color: 'bg-slate-100 text-slate-600' },
+                  { id: 'V', label: 'Van Sales (V)', color: 'bg-emerald-100 text-emerald-600', tsmOnly: true },
+                  { id: 'RR', label: 'Route Riding (RR)', color: 'bg-seablue/10 text-seablue' },
+                  { id: 'Absent', label: 'Absent', color: 'bg-red-100 text-red-600' }
+                ].filter(type => !type.tsmOnly || (order.obContact && order.obContact.startsWith('TSM-'))).map(type => (
+                  <button
+                    key={type.id}
+                    onClick={() => setOrder(prev => ({ 
+                      ...prev, 
+                      visitType: type.id as any,
+                      visitedShops: type.id === 'Absent' ? 0 : prev.visitedShops,
+                      productiveShops: type.id === 'Absent' ? 0 : prev.productiveShops,
+                      categoryProductiveShops: type.id === 'Absent' ? {} : prev.categoryProductiveShops,
+                      items: type.id === 'Absent' ? {} : prev.items
+                    }))}
+                    className={`px-2 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest transition-all border ${order.visitType === type.id ? `${type.color} border-current shadow-sm` : 'bg-white text-slate-400 border-slate-100 hover:border-slate-300'}`}
+                  >
+                    {type.label}
+                  </button>
+                ))}
               </div>
-              <span className={`text-[10px] font-black uppercase tracking-widest ${order.isAbsent ? 'text-red-600' : 'text-slate-400'}`}>Mark as Absent / Leave</span>
-            </label>
-            <label className="flex items-center gap-2 cursor-pointer group">
-              <div className={`w-4 h-4 rounded border flex items-center justify-center transition-colors ${order.withTSM ? 'bg-seablue border-seablue' : 'bg-white border-slate-200 group-hover:border-seablue/30'}`}>
-                <input type="checkbox" checked={order.withTSM} onChange={(e) => setOrder(prev => ({ ...prev, withTSM: e.target.checked, isAbsent: e.target.checked ? false : prev.isAbsent }))} className="hidden" />
-                {order.withTSM && <div className="w-1.5 h-1.5 bg-white rounded-full" />}
-              </div>
-              <span className={`text-[10px] font-black uppercase tracking-widest ${order.withTSM ? 'text-seablue' : 'text-slate-400'}`}>Route Riding with TSM</span>
-            </label>
+            </div>
           </div>
         </div>
 
         {/* Never Visited Indicator */}
-        {order.totalShops > 0 && (
+        {order.totalShops > 0 && !order.isAbsent && (
           <div className="flex justify-center">
             <div className={`px-2 py-0.5 rounded-full text-[7px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-sm border ${Math.max(0, order.totalShops - order.visitedShops) > 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
               <EyeOff className="w-2 h-2" />
@@ -2893,7 +3234,7 @@ export default function App() {
           </div>
         )}
 
-        {order.obContact ? (
+        {order.obContact && !order.isAbsent ? (
           <>
             <div className="card-clean p-1.5 flex flex-wrap items-center justify-center gap-1.5 md:gap-3 bg-slate-50/50">
               {CATEGORIES.map(cat => (
@@ -2916,9 +3257,17 @@ export default function App() {
                 
                 <div className="flex items-center gap-2 md:gap-4 flex-1 justify-end">
                   {/* 2nd: Productive Shops */}
-                  <div className="flex flex-col items-center bg-white border border-slate-200 rounded-lg px-1.5 py-0.5 shadow-sm min-w-[40px]">
-                    <span className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Prod</span>
-                    <input type="number" inputMode="numeric" autoComplete="off" value={order.categoryProductiveShops[category] || ''} onChange={(e) => setOrder(prev => ({ ...prev, categoryProductiveShops: { ...prev.categoryProductiveShops, [category]: parseInt(e.target.value) || 0 } }))} className="w-6 text-center text-[10px] font-bold text-seablue focus:outline-none" />
+                  <div className={`flex flex-col items-center bg-white border rounded-lg px-1.5 py-0.5 shadow-sm min-w-[40px] transition-colors ${categoryTotals[category] > 0 && (order.categoryProductiveShops[category] || 0) <= 0 ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}>
+                    <span className={`text-[6px] font-black uppercase tracking-tighter ${categoryTotals[category] > 0 && (order.categoryProductiveShops[category] || 0) <= 0 ? 'text-red-600' : 'text-slate-400'}`}>Prod</span>
+                    <input 
+                      type="number" 
+                      inputMode="numeric" 
+                      autoComplete="off" 
+                      placeholder="0"
+                      value={order.categoryProductiveShops[category] || ''} 
+                      onChange={(e) => setOrder(prev => ({ ...prev, categoryProductiveShops: { ...prev.categoryProductiveShops, [category]: parseInt(e.target.value) || 0 } }))} 
+                      className={`w-6 text-center text-[10px] font-bold focus:outline-none bg-transparent ${categoryTotals[category] > 0 && (order.categoryProductiveShops[category] || 0) <= 0 ? 'text-red-700' : 'text-seablue'}`} 
+                    />
                   </div>
 
                   {/* 3rd: Today Sales */}
@@ -3035,13 +3384,10 @@ export default function App() {
                     const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
                     const skuDetails = SKUS.map(sku => {
                       const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                      if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
-                      let detail = `*${sku.name}:* `;
-                      const parts = [];
-                      if (item.ctn > 0) parts.push(`${item.ctn} Ctn`);
-                      if (item.dzn > 0) parts.push(`${item.dzn} Dzn`);
-                      if (item.pks > 0) parts.push(`${item.pks} Pks`);
-                      return detail + parts.join(", ");
+                      const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                      const totalCtns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+                      if (totalCtns === 0) return null;
+                      return `*${sku.name}:* ${totalCtns.toFixed(2)} Ctns`;
                     }).filter(Boolean).join('\n');
 
                     const catProdDetails = CATEGORIES.map(cat => {

@@ -99,6 +99,7 @@ db.exec(`
     latitude REAL,
     longitude REAL,
     accuracy REAL,
+    visit_type TEXT DEFAULT 'A',
     submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -114,8 +115,7 @@ db.exec(`
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN latitude REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN longitude REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN accuracy REAL"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN is_absent INTEGER DEFAULT 0"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN with_tsm INTEGER DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN visit_type TEXT DEFAULT 'A'"); } catch (e) {}
 
 async function startServer() {
   const app = express();
@@ -253,13 +253,21 @@ async function startServer() {
   } catch (e) {
     console.error("Migration error for brand_targets:", e);
   }
-  } catch (e) {}
 
   // Initial Config
   db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("total_working_days", "25");
   db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_spreadsheet_id", "1xdVdlzC1lfJfrH2v_LsOJMgCyRaEJbImMNDd_HvysIA");
   db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_service_account_email", "sheets-sync@salesappintegration.iam.gserviceaccount.com");
   db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_private_key", "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDK7Cr/uJugpYCu\n502wYaYlZM896/0XBbRF9xj1NeYpNKjgPMmXwwclLoH4B0GleDUo+Ymr2Dw7x8Oh\naw0imKghRRU2JlpvUwpDytFqvQ5cj9jS/vQgV8dAGXxHvjttI37y+GMmemB8np1t\nZTvh7sqYe/AHAz/lAaxF8vdpwrDq3QmHW7eB5Ztkz8J27tMiJ5Dm5CIKR4MawH0f\nTxoM1Vd+3nOWme63yOPy2woB6MEpdgbWS5hpTmFGeZv1PhdffIcz3QPTzHLyyU54\nHC5i7AiXc8EKQ7cZ0J8FUXB9yp5It0bp3fsiy3+18Y4U76pR8UDlb/o2TQhIVfM0\nvFSt6isfAgMBAAECggEARwcWX+8izj7QBaih2WC8sq8QGVkOfC37dVfx7PbCSt8L\nU34DhDL4P8wBIyuLD1u9o8uApF1qa/RW5hvd+6Oaihavv4X6NqhG2gbWeXmWWtDg\n8K3cDqwa6rVg+o28KE355BsMPY4tUsGEUiPSq5kVYf1TvWimR0boIY3TizniCjrX\nsSu5MPOZkfGaRFyJsyULq8f3LbOQl7XH1GMQE225wbiwHMIGGsGTDOOv2e80hslm\nN6MHbDrlfXwxIbz52stxXy9/iwNvRWutgmlCXZg45D2eXXxr1+flEZ5k2QCH6q0R\n4Ys6T7+Fp4pOZUnsh1ojnS95khYJsmxA9ymDznzvnQKBgQDr8TpFp2T1SeZriduj\nbYhN78m3ZQcoOqW/KHXx5ZPpy186LxhQ2340ddlq7ctqPPYElWsacpoUksugA/oi\ngM80Fbw52aiTEJGqXcioBOfpSqzCOjU8jLqimcO+/huTcVaQbMJ+wYWZhtipUxbq\n5LYBSdCCPwPNGpEEn0c6gOei5QKBgQDcLFY3IPZSsNdhj88mZt5+uOcPR0iCbw03\nR8wIiaoxzqHzJJRcbXNhv+aq9l+F6vSKDnckmUmnehfT73TUbOCaIEFmoe2F7/d+\nzkqnw7m26s+deGSpfyfi+FcZnA8SwFU9bRBfUIeWNlRH93iyjm4QoIyJ69+8CSYi\njk9PWijhswKBgCrc/hsdWAf/zu6GcvJzual/AIRixDQYw3fA3/x8Gq0El144pBA8\nb+cT6dW1MZkxTfhzNKvvWfKW4ItHba/K+tmZgUJ5OljNT8lFlGiBy6fkOxJmBLnl\nTxqvGJKgE15r3rAKMiNZAO5tQvsv7x/pQO9m+4xN6mDejK3sScJlHK/JAoGBAJ2w\ne4c8am9LDNdpQjoEzzH/iC2fJkWU9+gx2eX7gxPtJHyaJFAWa98ErFah4kRtxPrj\n5V0nFGOIxGwcQpap7Cs3EuBI9W9KMP53DW0ed3KUtmHYCnCDC7Q5nVhQN1N8wRAf\nfuxlJtbkznREwANSk24BLubRMwrfmpqBRjhVIJaVAoGAcS8uL5nP/CIQklr1ccYm\nEth+MgJkLmp8QmX89IvntjkuWfmn8YJ0rqS4jxnqJ8FUyAYpmmu3DdsFCul6uoV9\naF6nJNTwcS8WZHdgcLDOt/bNZ7A15SJrjHm8Bnrk9YgxZBCrkEA02QfzcdiUumVA\nLeowuk+ZPShGOhiSycAe6JQ=\n-----END PRIVATE KEY-----");
+
+  // Helper for PST Time
+  function getPSTTimestamp() {
+    return new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
+  }
+
+  function getPSTDate() {
+    return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
+  }
 
   // Google Sheets Helper
   async function appendToSheet(order: any) {
@@ -292,7 +300,7 @@ async function startServer() {
       const sheets = google.sheets({ version: 'v4', auth });
 
       // Ensure Sheets exist
-      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report"];
+      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report", "Current_Stocks", "Last_Entry_Date", "Visit_Type_Analysis"];
       for (const title of sheetTitles) {
         try {
           await sheets.spreadsheets.batchUpdate({
@@ -305,13 +313,22 @@ async function startServer() {
       }
 
       const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
-      const targetsData = typeof order.targets_data === 'string' ? JSON.parse(order.targets_data) : (order.targets_data || {});
+      const catProdData = typeof order.category_productive_data === 'string' ? JSON.parse(order.category_productive_data) : (order.category_productive_data || {});
       const achievement = calculateAchievement(orderData);
       
       // 1. Append to Sales_Data
+      const visitTypeMap: Record<string, string> = {
+        'A': 'Alone',
+        'V': 'Van Sales',
+        'RR': 'Route Riding',
+        'Absent': 'Absent'
+      };
+      const visitTypeLabel = visitTypeMap[order.visit_type] || order.visit_type || 'Alone';
+      
       const salesRow = [
         order.date, order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
         order.total_shops, order.visited_shops, order.productive_shops,
+        visitTypeLabel,
         ...SKUS.map(sku => {
           const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
           const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
@@ -321,14 +338,17 @@ async function startServer() {
         order.submitted_at,
         order.latitude || '',
         order.longitude || '',
-        order.accuracy || ''
+        order.accuracy || '',
+        ...CATEGORIES.map(cat => catProdData[cat] || 0)
       ];
 
       const salesHeaders = [
         'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
         'Total Shops', 'Visited Shops', 'Productive Shops',
+        'Visit Type',
         ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-        'Submitted At', 'Latitude', 'Longitude', 'Accuracy'
+        'Submitted At', 'Latitude', 'Longitude', 'Accuracy',
+        ...CATEGORIES.map(cat => `${cat} Prod`)
       ];
 
       // Check if headers exist, if not add them
@@ -360,7 +380,7 @@ async function startServer() {
   }
 
   async function refreshSummarySheets(sheets: any, spreadsheetId: string) {
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const currentMonth = getPSTDate().slice(0, 7);
     const orders = db.prepare("SELECT * FROM submitted_orders WHERE date LIKE ?").all(`${currentMonth}%`) as any[];
     const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
 
@@ -422,7 +442,7 @@ async function startServer() {
       requestBody: { values: [targetHeaders, ...targetRows] },
     });
 
-    // --- SHEET 4: Stocks_Report ---
+    // --- SHEET 4: Stocks_Report (Log) ---
     const stockHeaders = ['Date', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Submitted At'];
     const stockReports = db.prepare("SELECT * FROM stock_reports ORDER BY date DESC, submitted_at DESC").all() as any[];
     const stockRows = stockReports.map(report => {
@@ -448,36 +468,185 @@ async function startServer() {
       requestBody: { values: [stockHeaders, ...stockRows] },
     });
 
+    // --- SHEET 4.5: Current_Stocks (Matrix) ---
+    // Matrix: Distributors as Rows, SKUs as Columns
+    const matrixHeaders = ['Distributor', 'Town', 'TSM', ...SKUS.map(s => s.name), 'Last Updated'];
+    
+    // Get latest stock report for each distributor
+    const latestStocks = db.prepare(`
+      SELECT * FROM stock_reports 
+      WHERE id IN (
+        SELECT MAX(id) FROM stock_reports GROUP BY distributor
+      )
+    `).all() as any[];
+
+    const matrixRows = latestStocks.map(report => {
+      const stockData = JSON.parse(report.stock_data || '{}');
+      return [
+        report.distributor,
+        report.town,
+        report.tsm,
+        ...SKUS.map(sku => {
+          const item = stockData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const total = (Number(item.ctn || 0) * sku.unitsPerCarton + Number(item.dzn || 0) * sku.unitsPerDozen + Number(item.pks || 0)) / (sku.unitsPerCarton || 1);
+          return total.toFixed(2);
+        }),
+        report.submitted_at
+      ];
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "Current_Stocks!A1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [matrixHeaders, ...matrixRows] },
+    });
+
     // --- SHEET 3: OB_Route_Performance ---
     const performanceHeaders = [
-      'OB Name', 'Contact', 'Route', 'Total Shops', 'Visited', 'Productive', 'Visit %', 'Prod %',
+      'Date', 'OB Name', 'Contact', 'Route', 'Total Shops', 'Visited', 'Productive', 'Visit %', 'Prod %',
       ...CATEGORIES.map(cat => `${cat} Ach`),
       'Total Ach', 'Total Target', 'Overall %'
     ];
 
-    const performanceRows = orders.map(order => {
+    // Get all OBs to ensure everyone is listed
+    const performanceRows = obs.map(ob => {
+      // Find the latest order for this OB to show their current route performance
+      // Or better, show all their orders for the month?
+      // The user said "not updated by all OB", implying they want to see everyone.
+      // Let's find all orders for this OB this month
+      const obOrders = orders.filter(o => o.ob_contact === ob.contact);
+      
+      if (obOrders.length === 0) {
+        return [
+          ob.name, ob.contact, 'No Entry',
+          ob.total_shops || 0, 0, 0,
+          '0%', '0%',
+          ...CATEGORIES.map(() => '0.00'),
+          '0.00', '0.00', '0%'
+        ];
+      }
+
+      // If they have multiple orders (different routes), we should probably list each?
+      // The current logic was mapping over `orders`. Let's keep that but maybe add missing OBs?
+      // Actually, mapping over `orders` is better for "Route Performance" specifically.
+      // But if an OB hasn't submitted, they are missing.
+      // Let's stick to mapping over `orders` but ensure we are getting ALL orders for the month.
+      return null; // Placeholder for logic below
+    }).filter(Boolean);
+
+    // Re-implementing performanceRows to include all orders AND missing OBs
+    const allPerformanceRows: any[] = [];
+    
+    // 1. Add rows for all actual submissions
+    orders.forEach(order => {
       const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
       const targetsData = typeof order.targets_data === 'string' ? JSON.parse(order.targets_data) : (order.targets_data || {});
       const ach = calculateAchievement(orderData);
       const totalAch = Object.values(ach).reduce((a, b) => a + b, 0);
       const totalTarget = Object.values(targetsData).reduce((a: any, b: any) => a + b, 0);
 
-      return [
-        order.order_booker, order.ob_contact, order.route,
+      allPerformanceRows.push([
+        order.date, order.order_booker, order.ob_contact, order.route,
         order.total_shops, order.visited_shops, order.productive_shops,
         order.total_shops > 0 ? ((order.visited_shops / order.total_shops) * 100).toFixed(1) + '%' : '0%',
         order.visited_shops > 0 ? ((order.productive_shops / order.visited_shops) * 100).toFixed(1) + '%' : '0%',
         ...CATEGORIES.map(cat => (ach[cat] as number).toFixed(2)),
         (totalAch as number).toFixed(2), (totalTarget as number).toFixed(2),
         (totalTarget as number) > 0 ? (((totalAch as number) / (totalTarget as number)) * 100).toFixed(1) + '%' : '0%'
-      ];
+      ]);
+    });
+
+    // 2. Add rows for OBs who haven't submitted anything yet this month
+    obs.forEach(ob => {
+      const hasSubmitted = orders.some(o => o.ob_contact === ob.contact);
+      if (!hasSubmitted) {
+        allPerformanceRows.push([
+          getPSTDate(), ob.name, ob.contact, 'PENDING',
+          ob.total_shops || 0, 0, 0,
+          '0%', '0%',
+          ...CATEGORIES.map(() => '0.00'),
+          '0.00', '0.00', '0%'
+        ]);
+      }
     });
 
     await sheets.spreadsheets.values.update({
       spreadsheetId,
       range: "OB_Route_Performance!A1",
       valueInputOption: "USER_ENTERED",
-      requestBody: { values: [performanceHeaders, ...performanceRows] },
+      requestBody: { values: [performanceHeaders, ...allPerformanceRows] },
+    });
+
+    // --- SHEET 5: Last_Entry_Date ---
+    const lastEntryHeaders = ['OB Name', 'Contact', 'TSM', 'Distributor', 'Last Submission Date', 'Last Submission Time'];
+    const lastEntries = db.prepare(`
+      SELECT ob_assignments.name, ob_assignments.contact, ob_assignments.tsm, ob_assignments.distributor, 
+             MAX(submitted_orders.date) as last_date, MAX(submitted_orders.submitted_at) as last_ts
+      FROM ob_assignments
+      LEFT JOIN submitted_orders ON ob_assignments.contact = submitted_orders.ob_contact
+      GROUP BY ob_assignments.contact
+    `).all() as any[];
+    
+    const lastEntryRows = lastEntries.map(e => [
+      e.name, e.contact, e.tsm, e.distributor, e.last_date || 'No Entry', e.last_ts || 'No Entry'
+    ]);
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "Last_Entry_Date!A1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [lastEntryHeaders, ...lastEntryRows] },
+    });
+
+    // --- SHEET 6: Visit_Type_Analysis ---
+    const analysisHeaders = ['Date', 'OB Name', 'Route', 'Visit Type', 'Total Visits', 'Total Productive', 'Productivity %', 'Avg Achievement (Ctn)'];
+    const visitAnalysis = db.prepare(`
+      SELECT 
+        date,
+        order_booker,
+        route,
+        CASE 
+          WHEN visit_type = 'Absent' THEN 'Absent'
+          WHEN visit_type = 'RR' THEN 'Route Riding'
+          WHEN visit_type = 'V' THEN 'Van Sales'
+          ELSE 'Alone'
+        END as visit_type_label,
+        visit_type,
+        COUNT(*) as total_visits,
+        SUM(productive_shops) as total_productive,
+        SUM(visited_shops) as total_visited
+      FROM submitted_orders
+      WHERE date LIKE ?
+      GROUP BY date, order_booker, route, visit_type
+    `).all(`${currentMonth}%`) as any[];
+
+    const analysisRows = visitAnalysis.map(a => {
+      const totalVisited = a.total_visited || 0;
+      const totalProductive = a.total_productive || 0;
+      const prodPercent = totalVisited > 0 ? ((totalProductive / totalVisited) * 100).toFixed(1) + '%' : '0%';
+      
+      // Calculate avg achievement for this group
+      const groupOrders = orders.filter(o => {
+        return o.date === a.date && o.visit_type === a.visit_type && o.route === a.route && o.order_booker === a.order_booker;
+      });
+      
+      const totalAch = groupOrders.reduce((sum, o) => {
+        const data = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
+        const ach = calculateAchievement(data);
+        return sum + Object.values(ach).reduce((acc, val) => acc + val, 0);
+      }, 0);
+
+      const avgAch = groupOrders.length > 0 ? (totalAch / groupOrders.length).toFixed(2) : '0.00';
+
+      return [a.date, a.order_booker, a.route, a.visit_type_label, a.total_visits, totalProductive, prodPercent, avgAch];
+    });
+
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: "Visit_Type_Analysis!A1",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [analysisHeaders, ...analysisRows] },
     });
   }
 
@@ -508,7 +677,7 @@ async function startServer() {
       const sheets = google.sheets({ version: 'v4', auth });
 
       // Ensure Sheets exist
-      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report"];
+      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report", "Current_Stocks", "Last_Entry_Date", "Visit_Type_Analysis"];
       for (const title of sheetTitles) {
         try {
           await sheets.spreadsheets.batchUpdate({
@@ -521,20 +690,29 @@ async function startServer() {
       }
 
       const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all() as any[];
-      
-      // --- SHEET 1: Sales_Data (SKU Wise) ---
+
+      // 1. Sales_Data (SKU Wise)
       const salesHeaders = [
         'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
         'Total Shops', 'Visited Shops', 'Productive Shops',
+        'Visit Type',
         ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-        'Submitted At', 'Latitude', 'Longitude', 'Accuracy'
+        'Submitted At', 'Latitude', 'Longitude', 'Accuracy',
+        ...CATEGORIES.map(cat => `${cat} Prod`)
       ];
 
       const salesRows = orders.map((order: any) => {
         const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
+        const catProdData = typeof order.category_productive_data === 'string' ? JSON.parse(order.category_productive_data) : (order.category_productive_data || {});
+        let visitTypeLabel = 'Alone';
+        if (order.visit_type === 'Absent') visitTypeLabel = 'Absent';
+        else if (order.visit_type === 'RR') visitTypeLabel = 'Route Riding';
+        else if (order.visit_type === 'V') visitTypeLabel = 'Van Sales';
+        
         return [
           order.date, order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
           order.total_shops, order.visited_shops, order.productive_shops,
+          visitTypeLabel,
           ...SKUS.map(sku => {
             const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
             const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
@@ -544,7 +722,8 @@ async function startServer() {
           order.submitted_at,
           order.latitude || '',
           order.longitude || '',
-          order.accuracy || ''
+          order.accuracy || '',
+          ...CATEGORIES.map(cat => catProdData[cat] || 0)
         ];
       });
 
@@ -578,27 +757,27 @@ async function startServer() {
   const obCount = db.prepare("SELECT COUNT(*) as count FROM ob_assignments").get() as any;
   if (obCount.count === 0) {
     const seedOBs = [
-      { name: "Muhammad Bilal", contact: "P-01", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Khizar Hayat", contact: "P-02", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Adil Khan", contact: "P-03", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Baidar Khan", contact: "P-04", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Muhammad Usman", contact: "P-05", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Ghulam Rasool", contact: "P-06", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Khalid Awan", contact: "P-07", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Shahid", contact: "H-01", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Shahrukh", contact: "H-02", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Bilal", contact: "T-01", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Muneeb", contact: "T-02", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Kashif", contact: "K-01", town: "Kohat", distributor: "Kohat Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Bilal", contact: "HG-01", town: "Hangu", distributor: "Hangu Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Usama", contact: "A-01", town: "Attock", distributor: "Attock Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", tsm: "Muhammad Zeeshan", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Farhan Zeb", contact: "NOW-01", town: "Nowshera", distributor: "Nowshera Dist", tsm: "Muhammad Zeeshan", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", tsm: "Waheed Jamal", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Ghulam Hussain", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", tsm: "Qaisar Yousaf", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) },
-      { name: "Hashim", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", tsm: "Qaisar Yousaf", totalShops: 50, routes: JSON.stringify(["Route 1", "Route 2", "Route 3", "Route 4", "Route 5", "Route 6"]) }
+      { name: "Muhammad Bilal", contact: "P-01", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Khizar Hayat", contact: "P-02", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Adil Khan", contact: "P-03", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Baidar Khan", contact: "P-04", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Muhammad Usman", contact: "P-05", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Ghulam Rasool", contact: "P-06", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Khalid Awan", contact: "P-07", town: "Peshawar", distributor: "Peshawar Dist", tsm: "Muhammad Shoaib", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Shahid", contact: "H-01", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Shahrukh", contact: "H-02", town: "Haripur", distributor: "Haripur Dist", tsm: "Muhammad Yousaf", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Bilal", contact: "T-01", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Muneeb", contact: "T-02", town: "Taxila", distributor: "Taxila Dist", tsm: "Muhammad Yousaf", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Kashif", contact: "K-01", town: "Kohat", distributor: "Kohat Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Bilal", contact: "HG-01", town: "Hangu", distributor: "Hangu Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Usama", contact: "A-01", town: "Attock", distributor: "Attock Dist", tsm: "Noman Paracha", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Zakaullah", contact: "DI-01", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Muntazir", contact: "DI-02", town: "DI Khan", distributor: "DI Khan Dist", tsm: "Ikramullah", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Muhammad Amir", contact: "M-01", town: "Mardan", distributor: "Mardan Dist", tsm: "Muhammad Zeeshan", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Farhan Zeb", contact: "NOW-01", town: "Nowshera", distributor: "Nowshera Dist", tsm: "Muhammad Zeeshan", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Babar", contact: "C-01", town: "Charsadda", distributor: "Charsadda Dist", tsm: "Waheed Jamal", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Ghulam Hussain", contact: "MUZ-01", town: "Muzaffarabad", distributor: "Muz Dist", tsm: "Qaisar Yousaf", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) },
+      { name: "Hashim", contact: "MAN-01", town: "Mansehra", distributor: "Man Dist", tsm: "Qaisar Yousaf", totalShops: 50, routes: JSON.stringify(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]) }
     ];
     const insertOB = db.prepare("INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?)");
     seedOBs.forEach(ob => insertOB.run(ob.name, ob.contact, ob.town, ob.distributor, ob.tsm, ob.totalShops, ob.routes));
@@ -674,7 +853,7 @@ async function startServer() {
           db.prepare("UPDATE submitted_orders SET ob_contact = ? WHERE ob_contact = ?").run(contact, oldOB.contact);
         }
       } else {
-        db.prepare("INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        db.prepare("INSERT OR IGNORE INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?)")
           .run(name, contact, town, distributor, tsm, shops || 0, JSON.stringify(routes));
       }
       res.json({ success: true });
@@ -889,22 +1068,37 @@ async function startServer() {
       const headers = [
         'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
         'Total Shops', 'Visited Shops', 'Productive Shops',
+        'Visit Type',
+        ...CATEGORIES.map(cat => `${cat} Prod`),
         ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-        'Submitted At'
+        'Submitted At', 'Latitude', 'Longitude', 'Accuracy'
       ];
 
       const rows = orders.map((h: any) => {
         const orderData = typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {});
+        const catProdData = typeof h.category_productive_data === 'string' ? JSON.parse(h.category_productive_data) : (h.category_productive_data || {});
+        const visitTypeMap: Record<string, string> = {
+          'A': 'Alone',
+          'V': 'Van Sales',
+          'RR': 'Route Riding',
+          'Absent': 'Absent'
+        };
+        const visitTypeLabel = visitTypeMap[h.visit_type] || h.visit_type || 'Alone';
         return [
           h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
           h.total_shops, h.visited_shops, h.productive_shops,
+          visitTypeLabel,
+          ...CATEGORIES.map(cat => catProdData[cat] || 0),
           ...SKUS.map(sku => {
             const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
             const totalPacks = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
             const total = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
             return total.toFixed(3);
           }),
-          h.submitted_at
+          h.submitted_at,
+          h.latitude || '',
+          h.longitude || '',
+          h.accuracy || ''
         ];
       });
 
@@ -1052,16 +1246,24 @@ async function startServer() {
       const { date, tsm, town, distributor, stocks } = req.body;
       if (!stocks) return res.status(400).json({ error: "Missing stock data" });
 
-      db.prepare(`
-        INSERT INTO stock_reports (date, tsm, town, distributor, stock_data)
-        VALUES (?, ?, ?, ?, ?)
+      const info = db.prepare(`
+        INSERT INTO stock_reports (date, tsm, town, distributor, stock_data, submitted_at)
+        VALUES (?, ?, ?, ?, ?, ?)
       `).run(
-        date || new Date().toISOString().split('T')[0],
+        date || getPSTDate(),
         tsm || '',
         town || '',
         distributor || '',
-        JSON.stringify(stocks)
+        JSON.stringify(stocks),
+        getPSTTimestamp()
       );
+
+      // Async sync to Google Sheets
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      if (config.google_spreadsheet_id) {
+        syncAllToSheets().catch(console.error);
+      }
 
       res.json({ success: true, message: "Stock report submitted successfully" });
     } catch (err) {
@@ -1093,15 +1295,14 @@ async function startServer() {
     const { date } = req.query;
     try {
       const allOBs = db.prepare("SELECT * FROM ob_assignments").all();
-      const submissions = db.prepare("SELECT order_booker, ob_contact, is_absent, with_tsm, submitted_at FROM submitted_orders WHERE date = ?").all(date);
+      const submissions = db.prepare("SELECT order_booker, ob_contact, visit_type, submitted_at FROM submitted_orders WHERE date = ?").all(date);
       
       const status = allOBs.map(ob => {
         const submission = submissions.find(s => s.ob_contact === ob.contact);
         return {
           ...ob,
           submitted: !!submission,
-          is_absent: submission ? !!submission.is_absent : false,
-          with_tsm: submission ? !!submission.with_tsm : false,
+          visit_type: submission ? submission.visit_type : 'A',
           submitted_at: submission ? submission.submitted_at : null
         };
       });
@@ -1121,7 +1322,7 @@ async function startServer() {
         date, tsm, town, distributor, orderBooker, obContact, route, 
         totalShops, visitedShops, productiveShops, 
         categoryProductiveShops, items, targets,
-        latitude, longitude, accuracy, isAbsent, withTSM
+        latitude, longitude, accuracy, visitType
       } = data;
       
       const info = db.prepare(`
@@ -1129,11 +1330,11 @@ async function startServer() {
           date, tsm, town, distributor, order_booker, ob_contact, route, 
           total_shops, visited_shops, productive_shops, 
           category_productive_data, order_data, targets_data,
-          latitude, longitude, accuracy, is_absent, with_tsm
+          latitude, longitude, accuracy, visit_type, submitted_at
         )
         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        date || new Date().toISOString().split('T')[0], 
+        date || getPSTDate(), 
         tsm || '', 
         town || '', 
         distributor || '', 
@@ -1149,8 +1350,8 @@ async function startServer() {
         latitude || null, 
         longitude || null, 
         accuracy || null,
-        isAbsent ? 1 : 0,
-        withTSM ? 1 : 0
+        visitType || 'A',
+        getPSTTimestamp()
       );
 
       // Async sync to Google Sheets
@@ -1278,10 +1479,11 @@ async function startServer() {
       const sheets = google.sheets({ version: 'v4', auth });
 
       const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+      const currentMonth = new Date().toISOString().slice(0, 7);
       const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
       
       const rows = obs.map(ob => {
-        const targets = db.prepare("SELECT brand_name, target_ctn FROM brand_targets WHERE ob_contact = ?").all(ob.contact) as any[];
+        const targets = db.prepare("SELECT brand_name, target_ctn FROM brand_targets WHERE ob_contact = ? AND month = ?").all(ob.contact, currentMonth) as any[];
         const targetMap = targets.reduce((acc, t) => ({ ...acc, [t.brand_name]: t.target_ctn }), {} as any);
         const routes = JSON.parse(ob.routes || '[]');
         return [
@@ -1385,6 +1587,7 @@ async function startServer() {
       }).filter(t => t.name && t.contact);
 
       // Reuse bulk upload logic
+      const currentMonth = new Date().toISOString().slice(0, 7);
       const transaction = db.transaction(() => {
         for (const item of team) {
           db.prepare(`
@@ -1396,10 +1599,10 @@ async function startServer() {
 
           for (const [brand, target] of Object.entries(item.targets)) {
             db.prepare(`
-              INSERT INTO brand_targets (ob_contact, brand_name, target_ctn)
-              VALUES (?, ?, ?)
-              ON CONFLICT(ob_contact, brand_name) DO UPDATE SET target_ctn=excluded.target_ctn
-            `).run(item.contact, brand, target);
+              INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
+              VALUES (?, ?, ?, ?)
+              ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET target_ctn=excluded.target_ctn
+            `).run(item.contact, brand, target, currentMonth);
           }
         }
       });
@@ -1537,9 +1740,10 @@ async function startServer() {
         return res.status(400).json({ error: "No data found in 'Sales_Data' sheet." });
       }
 
-      // Headers are: Date, TSM, Town, Distributor, OB Name, OB Contact, Route, Total Shops, Visited Shops, Productive Shops, ...SKUS, Submitted At, Lat, Lng, Acc
+      // Headers are: Date, TSM, Town, Distributor, OB Name, OB Contact, Route, Total Shops, Visited Shops, Productive Shops, Visit Type, ...CATEGORIES_PROD, ...SKUS, Submitted At, Lat, Lng, Acc
       const skuCount = SKUS.length;
-      const baseColCount = 10; // Date to Productive Shops
+      const catCount = CATEGORIES.length;
+      const baseColCount = 11; // Date to Visit Type
 
       const transaction = db.transaction(() => {
         // Optional: Clear existing history? User might want to append. 
@@ -1549,14 +1753,19 @@ async function startServer() {
             date, tsm, town, distributor, order_booker, ob_contact, route, 
             total_shops, visited_shops, productive_shops, 
             category_productive_data, order_data, targets_data,
-            submitted_at, latitude, longitude, accuracy
+            submitted_at, latitude, longitude, accuracy, visit_type
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const row of rows) {
-          const [date, tsm, town, distributor, obName, obContact, route, tShops, vShops, pShops] = row;
+          const [date, tsm, town, distributor, obName, obContact, route, tShops, vShops, pShops, visitTypeLabel] = row;
           if (!date || !obContact) continue;
+
+          let visitType = 'A';
+          if (visitTypeLabel === 'Absent') visitType = 'Absent';
+          else if (visitTypeLabel === 'Route Riding') visitType = 'RR';
+          else if (visitTypeLabel === 'Van Sales') visitType = 'V';
 
           // Reconstruct order_data
           const orderData: Record<string, any> = {};
@@ -1564,8 +1773,6 @@ async function startServer() {
             const sku = SKUS[i];
             const val = parseFloat(row[baseColCount + i]) || 0;
             if (val > 0) {
-              // We only have the "total" in cartons from the sheet. 
-              // We'll store it as ctn for simplicity.
               orderData[sku.id] = { ctn: val, dzn: 0, pks: 0 };
             }
           }
@@ -1575,18 +1782,26 @@ async function startServer() {
           const lng = row[baseColCount + skuCount + 2] || null;
           const acc = row[baseColCount + skuCount + 3] || null;
 
-          // Check for duplicate
-          const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND submitted_at = ?").get(obContact, date, submittedAt);
+          // Reconstruct category_productive_data
+          const catProdData: Record<string, number> = {};
+          for (let i = 0; i < catCount; i++) {
+            const cat = CATEGORIES[i];
+            catProdData[cat] = parseInt(row[baseColCount + skuCount + 4 + i]) || 0;
+          }
+
+          // Check for duplicate - use ob_contact, date, and route for better matching
+          const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, date, route);
           if (existing) continue;
 
           insertOrder.run(
             date, tsm, town, distributor, obName, obContact, route,
             parseInt(tShops) || 0, parseInt(vShops) || 0, parseInt(pShops) || 0,
-            JSON.stringify({}), // category_productive_data is not easily reconstructed from the sheet
+            JSON.stringify(catProdData), 
             JSON.stringify(orderData),
-            JSON.stringify({}), // targets_data
+            JSON.stringify({}), 
             submittedAt,
-            lat, lng, acc
+            lat, lng, acc,
+            visitType
           );
         }
       });
@@ -1631,7 +1846,7 @@ async function startServer() {
       const sheets = google.sheets({ version: 'v4', auth });
 
       // Ensure Sheets exist
-      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report"];
+      const sheetTitles = ["Sales_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report", "Current_Stocks", "Last_Entry_Date", "Visit_Type_Analysis"];
       for (const title of sheetTitles) {
         try {
           await sheets.spreadsheets.batchUpdate({
@@ -1648,15 +1863,22 @@ async function startServer() {
       const salesHeaders = [
         'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
         'Total Shops', 'Visited Shops', 'Productive Shops',
+        'Visit Type',
         ...SKUS.map(sku => `${sku.name} (${sku.category})`),
         'Submitted At', 'Latitude', 'Longitude', 'Accuracy'
       ];
 
       const salesRows = orders.map((order: any) => {
         const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
+        let visitTypeLabel = 'Alone';
+        if (order.visit_type === 'Absent') visitTypeLabel = 'Absent';
+        else if (order.visit_type === 'RR') visitTypeLabel = 'Route Riding';
+        else if (order.visit_type === 'V') visitTypeLabel = 'Van Sales';
+        
         return [
           order.date, order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
           order.total_shops, order.visited_shops, order.productive_shops,
+          visitTypeLabel,
           ...SKUS.map(sku => {
             const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
             const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
@@ -1729,6 +1951,37 @@ async function startServer() {
       res.sendFile(path.resolve("dist/index.html"));
     });
   }
+
+  app.get("/api/stocks/export", (req, res) => {
+    try {
+      const rows = db.prepare("SELECT * FROM stock_reports ORDER BY date DESC, submitted_at DESC").all() as any[];
+      
+      let csv = "Date,TSM,Town,Distributor," + SKUS.map(s => s.name).join(",") + ",Submitted At\n";
+      
+      rows.forEach(report => {
+        const stockData = JSON.parse(report.stock_data || '{}');
+        const row = [
+          report.date,
+          report.tsm,
+          report.town,
+          report.distributor,
+          ...SKUS.map(sku => {
+            const item = stockData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+            const total = (Number(item.ctn || 0) * sku.unitsPerCarton + Number(item.dzn || 0) * sku.unitsPerDozen + Number(item.pks || 0)) / (sku.unitsPerCarton || 1);
+            return total.toFixed(2);
+          }),
+          report.submitted_at
+        ];
+        csv += row.join(",") + "\n";
+      });
+      
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', 'attachment; filename=stock_reports.csv');
+      res.status(200).send(csv);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to export stock reports" });
+    }
+  });
 
   app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
