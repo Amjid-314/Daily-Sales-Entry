@@ -90,6 +90,8 @@ db.exec(`
     order_booker TEXT,
     ob_contact TEXT,
     route TEXT,
+    zone TEXT,
+    region TEXT,
     total_shops INTEGER,
     visited_shops INTEGER,
     productive_shops INTEGER,
@@ -107,7 +109,23 @@ db.exec(`
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     town TEXT,
     name TEXT UNIQUE,
-    tsm TEXT
+    tsm TEXT,
+    zone TEXT,
+    region TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS national_hierarchy (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    director_sales TEXT,
+    nsm_name TEXT,
+    rsm_name TEXT,
+    asm_tsm_name TEXT,
+    town_name TEXT,
+    distributor_name TEXT,
+    distributor_code TEXT,
+    ob_name TEXT,
+    ob_id TEXT UNIQUE,
+    territory_region TEXT
   );
 `);
 
@@ -116,6 +134,12 @@ try { db.exec("ALTER TABLE submitted_orders ADD COLUMN latitude REAL"); } catch 
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN longitude REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN accuracy REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN visit_type TEXT DEFAULT 'A'"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN zone TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN region TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE distributors ADD COLUMN zone TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE distributors ADD COLUMN region TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_assignments ADD COLUMN zone TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_assignments ADD COLUMN region TEXT"); } catch (e) {}
 
 async function startServer() {
   const app = express();
@@ -153,6 +177,8 @@ async function startServer() {
       town TEXT,
       distributor TEXT,
       tsm TEXT,
+      zone TEXT,
+      region TEXT,
       total_shops INTEGER DEFAULT 0,
       routes TEXT -- JSON array of routes
     );
@@ -339,7 +365,9 @@ async function startServer() {
         order.latitude || '',
         order.longitude || '',
         order.accuracy || '',
-        ...CATEGORIES.map(cat => catProdData[cat] || 0)
+        ...CATEGORIES.map(cat => catProdData[cat] || 0),
+        order.zone || '',
+        order.region || ''
       ];
 
       const salesHeaders = [
@@ -348,7 +376,8 @@ async function startServer() {
         'Visit Type',
         ...SKUS.map(sku => `${sku.name} (${sku.category})`),
         'Submitted At', 'Latitude', 'Longitude', 'Accuracy',
-        ...CATEGORIES.map(cat => `${cat} Prod`)
+        ...CATEGORIES.map(cat => `${cat} Prod`),
+        'Zone', 'Region'
       ];
 
       // Check if headers exist, if not add them
@@ -698,7 +727,8 @@ async function startServer() {
         'Visit Type',
         ...SKUS.map(sku => `${sku.name} (${sku.category})`),
         'Submitted At', 'Latitude', 'Longitude', 'Accuracy',
-        ...CATEGORIES.map(cat => `${cat} Prod`)
+        ...CATEGORIES.map(cat => `${cat} Prod`),
+        'Zone', 'Region'
       ];
 
       const salesRows = orders.map((order: any) => {
@@ -723,7 +753,9 @@ async function startServer() {
           order.latitude || '',
           order.longitude || '',
           order.accuracy || '',
-          ...CATEGORIES.map(cat => catProdData[cat] || 0)
+          ...CATEGORIES.map(cat => catProdData[cat] || 0),
+          order.zone || '',
+          order.region || ''
         ];
       });
 
@@ -840,21 +872,21 @@ async function startServer() {
   });
 
   app.post("/api/admin/obs", (req, res) => {
-    const { id, name, contact, town, distributor, tsm, total_shops, routes } = req.body;
+    const { id, name, contact, town, distributor, tsm, zone, region, total_shops, routes } = req.body;
     const shops = total_shops !== undefined ? total_shops : req.body.totalShops;
     try {
       if (id) {
         const oldOB = db.prepare("SELECT contact FROM ob_assignments WHERE id = ?").get(id) as any;
-        db.prepare("UPDATE ob_assignments SET name = ?, contact = ?, town = ?, distributor = ?, tsm = ?, total_shops = ?, routes = ? WHERE id = ?")
-          .run(name, contact, town, distributor, tsm, shops || 0, JSON.stringify(routes), id);
+        db.prepare("UPDATE ob_assignments SET name = ?, contact = ?, town = ?, distributor = ?, tsm = ?, zone = ?, region = ?, total_shops = ?, routes = ? WHERE id = ?")
+          .run(name, contact, town, distributor, tsm, zone, region, shops || 0, JSON.stringify(routes), id);
         
         if (oldOB && oldOB.contact !== contact) {
           db.prepare("UPDATE brand_targets SET ob_contact = ? WHERE ob_contact = ?").run(contact, oldOB.contact);
           db.prepare("UPDATE submitted_orders SET ob_contact = ? WHERE ob_contact = ?").run(contact, oldOB.contact);
         }
       } else {
-        db.prepare("INSERT OR IGNORE INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?)")
-          .run(name, contact, town, distributor, tsm, shops || 0, JSON.stringify(routes));
+        db.prepare("INSERT OR IGNORE INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+          .run(name, contact, town, distributor, tsm, zone, region, shops || 0, JSON.stringify(routes));
       }
       res.json({ success: true });
     } catch (err) {
@@ -911,16 +943,16 @@ async function startServer() {
   });
 
   app.post("/api/admin/distributors", (req, res) => {
-    const { id, town, name, tsm } = req.body;
+    const { id, town, name, tsm, zone, region } = req.body;
     try {
       if (id) {
         const oldDist = db.prepare("SELECT name FROM distributors WHERE id = ?").get(id) as any;
-        db.prepare("UPDATE distributors SET town = ?, name = ?, tsm = ? WHERE id = ?").run(town, name, tsm, id);
+        db.prepare("UPDATE distributors SET town = ?, name = ?, tsm = ?, zone = ?, region = ? WHERE id = ?").run(town, name, tsm, zone, region, id);
         if (oldDist && oldDist.name !== name) {
           db.prepare("UPDATE ob_assignments SET distributor = ? WHERE distributor = ?").run(name, oldDist.name);
         }
       } else {
-        db.prepare("INSERT OR REPLACE INTO distributors (town, name, tsm) VALUES (?, ?, ?)").run(town, name, tsm);
+        db.prepare("INSERT OR REPLACE INTO distributors (town, name, tsm, zone, region) VALUES (?, ?, ?, ?, ?)").run(town, name, tsm, zone, region);
       }
       res.json({ success: true });
     } catch (err) {
@@ -1320,6 +1352,7 @@ async function startServer() {
 
       const { 
         date, tsm, town, distributor, orderBooker, obContact, route, 
+        zone, region,
         totalShops, visitedShops, productiveShops, 
         categoryProductiveShops, items, targets,
         latitude, longitude, accuracy, visitType
@@ -1328,11 +1361,12 @@ async function startServer() {
       const info = db.prepare(`
         INSERT INTO submitted_orders (
           date, tsm, town, distributor, order_booker, ob_contact, route, 
+          zone, region,
           total_shops, visited_shops, productive_shops, 
           category_productive_data, order_data, targets_data,
           latitude, longitude, accuracy, visit_type, submitted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         date || getPSTDate(), 
         tsm || '', 
@@ -1341,6 +1375,8 @@ async function startServer() {
         orderBooker || '', 
         obContact || '', 
         route || '', 
+        zone || '',
+        region || '',
         totalShops || 0, 
         visitedShops || 0, 
         productiveShops || 0, 
@@ -1375,15 +1411,17 @@ async function startServer() {
       }
 
       for (const item of distributors) {
-        const { name, town, tsm } = item;
+        const { name, town, tsm, zone, region } = item;
         if (!name) continue;
         db.prepare(`
-          INSERT INTO distributors (name, town, tsm)
-          VALUES (?, ?, ?)
+          INSERT INTO distributors (name, town, tsm, zone, region)
+          VALUES (?, ?, ?, ?, ?)
           ON CONFLICT(name) DO UPDATE SET
             town=excluded.town,
-            tsm=excluded.tsm
-        `).run(name, town, tsm);
+            tsm=excluded.tsm,
+            zone=excluded.zone,
+            region=excluded.region
+        `).run(name, town, tsm, zone, region);
       }
     });
 
@@ -1406,19 +1444,21 @@ async function startServer() {
       }
 
       for (const item of team) {
-        const { name, contact, town, distributor, tsm, total_shops, routes, targets } = item;
+        const { name, contact, town, distributor, tsm, zone, region, total_shops, routes, targets } = item;
         
         db.prepare(`
-          INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes)
-          VALUES (?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, total_shops, routes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(contact) DO UPDATE SET
             name=excluded.name,
             town=excluded.town,
             distributor=excluded.distributor,
             tsm=excluded.tsm,
+            zone=excluded.zone,
+            region=excluded.region,
             total_shops=excluded.total_shops,
             routes=excluded.routes
-        `).run(name, contact, town, distributor, tsm, total_shops || 50, JSON.stringify(routes || []));
+        `).run(name, contact, town, distributor, tsm, zone, region, total_shops || 50, JSON.stringify(routes || []));
 
         if (targets && typeof targets === 'object') {
           for (const [brand, target] of Object.entries(targets)) {
@@ -1436,6 +1476,76 @@ async function startServer() {
     try {
       transaction();
       res.json({ success: true, message: `Processed ${team.length} records` });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // National Hierarchy APIs
+  app.get("/api/admin/hierarchy", (req, res) => {
+    try {
+      const rows = db.prepare("SELECT * FROM national_hierarchy").all();
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/hierarchy/bulk-upload", (req, res) => {
+    const { hierarchy, clearExisting } = req.body;
+    if (!Array.isArray(hierarchy)) return res.status(400).json({ error: "Invalid data" });
+
+    const transaction = db.transaction(() => {
+      if (clearExisting) {
+        db.prepare("DELETE FROM national_hierarchy").run();
+      }
+
+      const insert = db.prepare(`
+        INSERT INTO national_hierarchy (
+          director_sales, nsm_name, rsm_name, asm_tsm_name, town_name, 
+          distributor_name, distributor_code, ob_name, ob_id, territory_region
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(ob_id) DO UPDATE SET
+          director_sales=excluded.director_sales,
+          nsm_name=excluded.nsm_name,
+          rsm_name=excluded.rsm_name,
+          asm_tsm_name=excluded.asm_tsm_name,
+          town_name=excluded.town_name,
+          distributor_name=excluded.distributor_name,
+          distributor_code=excluded.distributor_code,
+          ob_name=excluded.ob_name,
+          territory_region=excluded.territory_region
+      `);
+
+      for (const item of hierarchy) {
+        insert.run(
+          item.director_sales, item.nsm_name, item.rsm_name, item.asm_tsm_name, item.town_name,
+          item.distributor_name, item.distributor_code, item.ob_name, item.ob_id, item.territory_region
+        );
+      }
+    });
+
+    try {
+      transaction();
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/national/stats", (req, res) => {
+    try {
+      // Join submitted_orders with national_hierarchy to get full mapping
+      const orders = db.prepare(`
+        SELECT 
+          o.*,
+          h.director_sales, h.nsm_name, h.rsm_name, h.asm_tsm_name, h.town_name as h_town, 
+          h.distributor_name as h_dist, h.distributor_code, h.territory_region
+        FROM submitted_orders o
+        LEFT JOIN national_hierarchy h ON o.ob_contact = h.ob_id
+      `).all();
+
+      res.json(orders);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -1751,11 +1861,12 @@ async function startServer() {
         const insertOrder = db.prepare(`
           INSERT INTO submitted_orders (
             date, tsm, town, distributor, order_booker, ob_contact, route, 
+            zone, region,
             total_shops, visited_shops, productive_shops, 
             category_productive_data, order_data, targets_data,
             submitted_at, latitude, longitude, accuracy, visit_type
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const row of rows) {
@@ -1789,12 +1900,16 @@ async function startServer() {
             catProdData[cat] = parseInt(row[baseColCount + skuCount + 4 + i]) || 0;
           }
 
+          const zone = row[baseColCount + skuCount + 4 + catCount] || '';
+          const region = row[baseColCount + skuCount + 4 + catCount + 1] || '';
+
           // Check for duplicate - use ob_contact, date, and route for better matching
           const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, date, route);
           if (existing) continue;
 
           insertOrder.run(
             date, tsm, town, distributor, obName, obContact, route,
+            zone, region,
             parseInt(tShops) || 0, parseInt(vShops) || 0, parseInt(pShops) || 0,
             JSON.stringify(catProdData), 
             JSON.stringify(orderData),

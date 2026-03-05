@@ -22,6 +22,8 @@ export interface OrderState {
   orderBooker: string;
   obContact: string; // Unique ID for OB
   route: string;
+  zone?: string;
+  region?: string;
   visitedShops: number;
   productiveShops: number; // Global productive shops
   totalShops: number; // Total shops in route
@@ -42,6 +44,8 @@ export interface OBAssignment {
   distributor: string;
   routes: string[];
   tsm?: string;
+  zone?: string;
+  region?: string;
   total_shops?: number;
   targets?: Record<string, number>;
 }

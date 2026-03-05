@@ -62,6 +62,322 @@ const WhatsAppIcon = () => (
   </svg>
 );
 
+const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[], hierarchy: any[], categories: string[], skus: any[] }) => {
+  const [filterLevel, setFilterLevel] = useState<'National' | 'NSM' | 'RSM' | 'TSM' | 'Town' | 'Distributor' | 'OB'>('National');
+  const [filterValue, setFilterValue] = useState<string>('');
+
+  const processedStats = useMemo(() => {
+    return stats.map(s => {
+      const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+      return {
+        ...s,
+        nsm: h?.nsm_name || 'Unassigned',
+        rsm: h?.rsm_name || 'Unassigned',
+        tsm: h?.asm_tsm_name || s.tsm || 'Unassigned',
+        town: h?.town_name || s.town || 'Unassigned',
+        distributor: h?.distributor_name || s.distributor || 'Unassigned',
+        region: h?.territory_region || s.region || 'Unassigned',
+        order_data: typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data,
+        category_productive_data: typeof s.category_productive_data === 'string' ? JSON.parse(s.category_productive_data) : s.category_productive_data
+      };
+    });
+  }, [stats, hierarchy]);
+
+  const filterOptions = useMemo(() => {
+    const options = Array.from(new Set(processedStats.map(s => {
+      if (filterLevel === 'NSM') return s.nsm;
+      if (filterLevel === 'RSM') return s.rsm;
+      if (filterLevel === 'TSM') return s.tsm;
+      if (filterLevel === 'Town') return s.town;
+      if (filterLevel === 'Distributor') return s.distributor;
+      if (filterLevel === 'OB') return s.order_booker;
+      return null;
+    }))).filter(Boolean).sort() as string[];
+    return options;
+  }, [processedStats, filterLevel]);
+
+  const filteredStats = useMemo(() => {
+    if (filterLevel === 'National') return processedStats;
+    return processedStats.filter(s => {
+      if (filterLevel === 'NSM') return s.nsm === filterValue;
+      if (filterLevel === 'RSM') return s.rsm === filterValue;
+      if (filterLevel === 'TSM') return s.tsm === filterValue;
+      if (filterLevel === 'Town') return s.town === filterValue;
+      if (filterLevel === 'Distributor') return s.distributor === filterValue;
+      if (filterLevel === 'OB') return s.order_booker === filterValue;
+      return true;
+    });
+  }, [processedStats, filterLevel, filterValue]);
+
+  const summary = useMemo(() => {
+    let totalShops = 0;
+    let visitedShops = 0;
+    let productiveShops = 0;
+    let totalValue = 0;
+    const brandProductive: Record<string, number> = {};
+    const brandSales: Record<string, number> = {};
+    const skuSales: Record<string, number> = {};
+
+    filteredStats.forEach(s => {
+      totalShops += s.total_shops || 0;
+      visitedShops += s.visited_shops || 0;
+      productiveShops += s.productive_shops || 0;
+
+      const orderData = s.order_data || {};
+      skus.forEach(sku => {
+        const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+        const value = (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0) * Number(sku.pricePerCarton);
+        totalValue += value;
+        brandSales[sku.category] = (brandSales[sku.category] || 0) + value;
+        skuSales[sku.name] = (skuSales[sku.name] || 0) + value;
+      });
+
+      const catProd = s.category_productive_data || {};
+      categories.forEach(cat => {
+        if (catProd[cat]) {
+          brandProductive[cat] = (brandProductive[cat] || 0) + 1;
+        }
+      });
+    });
+
+    return { totalShops, visitedShops, productiveShops, totalValue, brandProductive, brandSales, skuSales };
+  }, [filteredStats, skus, categories]);
+
+  const skuPerformance = useMemo(() => {
+    return Object.entries(summary.skuSales)
+      .map(([name, value]) => ({ name, value }))
+      .sort((a: any, b: any) => b.value - a.value);
+  }, [summary.skuSales]);
+
+  const performanceByLevel = useMemo(() => {
+    const nextLevel = filterLevel === 'National' ? 'NSM' : 
+                     filterLevel === 'NSM' ? 'RSM' :
+                     filterLevel === 'RSM' ? 'TSM' :
+                     filterLevel === 'TSM' ? 'Town' :
+                     filterLevel === 'Town' ? 'Distributor' : 'OB';
+    
+    const groups: Record<string, any> = {};
+    filteredStats.forEach(s => {
+      const key = s[nextLevel.toLowerCase()] || 'Unassigned';
+      if (!groups[key]) {
+        groups[key] = { name: key, visited: 0, productive: 0, value: 0, count: 0 };
+      }
+      groups[key].visited += s.visited_shops || 0;
+      groups[key].productive += s.productive_shops || 0;
+      groups[key].count += 1;
+      
+      const orderData = s.order_data || {};
+      skus.forEach(sku => {
+        const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+        groups[key].value += (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0) * Number(sku.pricePerCarton);
+      });
+    });
+
+    return Object.values(groups).sort((a: any, b: any) => b.value - a.value);
+  }, [filteredStats, filterLevel, skus]);
+
+  return (
+    <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+        <div>
+          <h1 className="text-xl font-black text-seablue uppercase tracking-tight">National Sales Monitoring</h1>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real-time Hierarchy Aggregation</p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <select 
+            value={filterLevel} 
+            onChange={(e) => { setFilterLevel(e.target.value as any); setFilterValue(''); }}
+            className="input-clean text-[10px] font-bold py-1.5 px-3"
+          >
+            <option value="National">National View</option>
+            <option value="NSM">Filter by NSM</option>
+            <option value="RSM">Filter by RSM</option>
+            <option value="TSM">Filter by TSM</option>
+            <option value="Town">Filter by Town</option>
+            <option value="Distributor">Filter by Distributor</option>
+            <option value="OB">Filter by Order Booker</option>
+          </select>
+          {filterLevel !== 'National' && (
+            <select 
+              value={filterValue} 
+              onChange={(e) => setFilterValue(e.target.value)}
+              className="input-clean text-[10px] font-bold py-1.5 px-3"
+            >
+              <option value="">Select {filterLevel}</option>
+              {filterOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="card-clean p-4 bg-white border-l-4 border-seablue">
+          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Total Sales Value</p>
+          <h2 className="text-xl font-black text-seablue">Rs. {summary.totalValue.toLocaleString()}</h2>
+          <p className="text-[10px] text-slate-400 font-bold">MTD Performance</p>
+        </div>
+        <div className="card-clean p-4 bg-white border-l-4 border-emerald-500">
+          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Productive Shops</p>
+          <h2 className="text-xl font-black text-emerald-600">{summary.productiveShops.toLocaleString()}</h2>
+          <p className="text-[10px] text-slate-400 font-bold">Overall Productivity: {summary.visitedShops > 0 ? Math.round((summary.productiveShops / summary.visitedShops) * 100) : 0}%</p>
+        </div>
+        <div className="card-clean p-4 bg-white border-l-4 border-orange-500">
+          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Visited Shops</p>
+          <h2 className="text-xl font-black text-orange-600">{summary.visitedShops.toLocaleString()}</h2>
+          <p className="text-[10px] text-slate-400 font-bold">Out of {summary.totalShops.toLocaleString()} Total</p>
+        </div>
+        <div className="card-clean p-4 bg-white border-l-4 border-purple-500">
+          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Reports Count</p>
+          <h2 className="text-xl font-black text-purple-600">{filteredStats.length.toLocaleString()}</h2>
+          <p className="text-[10px] text-slate-400 font-bold">Daily Submissions</p>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card-clean p-6 bg-white space-y-4">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Brand Wise Sales Value</h3>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={categories.map(cat => ({ name: cat, value: summary.brandSales[cat] || 0 }))}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="name" fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
+                <YAxis fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
+                <Tooltip 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  labelStyle={{ fontWeight: 900, color: '#0f172a' }}
+                />
+                <Bar dataKey="value" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="card-clean p-6 bg-white space-y-4">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Brand Wise Productivity</h3>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={categories.map(cat => ({ name: cat, value: summary.brandProductive[cat] || 0 }))}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={80}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {categories.map((_, index) => (
+                    <Cell key={`cell-${index}`} fill={['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][index % 5]} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card-clean bg-white overflow-hidden">
+          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">SKU Wise Sales Performance</h3>
+          </div>
+          <div className="max-h-[400px] overflow-y-auto">
+            <table className="w-full text-left border-collapse">
+              <thead className="sticky top-0 bg-white shadow-sm z-10">
+                <tr className="border-b border-slate-100">
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">SKU Name</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Value (Rs.)</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {skuPerformance.map((sku, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="px-6 py-3 text-xs font-bold text-slate-700">{sku.name}</td>
+                    <td className="px-6 py-3 text-xs font-black text-seablue text-right">{sku.value.toLocaleString()}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="card-clean p-6 bg-white space-y-4">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Focus Brand Performance</h3>
+          <div className="space-y-4">
+            {categories.map(cat => {
+              const sales = summary.brandSales[cat] || 0;
+              const prod = summary.brandProductive[cat] || 0;
+              const percentage = summary.totalValue > 0 ? (sales / summary.totalValue) * 100 : 0;
+              return (
+                <div key={cat} className="space-y-1.5">
+                  <div className="flex justify-between items-end">
+                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight">{cat}</span>
+                    <span className="text-[10px] font-black text-seablue">{Math.round(percentage)}% of Total</span>
+                  </div>
+                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                    <div className="bg-seablue h-full rounded-full" style={{ width: `${percentage}%` }} />
+                  </div>
+                  <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase">
+                    <span>Rs. {sales.toLocaleString()}</span>
+                    <span>{prod} Productive Shops</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      <div className="card-clean bg-white overflow-hidden">
+        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Performance by {filterLevel === 'National' ? 'NSM' : 
+                     filterLevel === 'NSM' ? 'RSM' :
+                     filterLevel === 'RSM' ? 'TSM' :
+                     filterLevel === 'TSM' ? 'Town' :
+                     filterLevel === 'Town' ? 'Distributor' : 'Order Booker'}</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 border-b border-slate-100">
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Entity Name</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Reports</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Visited</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Productive</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sales Value</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Efficiency</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {performanceByLevel.map((item, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="px-6 py-4 text-xs font-bold text-slate-700">{item.name}</td>
+                  <td className="px-6 py-4 text-xs font-medium text-slate-500">{item.count}</td>
+                  <td className="px-6 py-4 text-xs font-medium text-slate-500">{item.visited}</td>
+                  <td className="px-6 py-4 text-xs font-bold text-emerald-600">{item.productive}</td>
+                  <td className="px-6 py-4 text-xs font-black text-seablue">Rs. {item.value.toLocaleString()}</td>
+                  <td className="px-6 py-4">
+                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-seablue h-full rounded-full" 
+                        style={{ width: `${item.visited > 0 ? Math.min(100, (item.productive / item.visited) * 100) : 0}%` }}
+                      />
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void }) => (
   <nav className="bg-white border-b border-slate-200 px-2 h-10 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto">
     <button onClick={() => setView('entry')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
@@ -89,12 +405,20 @@ const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void })
       <span className="text-[7px] font-black uppercase tracking-tighter">Admin</span>
       {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
+    <button onClick={() => setView('national')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'national' ? 'text-seablue' : 'text-slate-400'}`}>
+      <Waves className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">National</span>
+      {view === 'national' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
+    </button>
   </nav>
 );
 
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks'>('entry');
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national'>('entry');
   const [history, setHistory] = useState<any[]>([]);
+  const [hierarchy, setHierarchy] = useState<any[]>([]);
+  const [nationalStats, setNationalStats] = useState<any[]>([]);
+  const [isLoadingNational, setIsLoadingNational] = useState(false);
   const [historyFilters, setHistoryFilters] = useState({ 
     ob: '', 
     tsm: '', 
@@ -141,6 +465,8 @@ export default function App() {
       orderBooker: '',
       obContact: '',
       route: '',
+      zone: '',
+      region: '',
       totalShops: 50,
       visitedShops: 0,
       productiveShops: 0,
@@ -263,7 +589,7 @@ export default function App() {
         const isDuplicate = await checkDuplicate(order.date, String(value));
         if (isDuplicate) {
           setMessage({ text: "Entry already exists for this OB today!", type: 'error' });
-          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {} }));
+          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '' }));
           setTimeout(() => setMessage(null), 3000);
           return;
         }
@@ -290,6 +616,8 @@ export default function App() {
           town: assignment.town,
           distributor: autoDist,
           tsm: assignment.tsm || '',
+          zone: assignment.zone || '',
+          region: assignment.region || '',
           route: assignment.routes[0] || '',
           totalShops: assignment.total_shops || 50,
           targets: {},
@@ -299,7 +627,7 @@ export default function App() {
         }));
         fetchTargetsForOB(String(value));
       } else {
-        setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {} }));
+        setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '' }));
       }
     } else if (field === 'town') {
       const townDists = distributors.filter(d => d.town === value);
@@ -484,6 +812,7 @@ export default function App() {
         setOrder({
           date: getPSTDate(),
           tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
+          zone: '', region: '',
           totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {},
           visitType: 'A'
         });
@@ -595,15 +924,22 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (view === 'national') {
+      fetchNationalData();
+    }
+  }, [view]);
+
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
-      const [obsRes, distsRes, configRes, googleRes, stocksRes] = await Promise.all([
+      const [obsRes, distsRes, configRes, googleRes, stocksRes, hierarchyRes] = await Promise.all([
         fetch('/api/admin/obs'),
         fetch('/api/admin/distributors'),
         fetch('/api/admin/config'),
         fetch('/api/google/status'),
-        fetch('/api/stocks')
+        fetch('/api/stocks'),
+        fetch('/api/admin/hierarchy')
       ]);
       
       if (obsRes.ok) setObAssignments(await obsRes.json());
@@ -611,8 +947,25 @@ export default function App() {
       if (configRes.ok) setAppConfig(await configRes.json());
       if (googleRes.ok) setGoogleStatus(await googleRes.json());
       if (stocksRes.ok) setStockHistory(await stocksRes.json());
+      if (hierarchyRes.ok) setHierarchy(await hierarchyRes.json());
     } catch (err) { console.error(err); }
     finally { setIsLoadingAdmin(false); }
+  };
+
+  const fetchNationalData = async () => {
+    setIsLoadingNational(true);
+    try {
+      const [hRes, sRes] = await Promise.all([
+        fetch('/api/admin/hierarchy'),
+        fetch('/api/national/stats')
+      ]);
+      if (hRes.ok) setHierarchy(await hRes.json());
+      if (sRes.ok) setNationalStats(await sRes.json());
+    } catch (err) {
+      console.error("Failed to fetch national data", err);
+    } finally {
+      setIsLoadingNational(false);
+    }
   };
 
   const fetchTargetsForOB = async (contact: string) => {
@@ -787,7 +1140,9 @@ export default function App() {
           return {
             name: getVal(['Name', 'name', 'Distributor', 'distributor']),
             town: getVal(['Town', 'town']),
-            tsm: getVal(['TSM', 'tsm'])
+            tsm: getVal(['TSM', 'tsm']),
+            zone: getVal(['Zone', 'zone']),
+            region: getVal(['Region', 'region'])
           };
         }).filter((item: any) => item.name);
 
@@ -819,6 +1174,88 @@ export default function App() {
         } finally {
           setTimeout(() => setMessage(null), 3000);
           if (e.target) e.target.value = '';
+        }
+      }
+    });
+  };
+
+  const handleHierarchyBulkUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setMessage({ text: 'Parsing Hierarchy CSV...', type: 'info' });
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      error: (err) => {
+        setMessage({ text: 'CSV Parse Error: ' + err.message, type: 'error' });
+        setTimeout(() => setMessage(null), 3000);
+      },
+      complete: async (results) => {
+        if (results.errors.length > 0) {
+          setMessage({ text: 'CSV has errors. Check format.', type: 'error' });
+          console.error("PapaParse Errors:", results.errors);
+          setTimeout(() => setMessage(null), 3000);
+          return;
+        }
+
+        const hierarchyData = results.data.map((row: any) => {
+          const normalizedRow: any = {};
+          Object.keys(row).forEach(key => {
+            normalizedRow[key.trim().toLowerCase()] = row[key];
+          });
+
+          const getVal = (possibleKeys: string[]) => {
+            for (const key of possibleKeys) {
+              const normalizedKey = key.toLowerCase();
+              if (normalizedRow[normalizedKey] !== undefined) return normalizedRow[normalizedKey];
+            }
+            return null;
+          };
+
+          return {
+            director_sales: getVal(['Director Sales', 'director_sales', 'director']),
+            nsm_name: getVal(['NSM Name', 'nsm_name', 'nsm']),
+            rsm_name: getVal(['RSM Name', 'rsm_name', 'rsm']),
+            asm_tsm_name: getVal(['ASM / TSM Name', 'asm_tsm_name', 'asm', 'tsm']),
+            town_name: getVal(['Town Name', 'town_name', 'town']),
+            distributor_name: getVal(['Distributor Name', 'distributor_name', 'distributor']),
+            distributor_code: getVal(['Distributor Code', 'distributor_code', 'code']),
+            ob_name: getVal(['Order Booker Name', 'ob_name', 'ob']),
+            ob_id: getVal(['Order Booker ID', 'ob_id', 'id', 'contact']),
+            territory_region: getVal(['Territory / Region', 'territory_region', 'territory', 'region'])
+          };
+        }).filter((item: any) => item.ob_id && item.ob_name);
+
+        if (hierarchyData.length === 0) {
+          setMessage({ text: 'No valid records found in CSV', type: 'error' });
+          setTimeout(() => setMessage(null), 3000);
+          return;
+        }
+
+        const clearExisting = window.confirm("Do you want to REPLACE the entire hierarchy with this new file?");
+
+        setMessage({ text: `Uploading ${hierarchyData.length} hierarchy records...`, type: 'info' });
+
+        try {
+          const res = await fetch('/api/admin/hierarchy/bulk-upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ hierarchy: hierarchyData, clearExisting })
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setMessage({ text: `Successfully uploaded ${hierarchyData.length} records!`, type: 'success' });
+            fetchAdminData();
+          } else {
+            throw new Error(data.error || 'Upload failed');
+          }
+        } catch (err: any) {
+          setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+        } finally {
+          if (e.target) e.target.value = '';
+          setTimeout(() => setMessage(null), 3000);
         }
       }
     });
@@ -978,6 +1415,8 @@ export default function App() {
             town: getVal(['Town', 'town']),
             distributor: getVal(['Distributor', 'distributor']),
             tsm: getVal(['TSM', 'tsm']),
+            zone: getVal(['Zone', 'zone']),
+            region: getVal(['Region', 'region']),
             total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops']) || '50') || 50,
             routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
             targets: {
@@ -1750,6 +2189,29 @@ export default function App() {
     );
   }
 
+  if (view === 'national') {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-40">
+        <MainNav view={view} setView={setView} />
+        {isLoadingNational ? (
+          <div className="flex-1 flex items-center justify-center min-h-[80vh]">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading National Stats...</p>
+            </div>
+          </div>
+        ) : (
+          <NationalDashboard 
+            stats={nationalStats} 
+            hierarchy={hierarchy} 
+            categories={CATEGORIES} 
+            skus={SKUS} 
+          />
+        )}
+      </div>
+    );
+  }
+
   if (view === 'admin') {
     if (isLoadingAdmin) {
       return (
@@ -2097,9 +2559,9 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => {
-                      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+                      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
                       const csvContent = headers.join(",") + "\n" + 
-                        "Sample Name,S-01,Sample Town,Sample Dist,Sample TSM,50,\"Route 1, Route 2\",10,5,2,1,0.5";
+                        "Sample Name,S-01,Sample Town,Sample Dist,Sample TSM,North,Region 1,50,\"Route 1, Route 2\",10,5,2,1,0.5";
                       const blob = new Blob([csvContent], { type: 'text/csv' });
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
@@ -2480,7 +2942,21 @@ export default function App() {
                   Bulk Upload
                   <input type="file" accept=".csv" onChange={handleDistributorBulkUpload} className="hidden" />
                 </label>
-                <button onClick={async () => { const name = prompt("Distributor Name:"); const town = prompt("Town:"); const tsm = prompt("TSM:"); if (name && town) { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, town, tsm }) }); fetchAdminData(); } }} className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30">+ Add</button>
+                <button onClick={async () => { 
+                  const name = prompt("Distributor Name:"); 
+                  const town = prompt("Town:"); 
+                  const tsm = prompt("TSM:"); 
+                  const zone = prompt("Zone (Optional):");
+                  const region = prompt("Region (Optional):");
+                  if (name && town) { 
+                    await fetch('/api/admin/distributors', { 
+                      method: 'POST', 
+                      headers: { 'Content-Type': 'application/json' }, 
+                      body: JSON.stringify({ name, town, tsm, zone, region }) 
+                    }); 
+                    fetchAdminData(); 
+                  } 
+                }} className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30">+ Add</button>
               </div>
             </div>
             <div className="divide-y divide-slate-100 max-h-[400px] overflow-y-auto">
@@ -2488,7 +2964,7 @@ export default function App() {
                 .filter(dist => !selectedAdminTSM || dist.tsm === selectedAdminTSM)
                 .map(dist => (
                 <div key={dist.id} className="p-4 flex items-center justify-between gap-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 flex-1">
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-3 flex-1">
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Distributor Name</label>
                       <input type="text" defaultValue={dist.name} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, name: e.target.value }) }); }} className="input-clean w-full" />
@@ -2507,6 +2983,14 @@ export default function App() {
                         <option value="">Select TSM</option>
                         {tsmList.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase">Zone</label>
+                      <input type="text" defaultValue={dist.zone} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, zone: e.target.value }) }); }} className="input-clean w-full" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase">Region</label>
+                      <input type="text" defaultValue={dist.region} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, region: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                   </div>
                   <button onClick={async () => { if (confirm("Delete?")) { await fetch(`/api/admin/distributors/${dist.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
@@ -2534,14 +3018,27 @@ export default function App() {
                   </select>
                 </div>
               </div>
-              <button onClick={async () => { const name = prompt("Name:"); const contact = prompt("ID:"); if (name && contact) { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, contact, town: '', distributor: '', routes: [] }) }); fetchAdminData(); } }} className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30">+ Add</button>
+              <button onClick={async () => { 
+                const name = prompt("Name:"); 
+                const contact = prompt("ID:"); 
+                const zone = prompt("Zone (Optional):");
+                const region = prompt("Region (Optional):");
+                if (name && contact) { 
+                  await fetch('/api/admin/obs', { 
+                    method: 'POST', 
+                    headers: { 'Content-Type': 'application/json' }, 
+                    body: JSON.stringify({ name, contact, town: '', distributor: '', routes: [], zone, region }) 
+                  }); 
+                  fetchAdminData(); 
+                } 
+              }} className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30">+ Add</button>
             </div>
             <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
               {obAssignments
                 .filter(ob => !selectedAdminTSM || ob.tsm === selectedAdminTSM)
                 .map(ob => (
                 <div key={ob.id} className="p-4 space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Name</label>
                       <input type="text" defaultValue={ob.name} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, name: e.target.value }) }); }} className="input-clean w-full" />
@@ -2568,6 +3065,14 @@ export default function App() {
                         <option value="">Select TSM</option>
                         {tsmList.map(t => <option key={t} value={t}>{t}</option>)}
                       </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase">Zone</label>
+                      <input type="text" defaultValue={ob.zone} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, zone: e.target.value }) }); }} className="input-clean w-full" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase">Region</label>
+                      <input type="text" defaultValue={ob.region} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, region: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
@@ -2632,6 +3137,67 @@ export default function App() {
                   )}
                 </div>
               ))}
+            </div>
+          </section>
+
+          <section className="card-clean overflow-hidden">
+            <div className="bg-emerald-600 text-white px-4 py-2 flex justify-between items-center">
+              <h2 className="text-sm font-bold uppercase tracking-widest">National Sales Hierarchy</h2>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={() => {
+                    const headers = ['Director Sales', 'NSM Name', 'RSM Name', 'ASM / TSM Name', 'Town Name', 'Distributor Name', 'Distributor Code', 'Order Booker Name', 'Order Booker ID', 'Territory / Region'];
+                    const csvContent = headers.join(",") + "\n" + 
+                      "Director Name,NSM Name,RSM Name,TSM Name,Town Name,Dist Name,D-001,OB Name,OB-001,South";
+                    const blob = new Blob([csvContent], { type: 'text/csv' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = 'national_hierarchy_template.csv';
+                    a.click();
+                  }}
+                  className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30"
+                >
+                  Template
+                </button>
+                <label className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30 cursor-pointer">
+                  Bulk Upload Hierarchy
+                  <input type="file" accept=".csv" onChange={handleHierarchyBulkUpload} className="hidden" />
+                </label>
+              </div>
+            </div>
+            <div className="p-4 overflow-x-auto">
+              <table className="w-full text-[10px] text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    <th className="p-2 font-bold uppercase text-slate-400">NSM</th>
+                    <th className="p-2 font-bold uppercase text-slate-400">RSM</th>
+                    <th className="p-2 font-bold uppercase text-slate-400">TSM</th>
+                    <th className="p-2 font-bold uppercase text-slate-400">Town</th>
+                    <th className="p-2 font-bold uppercase text-slate-400">Distributor</th>
+                    <th className="p-2 font-bold uppercase text-slate-400">OB Name</th>
+                    <th className="p-2 font-bold uppercase text-slate-400">OB ID</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {hierarchy.map((row, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50">
+                      <td className="p-2">{row.nsm_name}</td>
+                      <td className="p-2">{row.rsm_name}</td>
+                      <td className="p-2">{row.asm_tsm_name}</td>
+                      <td className="p-2">{row.town_name}</td>
+                      <td className="p-2">{row.distributor_name}</td>
+                      <td className="p-2 font-bold">{row.ob_name}</td>
+                      <td className="p-2 text-slate-400">{row.ob_id}</td>
+                    </tr>
+                  ))}
+                  {hierarchy.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-slate-400 italic">No hierarchy data uploaded yet.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </section>
         </main>
