@@ -4,6 +4,10 @@ import Papa from 'papaparse';
 import { 
   BarChart, 
   Bar, 
+  LineChart,
+  Line,
+  AreaChart,
+  Area,
   XAxis, 
   YAxis, 
   CartesianGrid, 
@@ -40,7 +44,13 @@ import {
   Link2,
   ExternalLink,
   Cloud,
-  Share2
+  Share2,
+  TrendingUp,
+  Users,
+  DollarSign,
+  Package,
+  ChevronRight,
+  Filter
 } from 'lucide-react';
 import { SKUS, CATEGORIES, OrderState, OrderItem, SKU, OBAssignment } from './types';
 
@@ -63,219 +73,348 @@ const WhatsAppIcon = () => (
 );
 
 const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[], hierarchy: any[], categories: string[], skus: any[] }) => {
-  const [filterLevel, setFilterLevel] = useState<'National' | 'NSM' | 'RSM' | 'TSM' | 'Town' | 'Distributor' | 'OB'>('National');
+  const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'OB'>('National');
   const [filterValue, setFilterValue] = useState<string>('');
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+
+  const brands = ["Kite Glow", "Vero", "Burq Action"];
 
   const processedStats = useMemo(() => {
     return stats.map(s => {
       const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+      const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+      
+      let totalBags = 0;
+      let brandSales: Record<string, number> = {};
+      
+      skus.forEach(sku => {
+        if (brands.includes(sku.category)) {
+          const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+          const ctns = Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0;
+          totalBags += ctns;
+          brandSales[sku.category] = (brandSales[sku.category] || 0) + ctns;
+        }
+      });
+
       return {
         ...s,
-        nsm: h?.nsm_name || 'Unassigned',
-        rsm: h?.rsm_name || 'Unassigned',
+        region: h?.territory_region || s.region || 'Unassigned',
         tsm: h?.asm_tsm_name || s.tsm || 'Unassigned',
         town: h?.town_name || s.town || 'Unassigned',
-        distributor: h?.distributor_name || s.distributor || 'Unassigned',
-        region: h?.territory_region || s.region || 'Unassigned',
-        order_data: typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data,
-        category_productive_data: typeof s.category_productive_data === 'string' ? JSON.parse(s.category_productive_data) : s.category_productive_data
+        ob_name: h?.ob_name || s.order_booker || 'Unassigned',
+        month: s.date.slice(0, 7),
+        totalBags,
+        brandSales
       };
     });
-  }, [stats, hierarchy]);
+  }, [stats, hierarchy, skus]);
+
+  const filteredStats = useMemo(() => {
+    let result = processedStats;
+    if (filterLevel !== 'National') {
+      result = result.filter(s => {
+        if (filterLevel === 'Region') return s.region === filterValue;
+        if (filterLevel === 'TSM') return s.tsm === filterValue;
+        if (filterLevel === 'Town') return s.town === filterValue;
+        if (filterLevel === 'OB') return s.ob_name === filterValue;
+        return true;
+      });
+    }
+    return result;
+  }, [processedStats, filterLevel, filterValue]);
+
+  const monthStats = useMemo(() => {
+    return filteredStats.filter(s => s.month === selectedMonth);
+  }, [filteredStats, selectedMonth]);
+
+  const obPerformance = useMemo(() => {
+    const obs: Record<string, any> = {};
+    monthStats.forEach(s => {
+      if (!obs[s.ob_contact]) {
+        obs[s.ob_contact] = { 
+          name: s.ob_name, 
+          town: s.town, 
+          tsm: s.tsm, 
+          totalSales: 0,
+          brandSales: { "Kite Glow": 0, "Vero": 0, "Burq Action": 0 }
+        };
+      }
+      obs[s.ob_contact].totalSales += s.totalBags;
+      brands.forEach(b => {
+        obs[s.ob_contact].brandSales[b] += (s.brandSales[b] || 0);
+      });
+    });
+
+    return Object.values(obs).map(ob => {
+      let category = 'D';
+      if (ob.totalSales >= 300) category = 'A';
+      else if (ob.totalSales >= 200) category = 'B';
+      else if (ob.totalSales >= 100) category = 'C';
+      return { ...ob, category };
+    });
+  }, [monthStats]);
+
+  const summary = useMemo(() => {
+    const totalSales = monthStats.reduce((sum, s) => sum + s.totalBags, 0);
+    const uniqueOBs = new Set(monthStats.map(s => s.ob_contact)).size;
+    const uniqueTSMs = new Set(monthStats.map(s => s.tsm)).size;
+    
+    const totalOBSalary = uniqueOBs * 50000;
+    const totalTSMSalary = uniqueTSMs * 70000;
+    const totalSalaryCost = totalOBSalary + totalTSMSalary;
+    const costPerBag = totalSales > 0 ? totalSalaryCost / totalSales : 0;
+
+    const brandTotals: Record<string, number> = {};
+    brands.forEach(b => {
+      brandTotals[b] = monthStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0);
+    });
+
+    return { totalSales, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, brandTotals };
+  }, [monthStats]);
+
+  const categoryStats = useMemo(() => {
+    const cats = { A: { count: 0, sales: 0 }, B: { count: 0, sales: 0 }, C: { count: 0, sales: 0 }, D: { count: 0, sales: 0 } };
+    obPerformance.forEach(ob => {
+      const cat = ob.category as keyof typeof cats;
+      cats[cat].count++;
+      cats[cat].sales += ob.totalSales;
+    });
+    return Object.entries(cats).map(([cat, data]) => ({
+      category: cat,
+      count: data.count,
+      totalSales: data.sales,
+      avgSales: data.count > 0 ? data.sales / data.count : 0
+    }));
+  }, [obPerformance]);
+
+  const trendData = useMemo(() => {
+    const months: Record<string, any> = {};
+    filteredStats.forEach(s => {
+      if (!months[s.month]) {
+        months[s.month] = { month: s.month, totalSales: 0, obCount: new Set(), tsmCount: new Set() };
+        brands.forEach(b => months[s.month][b] = 0);
+      }
+      months[s.month].totalSales += s.totalBags;
+      months[s.month].obCount.add(s.ob_contact);
+      months[s.month].tsmCount.add(s.tsm);
+      brands.forEach(b => months[s.month][b] += (s.brandSales[b] || 0));
+    });
+
+    return Object.values(months).sort((a, b) => a.month.localeCompare(b.month)).map(m => {
+      const totalSalary = (m.obCount.size * 50000) + (m.tsmCount.size * 70000);
+      return {
+        ...m,
+        costPerBag: m.totalSales > 0 ? totalSalary / m.totalSales : 0,
+        totalSalary
+      };
+    });
+  }, [filteredStats]);
+
+  const worstOBs = useMemo(() => {
+    return [...obPerformance].sort((a, b) => a.totalSales - b.totalSales).slice(0, 5);
+  }, [obPerformance]);
+
+  const worstByBrand = useMemo(() => {
+    return brands.map(b => {
+      const worst = [...obPerformance].sort((a, b) => a.brandSales[b] - b.brandSales[b])[0];
+      return { brand: b, ob: worst?.name || '-', town: worst?.town || '-', sales: worst?.brandSales[b] || 0 };
+    });
+  }, [obPerformance]);
 
   const filterOptions = useMemo(() => {
     const options = Array.from(new Set(processedStats.map(s => {
-      if (filterLevel === 'NSM') return s.nsm;
-      if (filterLevel === 'RSM') return s.rsm;
+      if (filterLevel === 'Region') return s.region;
       if (filterLevel === 'TSM') return s.tsm;
       if (filterLevel === 'Town') return s.town;
-      if (filterLevel === 'Distributor') return s.distributor;
-      if (filterLevel === 'OB') return s.order_booker;
+      if (filterLevel === 'OB') return s.ob_name;
       return null;
     }))).filter(Boolean).sort() as string[];
     return options;
   }, [processedStats, filterLevel]);
 
-  const filteredStats = useMemo(() => {
-    if (filterLevel === 'National') return processedStats;
-    return processedStats.filter(s => {
-      if (filterLevel === 'NSM') return s.nsm === filterValue;
-      if (filterLevel === 'RSM') return s.rsm === filterValue;
-      if (filterLevel === 'TSM') return s.tsm === filterValue;
-      if (filterLevel === 'Town') return s.town === filterValue;
-      if (filterLevel === 'Distributor') return s.distributor === filterValue;
-      if (filterLevel === 'OB') return s.order_booker === filterValue;
-      return true;
-    });
-  }, [processedStats, filterLevel, filterValue]);
-
-  const summary = useMemo(() => {
-    let totalShops = 0;
-    let visitedShops = 0;
-    let productiveShops = 0;
-    let totalValue = 0;
-    const brandProductive: Record<string, number> = {};
-    const brandSales: Record<string, number> = {};
-    const skuSales: Record<string, number> = {};
-
-    filteredStats.forEach(s => {
-      totalShops += s.total_shops || 0;
-      visitedShops += s.visited_shops || 0;
-      productiveShops += s.productive_shops || 0;
-
-      const orderData = s.order_data || {};
-      skus.forEach(sku => {
-        const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
-        const value = (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0) * Number(sku.pricePerCarton);
-        totalValue += value;
-        brandSales[sku.category] = (brandSales[sku.category] || 0) + value;
-        skuSales[sku.name] = (skuSales[sku.name] || 0) + value;
-      });
-
-      const catProd = s.category_productive_data || {};
-      categories.forEach(cat => {
-        if (catProd[cat]) {
-          brandProductive[cat] = (brandProductive[cat] || 0) + 1;
-        }
-      });
-    });
-
-    return { totalShops, visitedShops, productiveShops, totalValue, brandProductive, brandSales, skuSales };
-  }, [filteredStats, skus, categories]);
-
-  const skuPerformance = useMemo(() => {
-    return Object.entries(summary.skuSales)
-      .map(([name, value]) => ({ name, value }))
-      .sort((a: any, b: any) => b.value - a.value);
-  }, [summary.skuSales]);
-
-  const performanceByLevel = useMemo(() => {
-    const nextLevel = filterLevel === 'National' ? 'NSM' : 
-                     filterLevel === 'NSM' ? 'RSM' :
-                     filterLevel === 'RSM' ? 'TSM' :
-                     filterLevel === 'TSM' ? 'Town' :
-                     filterLevel === 'Town' ? 'Distributor' : 'OB';
-    
-    const groups: Record<string, any> = {};
-    filteredStats.forEach(s => {
-      const key = s[nextLevel.toLowerCase()] || 'Unassigned';
-      if (!groups[key]) {
-        groups[key] = { name: key, visited: 0, productive: 0, value: 0, count: 0 };
-      }
-      groups[key].visited += s.visited_shops || 0;
-      groups[key].productive += s.productive_shops || 0;
-      groups[key].count += 1;
-      
-      const orderData = s.order_data || {};
-      skus.forEach(sku => {
-        const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
-        groups[key].value += (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0) * Number(sku.pricePerCarton);
-      });
-    });
-
-    return Object.values(groups).sort((a: any, b: any) => b.value - a.value);
-  }, [filteredStats, filterLevel, skus]);
-
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
-        <div>
-          <h1 className="text-xl font-black text-seablue uppercase tracking-tight">National Sales Monitoring</h1>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Real-time Hierarchy Aggregation</p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <select 
-            value={filterLevel} 
-            onChange={(e) => { setFilterLevel(e.target.value as any); setFilterValue(''); }}
-            className="input-clean text-[10px] font-bold py-1.5 px-3"
-          >
-            <option value="National">National View</option>
-            <option value="NSM">Filter by NSM</option>
-            <option value="RSM">Filter by RSM</option>
-            <option value="TSM">Filter by TSM</option>
-            <option value="Town">Filter by Town</option>
-            <option value="Distributor">Filter by Distributor</option>
-            <option value="OB">Filter by Order Booker</option>
-          </select>
-          {filterLevel !== 'National' && (
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div>
+            <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">National Sales Dashboard</h1>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Hierarchical Performance & Cost Analysis</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <input 
+              type="month" 
+              value={selectedMonth} 
+              onChange={(e) => setSelectedMonth(e.target.value)}
+              className="input-clean text-xs font-bold py-2 px-3"
+            />
             <select 
-              value={filterValue} 
-              onChange={(e) => setFilterValue(e.target.value)}
-              className="input-clean text-[10px] font-bold py-1.5 px-3"
+              value={filterLevel} 
+              onChange={(e) => { setFilterLevel(e.target.value as any); setFilterValue(''); }}
+              className="input-clean text-xs font-bold py-2 px-3"
             >
-              <option value="">Select {filterLevel}</option>
-              {filterOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              <option value="National">National View</option>
+              <option value="Region">Filter by Region</option>
+              <option value="TSM">Filter by TSM</option>
+              <option value="Town">Filter by Town</option>
+              <option value="OB">Filter by OB</option>
             </select>
-          )}
+            {filterLevel !== 'National' && (
+              <select 
+                value={filterValue} 
+                onChange={(e) => setFilterValue(e.target.value)}
+                className="input-clean text-xs font-bold py-2 px-3"
+              >
+                <option value="">Select {filterLevel}</option>
+                {filterOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+              </select>
+            )}
+          </div>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
         <div className="card-clean p-4 bg-white border-l-4 border-seablue">
-          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Total Sales Value</p>
-          <h2 className="text-xl font-black text-seablue">Rs. {summary.totalValue.toLocaleString()}</h2>
-          <p className="text-[10px] text-slate-400 font-bold">MTD Performance</p>
+          <div className="flex items-center gap-2 text-slate-400 mb-1">
+            <Package className="w-3 h-3" />
+            <p className="text-[8px] font-black uppercase tracking-widest">Total Sales (Bags)</p>
+          </div>
+          <h2 className="text-xl font-black text-seablue">{summary.totalSales.toFixed(0)}</h2>
         </div>
         <div className="card-clean p-4 bg-white border-l-4 border-emerald-500">
-          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Productive Shops</p>
-          <h2 className="text-xl font-black text-emerald-600">{summary.productiveShops.toLocaleString()}</h2>
-          <p className="text-[10px] text-slate-400 font-bold">Overall Productivity: {summary.visitedShops > 0 ? Math.round((summary.productiveShops / summary.visitedShops) * 100) : 0}%</p>
+          <div className="flex items-center gap-2 text-slate-400 mb-1">
+            <Users className="w-3 h-3" />
+            <p className="text-[8px] font-black uppercase tracking-widest">Total OB</p>
+          </div>
+          <h2 className="text-xl font-black text-emerald-600">{summary.uniqueOBs}</h2>
         </div>
         <div className="card-clean p-4 bg-white border-l-4 border-orange-500">
-          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Visited Shops</p>
-          <h2 className="text-xl font-black text-orange-600">{summary.visitedShops.toLocaleString()}</h2>
-          <p className="text-[10px] text-slate-400 font-bold">Out of {summary.totalShops.toLocaleString()} Total</p>
+          <div className="flex items-center gap-2 text-slate-400 mb-1">
+            <Users className="w-3 h-3" />
+            <p className="text-[8px] font-black uppercase tracking-widest">Total TSM</p>
+          </div>
+          <h2 className="text-xl font-black text-orange-600">{summary.uniqueTSMs}</h2>
         </div>
         <div className="card-clean p-4 bg-white border-l-4 border-purple-500">
-          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Reports Count</p>
-          <h2 className="text-xl font-black text-purple-600">{filteredStats.length.toLocaleString()}</h2>
-          <p className="text-[10px] text-slate-400 font-bold">Daily Submissions</p>
+          <div className="flex items-center gap-2 text-slate-400 mb-1">
+            <TrendingUp className="w-3 h-3" />
+            <p className="text-[8px] font-black uppercase tracking-widest">Avg Sales / OB</p>
+          </div>
+          <h2 className="text-xl font-black text-purple-600">{summary.uniqueOBs > 0 ? (summary.totalSales / summary.uniqueOBs).toFixed(1) : 0}</h2>
+        </div>
+        <div className="card-clean p-4 bg-white border-l-4 border-rose-500">
+          <div className="flex items-center gap-2 text-slate-400 mb-1">
+            <DollarSign className="w-3 h-3" />
+            <p className="text-[8px] font-black uppercase tracking-widest">Cost Per Bag</p>
+          </div>
+          <h2 className="text-xl font-black text-rose-600">Rs. {summary.costPerBag.toFixed(1)}</h2>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-clean p-6 bg-white space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Brand Wise Sales Value</h3>
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Monthly Sales Trend</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={categories.map(cat => ({ name: cat, value: summary.brandSales[cat] || 0 }))}>
+              <AreaChart data={trendData}>
+                <defs>
+                  <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.1}/>
+                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                  </linearGradient>
+                </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="name" fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
+                <XAxis dataKey="month" fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
                 <YAxis fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
-                <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                  labelStyle={{ fontWeight: 900, color: '#0f172a' }}
-                />
-                <Bar dataKey="value" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-              </BarChart>
+                <Tooltip />
+                <Area type="monotone" dataKey="totalSales" stroke="#0ea5e9" fillOpacity={1} fill="url(#colorSales)" strokeWidth={3} />
+              </AreaChart>
             </ResponsiveContainer>
           </div>
         </div>
 
         <div className="card-clean p-6 bg-white space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Brand Wise Productivity</h3>
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Category Distribution</h3>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={categories.map(cat => ({ name: cat, value: summary.brandProductive[cat] || 0 }))}
+                  data={categoryStats}
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
                   outerRadius={80}
                   paddingAngle={5}
-                  dataKey="value"
+                  dataKey="count"
+                  nameKey="category"
                 >
-                  {categories.map((_, index) => (
-                    <Cell key={`cell-${index}`} fill={['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][index % 5]} />
+                  {categoryStats.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={['#10b981', '#0ea5e9', '#f59e0b', '#ef4444'][index % 4]} />
                   ))}
                 </Pie>
                 <Tooltip />
-                <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 700, textTransform: 'uppercase' }} />
+                <Legend iconType="circle" />
               </PieChart>
             </ResponsiveContainer>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="card-clean bg-white overflow-hidden lg:col-span-2">
+          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Category Wise OB Sales</h3>
+          </div>
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-slate-100">
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Category</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Count</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Total Sales</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Avg Sales</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {categoryStats.map(row => (
+                <tr key={row.category} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4">
+                    <span className={`px-2 py-1 rounded text-[10px] font-black ${
+                      row.category === 'A' ? 'bg-emerald-100 text-emerald-700' :
+                      row.category === 'B' ? 'bg-blue-100 text-blue-700' :
+                      row.category === 'C' ? 'bg-orange-100 text-orange-700' :
+                      'bg-rose-100 text-rose-700'
+                    }`}>Category {row.category}</span>
+                  </td>
+                  <td className="px-6 py-4 text-xs font-bold text-slate-600">{row.count}</td>
+                  <td className="px-6 py-4 text-xs font-black text-seablue">{row.totalSales.toFixed(0)}</td>
+                  <td className="px-6 py-4 text-xs font-bold text-slate-500">{row.avgSales.toFixed(1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card-clean p-6 bg-white space-y-4">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Salary vs Sales</h3>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <div className="flex justify-between text-[10px] font-black uppercase">
+                <span className="text-slate-400">Total Salary Cost</span>
+                <span className="text-rose-600">Rs. {summary.totalSalaryCost.toLocaleString()}</span>
+              </div>
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                <div className="bg-rose-500 h-full" style={{ width: '100%' }} />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <div className="flex justify-between text-[10px] font-black uppercase">
+                <span className="text-slate-400">Monthly Cost Per Bag</span>
+                <span className="text-rose-600">Rs. {summary.costPerBag.toFixed(1)}</span>
+              </div>
+              <div className="text-[8px] text-slate-400 font-bold uppercase leading-relaxed">
+                Based on OB (50k) & TSM (70k) salaries divided by total bags sold.
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -283,97 +422,77 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">SKU Wise Sales Performance</h3>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst Performing OB (Lowest Sales)</h3>
           </div>
-          <div className="max-h-[400px] overflow-y-auto">
-            <table className="w-full text-left border-collapse">
-              <thead className="sticky top-0 bg-white shadow-sm z-10">
-                <tr className="border-b border-slate-100">
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">SKU Name</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right">Value (Rs.)</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {skuPerformance.map((sku, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-6 py-3 text-xs font-bold text-slate-700">{sku.name}</td>
-                    <td className="px-6 py-3 text-xs font-black text-seablue text-right">{sku.value.toLocaleString()}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="card-clean p-6 bg-white space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Focus Brand Performance</h3>
-          <div className="space-y-4">
-            {categories.map(cat => {
-              const sales = summary.brandSales[cat] || 0;
-              const prod = summary.brandProductive[cat] || 0;
-              const percentage = summary.totalValue > 0 ? (sales / summary.totalValue) * 100 : 0;
-              return (
-                <div key={cat} className="space-y-1.5">
-                  <div className="flex justify-between items-end">
-                    <span className="text-[10px] font-black text-slate-700 uppercase tracking-tight">{cat}</span>
-                    <span className="text-[10px] font-black text-seablue">{Math.round(percentage)}% of Total</span>
-                  </div>
-                  <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                    <div className="bg-seablue h-full rounded-full" style={{ width: `${percentage}%` }} />
-                  </div>
-                  <div className="flex justify-between text-[9px] font-bold text-slate-400 uppercase">
-                    <span>Rs. {sales.toLocaleString()}</span>
-                    <span>{prod} Productive Shops</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </div>
-
-      <div className="card-clean bg-white overflow-hidden">
-        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Performance by {filterLevel === 'National' ? 'NSM' : 
-                     filterLevel === 'NSM' ? 'RSM' :
-                     filterLevel === 'RSM' ? 'TSM' :
-                     filterLevel === 'TSM' ? 'Town' :
-                     filterLevel === 'Town' ? 'Distributor' : 'Order Booker'}</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
+          <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-50/50 border-b border-slate-100">
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Entity Name</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Reports</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Visited</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Productive</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Sales Value</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest">Efficiency</th>
+              <tr className="border-b border-slate-100">
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">TSM</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Total Sales</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {performanceByLevel.map((item, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
-                  <td className="px-6 py-4 text-xs font-bold text-slate-700">{item.name}</td>
-                  <td className="px-6 py-4 text-xs font-medium text-slate-500">{item.count}</td>
-                  <td className="px-6 py-4 text-xs font-medium text-slate-500">{item.visited}</td>
-                  <td className="px-6 py-4 text-xs font-bold text-emerald-600">{item.productive}</td>
-                  <td className="px-6 py-4 text-xs font-black text-seablue">Rs. {item.value.toLocaleString()}</td>
-                  <td className="px-6 py-4">
-                    <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                      <div 
-                        className="bg-seablue h-full rounded-full" 
-                        style={{ width: `${item.visited > 0 ? Math.min(100, (item.productive / item.visited) * 100) : 0}%` }}
-                      />
-                    </div>
-                  </td>
+              {worstOBs.map((ob, idx) => (
+                <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4 text-xs font-bold text-slate-700">{ob.name}</td>
+                  <td className="px-6 py-4 text-xs text-slate-500">{ob.town}</td>
+                  <td className="px-6 py-4 text-xs text-slate-500">{ob.tsm}</td>
+                  <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{ob.totalSales.toFixed(1)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="card-clean bg-white overflow-hidden">
+          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst OB by Brand</h3>
+          </div>
+          <table className="w-full text-left">
+            <thead>
+              <tr className="border-b border-slate-100">
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Brand</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Sales</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {worstByBrand.map((row, idx) => (
+                <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                  <td className="px-6 py-4 text-xs font-black text-seablue uppercase">{row.brand}</td>
+                  <td className="px-6 py-4 text-xs font-bold text-slate-700">{row.ob}</td>
+                  <td className="px-6 py-4 text-xs text-slate-500">{row.town}</td>
+                  <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{row.sales.toFixed(1)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       </div>
+
+      {filterLevel === 'OB' && filterValue && (
+        <div className="card-clean p-6 bg-white space-y-4">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">OB Monthly Sales Trend: {filterValue}</h3>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={trendData}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="month" fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
+                <YAxis fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
+                <Tooltip />
+                <Legend />
+                <Line type="monotone" dataKey="Kite Glow" stroke="#0ea5e9" strokeWidth={2} />
+                <Line type="monotone" dataKey="Vero" stroke="#10b981" strokeWidth={2} />
+                <Line type="monotone" dataKey="Burq Action" stroke="#f59e0b" strokeWidth={2} />
+                <Line type="monotone" dataKey="totalSales" stroke="#0f172a" strokeWidth={3} strokeDasharray="5 5" />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -385,6 +504,11 @@ const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void })
       <span className="text-[7px] font-black uppercase tracking-tighter">Entry</span>
       {view === 'entry' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
+    <button onClick={() => setView('history')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
+      <History className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">History</span>
+      {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
+    </button>
     <button onClick={() => setView('stocks')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'stocks' ? 'text-seablue' : 'text-slate-400'}`}>
       <Store className="w-4 h-4" />
       <span className="text-[7px] font-black uppercase tracking-tighter">Stocks</span>
@@ -395,20 +519,15 @@ const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void })
       <span className="text-[7px] font-black uppercase tracking-tighter">Stats</span>
       {view === 'dashboard' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
-    <button onClick={() => setView('history')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
-      <History className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">History</span>
-      {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
+    <button onClick={() => setView('national')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'national' ? 'text-seablue' : 'text-slate-400'}`}>
+      <Waves className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">National</span>
+      {view === 'national' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
     <button onClick={() => setView('admin')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
       <Settings className="w-4 h-4" />
       <span className="text-[7px] font-black uppercase tracking-tighter">Admin</span>
       {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
-    </button>
-    <button onClick={() => setView('national')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'national' ? 'text-seablue' : 'text-slate-400'}`}>
-      <Waves className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">National</span>
-      {view === 'national' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
   </nav>
 );
@@ -589,7 +708,7 @@ export default function App() {
         const isDuplicate = await checkDuplicate(order.date, String(value));
         if (isDuplicate) {
           setMessage({ text: "Entry already exists for this OB today!", type: 'error' });
-          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '' }));
+          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', director: '' }));
           setTimeout(() => setMessage(null), 3000);
           return;
         }
@@ -618,6 +737,9 @@ export default function App() {
           tsm: assignment.tsm || '',
           zone: assignment.zone || '',
           region: assignment.region || '',
+          nsm: assignment.nsm || '',
+          rsm: assignment.rsm || '',
+          director: assignment.director || '',
           route: assignment.routes[0] || '',
           totalShops: assignment.total_shops || 50,
           targets: {},
@@ -627,7 +749,7 @@ export default function App() {
         }));
         fetchTargetsForOB(String(value));
       } else {
-        setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '' }));
+        setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', director: '' }));
       }
     } else if (field === 'town') {
       const townDists = distributors.filter(d => d.town === value);
@@ -775,6 +897,15 @@ export default function App() {
     setIsConfirming(false);
     setIsSubmitting(true);
     
+    // Final duplicate check before actual submission
+    const isDuplicate = await checkDuplicate(order.date, order.obContact);
+    if (isDuplicate) {
+      setMessage({ text: 'An entry already exists for this Order Booker on this date.', type: 'error' });
+      setIsSubmitting(false);
+      setTimeout(() => setMessage(null), 5000);
+      return;
+    }
+
     let currentLoc = location;
     if ("geolocation" in navigator) {
       try {
@@ -812,7 +943,7 @@ export default function App() {
         setOrder({
           date: getPSTDate(),
           tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
-          zone: '', region: '',
+          zone: '', region: '', nsm: '', rsm: '', director: '',
           totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {},
           visitType: 'A'
         });
@@ -845,7 +976,14 @@ export default function App() {
             ...h,
             category_productive_data: typeof h.category_productive_data === 'string' ? JSON.parse(h.category_productive_data) : (h.category_productive_data || {}),
             order_data: typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {})
-          })));
+          })).sort((a: any, b: any) => {
+            // Sort by OB Name then Date
+            if (a.order_booker < b.order_booker) return -1;
+            if (a.order_booker > b.order_booker) return 1;
+            if (a.date < b.date) return 1;
+            if (a.date > b.date) return -1;
+            return 0;
+          }));
           setLastUpdated(new Date().toLocaleTimeString());
         } else {
           console.error("Expected array from /api/orders, got:", data);
@@ -895,25 +1033,22 @@ export default function App() {
 
   const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
 
+  useEffect(() => {
+    // Auto-sync on mount if config is available
+    if (appConfig.google_spreadsheet_id && !isSyncingGlobal) {
+      syncEverything();
+    }
+  }, []);
+
   const syncEverything = async () => {
     setIsSyncingGlobal(true);
     try {
-      // 1. Push local data to Google Sheets
-      const pushRes = await fetch('/api/admin/sync-sheets', { method: 'POST' });
-      const pushData = await pushRes.json();
-      if (!pushRes.ok) throw new Error(pushData.error || 'Push failed');
-
-      // 2. Pull Team & Targets from Google Sheets (Source of Truth for config)
-      const pullTeamRes = await fetch('/api/admin/sync-team-from-sheets', { method: 'POST' });
-      const pullTeamData = await pullTeamRes.json();
-      if (!pullTeamRes.ok) throw new Error(pullTeamData.error || 'Team Pull failed');
-
-      // 3. Pull Sales History from Google Sheets (to ensure Stats are up to date)
-      const pullSalesRes = await fetch('/api/admin/sync-sales-from-sheets', { method: 'POST' });
-      const pullSalesData = await pullSalesRes.json();
-      // We don't throw if sales pull fails, as it might be empty or have minor issues
+      const res = await fetch('/api/admin/master-sync', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
       
-      setMessage({ text: 'Full Sync Complete! Data pushed to Sheets, Team & Sales History updated from Sheets.', type: 'success' });
+      setMessage({ text: data.message, type: 'success' });
+      setAppConfig(prev => ({ ...prev, last_sync_at: data.last_sync_at }));
       fetchAdminData();
       fetchHistory(true);
     } catch (err: any) {
@@ -955,12 +1090,13 @@ export default function App() {
   const fetchNationalData = async () => {
     setIsLoadingNational(true);
     try {
-      const [hRes, sRes] = await Promise.all([
-        fetch('/api/admin/hierarchy'),
-        fetch('/api/national/stats')
-      ]);
-      if (hRes.ok) setHierarchy(await hRes.json());
-      if (sRes.ok) setNationalStats(await sRes.json());
+      const requesterId = localStorage.getItem('user_id') || 'ADMIN';
+      const res = await fetch(`/api/national/stats?requesterId=${requesterId}`);
+      if (res.ok) {
+        const data = await res.json();
+        setNationalStats(data.stats || []);
+        setHierarchy(data.hierarchy || []);
+      }
     } catch (err) {
       console.error("Failed to fetch national data", err);
     } finally {
@@ -1224,7 +1360,8 @@ export default function App() {
             distributor_code: getVal(['Distributor Code', 'distributor_code', 'code']),
             ob_name: getVal(['Order Booker Name', 'ob_name', 'ob']),
             ob_id: getVal(['Order Booker ID', 'ob_id', 'id', 'contact']),
-            territory_region: getVal(['Territory / Region', 'territory_region', 'territory', 'region'])
+            territory_region: getVal(['Territory / Region', 'territory_region', 'territory', 'region']),
+            target_ctn: parseFloat(getVal(['Target', 'target_ctn', 'target']) || '0')
           };
         }).filter((item: any) => item.ob_id && item.ob_name);
 
@@ -1410,13 +1547,16 @@ export default function App() {
           };
 
           return {
-            name: getVal(['Name', 'name']),
-            contact: getVal(['ID', 'id', 'Contact', 'contact']),
+            name: getVal(['OB Name', 'Name', 'name']),
+            contact: getVal(['OB ID', 'ID', 'id', 'Contact', 'contact']),
             town: getVal(['Town', 'town']),
             distributor: getVal(['Distributor', 'distributor']),
             tsm: getVal(['TSM', 'tsm']),
             zone: getVal(['Zone', 'zone']),
             region: getVal(['Region', 'region']),
+            nsm: getVal(['NSM', 'nsm']),
+            rsm: getVal(['RSM', 'rsm']),
+            director: getVal(['Director', 'director']),
             total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops']) || '50') || 50,
             routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
             targets: {
@@ -2269,51 +2409,17 @@ export default function App() {
               <h1 className="text-lg font-bold text-seablue">Admin Panel</h1>
             </div>
             <div className="flex gap-2">
-              <button onClick={() => { fetchAdminData(); fetchHistory(true); }} className="p-2 hover:bg-slate-100 rounded-full text-seablue" title="Refresh Data"><RefreshCw className={`w-5 h-5 ${isLoadingAdmin || isLoadingHistory ? 'animate-spin' : ''}`} /></button>
               <button 
-                onClick={() => {
-                  const headers = [
-                    'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
-                    'Total Shops', 'Visited Shops', 'Productive Shops',
-                    ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-                    'Total Achievement'
-                  ];
-                  
-                  const rows = history.map(h => {
-                    const items = h.order_data || {};
-                    const skuValues = SKUS.map(sku => {
-                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                      const total = (item.ctn * sku.unitsPerCarton + item.dzn * sku.unitsPerDozen + item.pks) / (sku.unitsPerCarton || 1);
-                      return total.toFixed(3);
-                    });
-                    const totalAch = skuValues.reduce((a, b) => a + parseFloat(b), 0);
-                    return [
-                      h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
-                      h.total_shops, h.visited_shops, h.productive_shops,
-                      ...skuValues,
-                      totalAch.toFixed(3)
-                    ].join(",");
-                  });
-
-                  const csvContent = [headers.join(","), ...rows].join("\n");
-                  const blob = new Blob([csvContent], { type: 'text/csv' });
-                  const fileName = `All_OB+All_TSM+${new Date().toISOString().split('T')[0]}.csv`;
-                  const url = URL.createObjectURL(blob);
-                  const a = document.createElement('a');
-                  a.href = url;
-                  a.download = fileName;
-                  a.click();
-                  setMessage({ text: 'All History Downloaded!', type: 'success' });
-                  setTimeout(() => setMessage(null), 3000);
-                }}
-                disabled={isLoadingHistory || history.length === 0}
-                className={`px-3 py-1.5 rounded-lg text-white text-[10px] font-black uppercase flex items-center gap-2 shadow-sm ${isLoadingHistory || history.length === 0 ? 'bg-slate-300 cursor-not-allowed' : 'bg-seablue hover:bg-seablue-dark'}`}
+                onClick={syncEverything} 
+                disabled={isSyncingGlobal || !appConfig.google_spreadsheet_id}
+                className="p-2 hover:bg-slate-100 rounded-full text-seablue relative" 
+                title="Master Sync & Refresh"
               >
-                {isLoadingHistory ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />} 
-                {history.length === 0 && !isLoadingHistory ? 'No Data to Download' : `Download All Data (${history.length})`}
+                <RefreshCw className={`w-5 h-5 ${isSyncingGlobal || isLoadingAdmin || isLoadingHistory ? 'animate-spin' : ''}`} />
+                {isSyncingGlobal && (
+                  <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                )}
               </button>
-              <button onClick={reseedTeam} className="px-3 py-1.5 rounded-lg border border-emerald-200 text-emerald-600 text-[10px] font-black uppercase flex items-center gap-2 hover:bg-emerald-50"><RefreshCw className="w-3 h-3" /> Re-seed Team</button>
-              <button onClick={resetDatabase} className="px-3 py-1.5 rounded-lg border border-red-200 text-red-600 text-[10px] font-black uppercase hover:bg-red-50">Clear History</button>
               <button onClick={() => setAdminAuthenticated(false)} className="text-xs font-bold text-slate-400 hover:underline">Logout</button>
             </div>
           </div>
@@ -2431,57 +2537,6 @@ export default function App() {
                   {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
                   Test Connection
                 </button>
-                <button 
-                  onClick={async () => {
-                    setIsSyncing(true);
-                    setMessage({ text: 'Syncing to Google Sheets...', type: 'success' });
-                    try {
-                      const res = await fetch('/api/admin/sync-sheets', { method: 'POST' });
-                      const data = await res.json();
-                      if (res.ok) {
-                        setMessage({ text: data.message, type: 'success' });
-                      } else {
-                        throw new Error(data.error || 'Sync failed');
-                      }
-                    } catch (err: any) {
-                      setMessage({ text: 'Sync Error: ' + err.message, type: 'error' });
-                    } finally {
-                      setIsSyncing(false);
-                      setTimeout(() => setMessage(null), 5000);
-                    }
-                  }} 
-                  disabled={isSyncing || !appConfig.google_spreadsheet_id}
-                  className="btn-seablue w-full text-[10px] flex items-center justify-center gap-2"
-                >
-                  {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
-                  Sync All
-                </button>
-                <button 
-                  onClick={async () => {
-                    setIsSyncing(true);
-                    setMessage({ text: 'Importing from Google Sheets...', type: 'success' });
-                    try {
-                      const res = await fetch('/api/admin/import-from-sheets', { method: 'POST' });
-                      const data = await res.json();
-                      if (res.ok) {
-                        setMessage({ text: data.message, type: 'success' });
-                        fetchAdminData();
-                      } else {
-                        throw new Error(data.error || 'Import failed');
-                      }
-                    } catch (err: any) {
-                      setMessage({ text: 'Import Error: ' + err.message, type: 'error' });
-                    } finally {
-                      setIsSyncing(false);
-                      setTimeout(() => setMessage(null), 5000);
-                    }
-                  }} 
-                  disabled={isSyncing || !appConfig.google_spreadsheet_id}
-                  className="btn-seablue w-full text-[10px] flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700"
-                >
-                  {isSyncing ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Download className="w-3 h-3" />}
-                  Import Team
-                </button>
               </div>
             </div>
             <div className="card-clean p-4 space-y-4">
@@ -2497,76 +2552,22 @@ export default function App() {
               />
             </div>
 
-            <div className="card-clean p-4 space-y-3">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Unified Synchronization</h3>
-              <div className="flex flex-col gap-3">
-                <button 
-                  onClick={syncEverything}
-                  disabled={isSyncingGlobal || !appConfig.google_spreadsheet_id}
-                  className="w-full py-3 bg-emerald-600 text-white rounded-xl text-[11px] font-black uppercase tracking-widest shadow-lg shadow-emerald-100 hover:bg-emerald-700 transition-all disabled:opacity-50 flex items-center justify-center gap-3"
-                >
-                  <Cloud className={`w-4 h-4 ${isSyncingGlobal ? 'animate-spin' : ''}`} />
-                  Sync All Data (App ↔ Google Sheets)
-                </button>
-                <p className="text-[8px] text-slate-400 text-center uppercase font-bold tracking-tighter">
-                  Pushes Sales & Stocks to Sheets | Pulls Team & Targets from Sheets
-                </p>
-              </div>
-            </div>
 
-            <div className="card-clean p-4 space-y-4">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bulk Targets Upload</h3>
-              <div className="flex flex-col gap-2">
-                <div className="flex items-center gap-2">
-                  <label className="text-[8px] font-bold text-slate-400 uppercase">Target Month:</label>
-                  <input 
-                    type="month" 
-                    value={targetMonth} 
-                    onChange={(e) => setTargetMonth(e.target.value)}
-                    className="input-clean text-[10px] py-0.5 px-2"
-                  />
-                </div>
-                <div className="flex gap-2">
-                  <label className="btn-seablue text-[10px] cursor-pointer flex items-center justify-center gap-2 flex-1">
-                    <Upload className="w-3 h-3" />
-                    Upload Targets CSV
-                    <input type="file" accept=".csv" className="hidden" onChange={handleTargetBulkUpload} />
-                  </label>
-                  <button 
-                    onClick={() => {
-                      const headers = ['ID', ...CATEGORIES];
-                      const csvContent = "data:text/csv;charset=utf-8," + headers.join(",") + "\n";
-                      const encodedUri = encodeURI(csvContent);
-                      const link = document.createElement("a");
-                      link.setAttribute("href", encodedUri);
-                      link.setAttribute("download", "targets_template.csv");
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    }}
-                    className="p-2 border border-slate-200 rounded-lg hover:bg-slate-50 text-slate-400"
-                    title="Download Template"
-                  >
-                    <Download className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
 
             <div className="card-clean p-4 space-y-3">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Bulk Team & Targets</h3>
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Master Bulk Upload (Single CSV)</h3>
               <div className="flex flex-col gap-2">
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => {
-                      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+                      const headers = ['Director', 'NSM', 'RSM', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
                       const csvContent = headers.join(",") + "\n" + 
-                        "Sample Name,S-01,Sample Town,Sample Dist,Sample TSM,North,Region 1,50,\"Route 1, Route 2\",10,5,2,1,0.5";
+                        "Director Name,NSM Name,RSM Name,Sample TSM,Sample Town,Sample Dist,Sample OB,S-01,North,Region 1,50,\"Route 1, Route 2\",10,5,2,1,0.5";
                       const blob = new Blob([csvContent], { type: 'text/csv' });
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;
-                      a.download = 'team_targets_template.csv';
+                      a.download = 'master_bulk_template.csv';
                       a.click();
                     }}
                     className="text-[9px] font-bold text-seablue hover:underline flex items-center justify-center gap-1 border border-seablue/20 py-1.5 rounded"
@@ -2579,173 +2580,76 @@ export default function App() {
                     <input type="file" accept=".csv" className="hidden" onChange={handleBulkUpload} />
                   </label>
                 </div>
-                
-                <div className="h-px bg-slate-100 my-1"></div>
-                
-                <div className="grid grid-cols-2 gap-2">
-                  <button 
-                    onClick={async () => {
-                      setIsSyncing(true);
-                      try {
-                        const res = await fetch('/api/admin/sync-team-to-sheets', { method: 'POST' });
-                        const data = await res.json();
-                        if (res.ok) setMessage({ text: data.message, type: 'success' });
-                        else throw new Error(data.error);
-                      } catch (err: any) {
-                        setMessage({ text: err.message, type: 'error' });
-                      } finally {
-                        setIsSyncing(false);
-                        setTimeout(() => setMessage(null), 3000);
-                      }
-                    }}
-                    disabled={isSyncing || !appConfig.google_spreadsheet_id}
-                    className="text-[9px] font-bold text-emerald-600 border border-emerald-200 py-1.5 rounded hover:bg-emerald-50 flex items-center justify-center gap-1 disabled:opacity-50"
-                  >
-                    <Share2 className="w-3 h-3" /> Export to Sheets
-                  </button>
-                  <button 
-                    onClick={async () => {
-                      if (!confirm("This will import sales history from the 'Sales_Data' tab in Google Sheets. It will skip records that already exist in the app. Continue?")) return;
-                      setIsSyncing(true);
-                      try {
-                        const res = await fetch('/api/admin/sync-sales-from-sheets', { method: 'POST' });
-                        const data = await res.json();
-                        if (res.ok) {
-                          setMessage({ text: data.message, type: 'success' });
-                          fetchHistory(true);
-                        } else throw new Error(data.error);
-                      } catch (err: any) {
-                        setMessage({ text: 'Import Error: ' + err.message, type: 'error' });
-                      } finally {
-                        setIsSyncing(false);
-                        setTimeout(() => setMessage(null), 3000);
-                      }
-                    }}
-                    disabled={isSyncing || !appConfig.google_spreadsheet_id}
-                    className="text-[9px] font-bold text-blue-600 border border-blue-200 py-1.5 rounded hover:bg-blue-50 flex items-center justify-center gap-1 disabled:opacity-50"
-                  >
-                    <History className="w-3 h-3" /> Import Sales History
-                  </button>
-                  <button 
-                    onClick={async () => {
-                      if (!confirm("This will overwrite existing team members with data from the 'Team_Targets' tab in Google Sheets. Continue?")) return;
-                      setIsSyncing(true);
-                      try {
-                        const res = await fetch('/api/admin/sync-team-from-sheets', { method: 'POST' });
-                        const data = await res.json();
-                        if (res.ok) {
-                          setMessage({ text: data.message, type: 'success' });
-                          fetchAdminData();
-                        } else throw new Error(data.error);
-                      } catch (err: any) {
-                        setMessage({ text: err.message, type: 'error' });
-                      } finally {
-                        setIsSyncing(false);
-                        setTimeout(() => setMessage(null), 3000);
-                      }
-                    }}
-                    disabled={isSyncing || !appConfig.google_spreadsheet_id}
-                    className="text-[9px] font-bold text-amber-600 border border-amber-200 py-1.5 rounded hover:bg-amber-50 flex items-center justify-center gap-1 disabled:opacity-50"
-                  >
-                    <Download className="w-3 h-3" /> Import from Sheets
-                  </button>
-                </div>
+                <p className="text-[8px] text-slate-400 uppercase font-bold text-center">
+                  One sheet for Team, Hierarchy, Targets & Distributors
+                </p>
               </div>
             </div>
-            <div className="card-clean p-4 space-y-3">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Management</h3>
-              <div className="flex flex-col gap-2">
-                <button 
-                  onClick={async () => {
-                    setIsLoadingAdmin(true);
-                    try {
-                      const res = await fetch('/api/admin/sync-sheets', { method: 'POST' });
-                      const data = await res.json();
-                      if (res.ok) setMessage({ text: data.message, type: 'success' });
-                      else throw new Error(data.error);
-                    } catch (err: any) {
-                      setMessage({ text: err.message, type: 'error' });
-                    } finally {
-                      setIsLoadingAdmin(false);
-                      setTimeout(() => setMessage(null), 3000);
-                    }
-                  }}
-                  disabled={isLoadingAdmin || !appConfig.google_spreadsheet_id}
-                  className="w-full py-2 border border-seablue text-seablue rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/5 flex items-center justify-center gap-2 disabled:opacity-50"
-                >
-                  <RefreshCw className={`w-3 h-3 ${isLoadingAdmin ? 'animate-spin' : ''}`} /> Sync All (Sales & Stocks) to Sheets
-                </button>
+            <div className="card-clean p-6 bg-white space-y-6">
+              <div className="flex items-center gap-3 border-b pb-4">
+                <div className="w-10 h-10 bg-emerald-100 text-emerald-600 rounded-xl flex items-center justify-center">
+                  <Cloud className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-slate-800 uppercase tracking-tight">Cloud Synchronization</h2>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Two-Way Google Sheets Sync</p>
+                </div>
+              </div>
 
-                <button 
-                  onClick={async () => {
-                    if (!confirm("CRITICAL: This will permanently delete ALL sales reports from the app database. This cannot be undone. Are you sure?")) return;
-                    if (!confirm("LAST WARNING: Are you absolutely sure you want to wipe all history?")) return;
-                    
-                    setIsLoadingAdmin(true);
-                    try {
-                      const res = await fetch('/api/admin/clear-history', { method: 'POST' });
-                      const data = await res.json();
-                      if (res.ok) {
-                        setMessage({ text: data.message, type: 'success' });
-                        setHistory([]);
-                      } else throw new Error(data.error);
-                    } catch (err: any) {
-                      setMessage({ text: err.message, type: 'error' });
-                    } finally {
-                      setIsLoadingAdmin(false);
-                      setTimeout(() => setMessage(null), 5000);
-                    }
-                  }}
-                  className="w-full py-2 border border-red-200 text-red-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-red-50 flex items-center justify-center gap-2"
-                >
-                  <Trash2 className="w-3 h-3" /> Clear All Sales History
-                </button>
-
-                <div className="space-y-3 pt-4 border-t border-slate-100">
-                  <div className="text-[10px] font-bold text-slate-400 uppercase">TSM Management</div>
-                  <div className="flex flex-wrap gap-2 items-center">
-                    <select 
-                      onChange={(e) => {
-                        if (e.target.value) {
-                          registerTSMsAsOBs(e.target.value);
-                          e.target.value = '';
-                        }
-                      }}
-                      className="input-clean flex-1 min-w-[200px] text-xs"
-                    >
-                      <option value="">Select TSM to Register as OB</option>
-                      {Array.from(new Set(obAssignments.map(ob => ob.tsm).filter(Boolean)))
-                        .filter(tsm => !obAssignments.some(ob => ob.contact === `TSM-${(tsm as string).replace(/\s+/g, '-')}`))
-                        .map(tsm => (
-                          <option key={tsm as string} value={tsm as string}>{tsm as string}</option>
-                        ))
-                      }
-                      <optgroup label="Quick Add">
-                        {['Muhammad Shoaib', 'Waheed Jamal', 'Ikramullah', 'Muhammad Zeeshan', 'Noman Paracha', 'Muhammad Yousaf', 'Qaisar Yousaf'].map(name => (
-                          <option key={name} value={name}>{name}</option>
-                        ))}
-                      </optgroup>
-                    </select>
-                    <button 
-                      onClick={() => {
-                        const name = prompt("Enter TSM Name:");
-                        if (name) registerTSMsAsOBs(name);
-                      }}
-                      className="btn-seablue px-4 py-2 text-[10px] font-black uppercase whitespace-nowrap"
-                    >
-                      Manual Add
-                    </button>
-                    <button 
-                      onClick={() => registerTSMsAsOBs()}
-                      disabled={isLoadingAdmin}
-                      className="px-4 py-2 border border-amber-500 text-amber-600 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-amber-50 flex items-center justify-center gap-2 disabled:opacity-50 whitespace-nowrap"
-                    >
-                      <Plus className="w-3 h-3" /> Auto-Register All
-                    </button>
+              <button 
+                onClick={syncEverything}
+                disabled={isSyncingGlobal || !appConfig.google_spreadsheet_id}
+                className="btn-seablue py-6 flex flex-col items-center justify-center gap-2 group relative overflow-hidden w-full"
+              >
+                <div className="flex items-center gap-3 z-10">
+                  <RefreshCw className={`w-8 h-8 ${isSyncingGlobal ? 'animate-spin' : 'group-hover:scale-110 transition-transform'}`} />
+                  <div className="text-left">
+                    <div className="text-lg font-black uppercase tracking-tight">Master Sync Now</div>
+                    <div className="text-[10px] font-bold opacity-80 uppercase tracking-widest">Pushes Sales & Stocks | Pulls Team & Targets</div>
                   </div>
                 </div>
+                {isSyncingGlobal && (
+                  <motion.div 
+                    initial={{ width: 0 }}
+                    animate={{ width: '100%' }}
+                    transition={{ duration: 10, ease: "linear" }}
+                    className="absolute bottom-0 left-0 h-1 bg-white/30"
+                  />
+                )}
+              </button>
+
+              {appConfig.last_sync_at && (
+                <div className="flex items-center justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Last Successful Sync</div>
+                  <div className="text-xs font-bold text-emerald-600">{appConfig.last_sync_at}</div>
+                </div>
+              )}
+              
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex flex-col items-center text-center gap-1">
+                  <div className="w-6 h-6 bg-blue-100 text-blue-600 rounded-lg flex items-center justify-center mb-1">
+                    <Upload className="w-3 h-3" />
+                  </div>
+                  <div className="text-[9px] font-black uppercase text-slate-600">Push Data</div>
+                  <p className="text-[8px] font-bold text-slate-400 uppercase leading-tight">Sales, Stocks & Summaries</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex flex-col items-center text-center gap-1">
+                  <div className="w-6 h-6 bg-emerald-100 text-emerald-600 rounded-lg flex items-center justify-center mb-1">
+                    <Download className="w-3 h-3" />
+                  </div>
+                  <div className="text-[9px] font-black uppercase text-slate-600">Pull Team</div>
+                  <p className="text-[8px] font-bold text-slate-400 uppercase leading-tight">Hierarchy & Targets</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 flex flex-col items-center text-center gap-1">
+                  <div className="w-6 h-6 bg-purple-100 text-purple-600 rounded-lg flex items-center justify-center mb-1">
+                    <History className="w-3 h-3" />
+                  </div>
+                  <div className="text-[9px] font-black uppercase text-slate-600">Sync History</div>
+                  <p className="text-[8px] font-bold text-slate-400 uppercase leading-tight">Import missing records</p>
+                </div>
               </div>
             </div>
+
             <div className="card-clean p-4 flex items-center justify-between">
               <div className="space-y-1">
                 <div className="text-[10px] font-bold text-slate-400 uppercase">App Logo</div>
@@ -2937,11 +2841,6 @@ export default function App() {
                 >
                   Clear All
                 </button>
-                <label className="text-[10px] font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30 cursor-pointer flex items-center gap-1">
-                  <Upload className="w-3 h-3" />
-                  Bulk Upload
-                  <input type="file" accept=".csv" onChange={handleDistributorBulkUpload} className="hidden" />
-                </label>
                 <button onClick={async () => { 
                   const name = prompt("Distributor Name:"); 
                   const town = prompt("Town:"); 
@@ -3143,28 +3042,6 @@ export default function App() {
           <section className="card-clean overflow-hidden">
             <div className="bg-emerald-600 text-white px-4 py-2 flex justify-between items-center">
               <h2 className="text-sm font-bold uppercase tracking-widest">National Sales Hierarchy</h2>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => {
-                    const headers = ['Director Sales', 'NSM Name', 'RSM Name', 'ASM / TSM Name', 'Town Name', 'Distributor Name', 'Distributor Code', 'Order Booker Name', 'Order Booker ID', 'Territory / Region'];
-                    const csvContent = headers.join(",") + "\n" + 
-                      "Director Name,NSM Name,RSM Name,TSM Name,Town Name,Dist Name,D-001,OB Name,OB-001,South";
-                    const blob = new Blob([csvContent], { type: 'text/csv' });
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = 'national_hierarchy_template.csv';
-                    a.click();
-                  }}
-                  className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30"
-                >
-                  Template
-                </button>
-                <label className="text-xs font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30 cursor-pointer">
-                  Bulk Upload Hierarchy
-                  <input type="file" accept=".csv" onChange={handleHierarchyBulkUpload} className="hidden" />
-                </label>
-              </div>
             </div>
             <div className="p-4 overflow-x-auto">
               <table className="w-full text-[10px] text-left border-collapse">
@@ -3948,31 +3825,40 @@ export default function App() {
                     });
                     
                     const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
+                    
                     const skuDetails = SKUS.map(sku => {
                       const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                      if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
+                      
                       const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                      const totalCtns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
-                      if (totalCtns === 0) return null;
-                      return `*${sku.name}:* ${totalCtns.toFixed(2)} Ctns`;
+                      const totalBags = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+                      const label = sku.category === 'Vero' || sku.category === 'DWB' || sku.category === 'Match' ? 'Bags' : 'Ctns';
+                      
+                      return `• ${sku.name}: ${totalBags.toFixed(2)} ${label}`;
                     }).filter(Boolean).join('\n');
 
-                    const catProdDetails = CATEGORIES.map(cat => {
-                      const prod = lastSubmittedOrder.categoryProductiveShops?.[cat] || 0;
-                      return `*${cat} Prod:* ${prod}`;
-                    }).join('\n');
+                    const brandTotals = CATEGORIES.map(cat => {
+                      const catSkus = SKUS.filter(s => s.category === cat);
+                      const catTotal = catSkus.reduce((sum, sku) => {
+                        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+                        return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
+                      }, 0);
+                      if (catTotal === 0) return null;
+                      const label = cat === 'Vero' || cat === 'DWB' || cat === 'Match' ? 'Bags' : 'Ctns';
+                      return `*${cat}:* ${catTotal.toFixed(2)} ${label}`;
+                    }).filter(Boolean).join('\n');
 
                     const summary = `*Sales Summary - ${lastSubmittedOrder.date}*\n` +
-                      `*OB:* ${lastSubmittedOrder.orderBooker}\n` +
+                      `*OB:* ${lastSubmittedOrder.order_booker || lastSubmittedOrder.orderBooker}\n` +
                       `*Route:* ${lastSubmittedOrder.route}\n` +
                       `*Shops:* ${lastSubmittedOrder.productiveShops}/${lastSubmittedOrder.visitedShops}/${lastSubmittedOrder.totalShops}\n` +
                       `------------------\n` +
-                      `*Brand-wise Productive Shops:*\n${catProdDetails}\n` +
+                      `*SKU Wise Details:*\n${skuDetails}\n` +
                       `------------------\n` +
-                      `*SKU Details:*\n${skuDetails}\n` +
+                      `*Brand Totals:*\n${brandTotals}\n` +
                       `------------------\n` +
-                      CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} Ctns`).join('\n') +
-                      `\n------------------\n` +
-                      `*Total Achievement:* ${totalAch.toFixed(2)}`;
+                      `*Total Achievement:* ${totalAch.toFixed(2)} Bags/Ctns`;
                     
                     const encodedMsg = encodeURIComponent(summary);
                     window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
