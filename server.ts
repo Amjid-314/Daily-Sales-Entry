@@ -15,34 +15,34 @@ const CATEGORIES = [
 ];
 const SKUS = [
   // Kite Glow
-  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12, pricePerCarton: 1440, weight_kg: 10.8 },
-  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12, pricePerCarton: 1920, weight_kg: 12.0 },
-  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12, pricePerCarton: 2400, weight_kg: 14.4 },
-  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12, pricePerCarton: 2376, weight_kg: 12.0 },
-  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0, pricePerCarton: 3600, weight_kg: 12.0 },
-  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0, pricePerCarton: 3600, weight_kg: 12.0 },
-  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0, pricePerCarton: 3600, weight_kg: 12.0 },
+  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12, weight_gm_per_pack: 30 },
+  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12, weight_gm_per_pack: 56 },
+  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 165 },
+  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12, weight_gm_per_pack: 350 },
+  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0, weight_gm_per_pack: 500 },
+  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0, weight_gm_per_pack: 1000 },
+  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0, weight_gm_per_pack: 2000 },
   // Burq Action
-  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12, pricePerCarton: 2040, weight_kg: 15.3 },
-  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12, pricePerCarton: 1920, weight_kg: 12.0 },
-  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12, pricePerCarton: 2400, weight_kg: 14.4 },
-  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12, pricePerCarton: 2376, weight_kg: 12.0 },
-  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0, pricePerCarton: 3600, weight_kg: 12.0 },
-  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0, pricePerCarton: 3600, weight_kg: 13.8 },
+  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12, weight_gm_per_pack: 40 },
+  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12, weight_gm_per_pack: 75 },
+  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 215 },
+  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12, weight_gm_per_pack: 430 },
+  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0, weight_gm_per_pack: 1000 },
+  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0, weight_gm_per_pack: 2300 },
   // Vero
-  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0, pricePerCarton: 4000, weight_kg: 20.0 },
-  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0, pricePerCarton: 16000, weight_kg: 20.0 },
+  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0, weight_gm_per_pack: 5000 },
+  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0, weight_gm_per_pack: 20000 },
   // DWB
-  { id: "dwb-reg", name: "Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12, pricePerCarton: 4800, weight_kg: 14.4 },
-  { id: "dwb-large", name: "Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400, weight_kg: 12.6 },
-  { id: "dwb-long", name: "Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400, weight_kg: 12.6 },
-  { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400, weight_kg: 12.6 },
-  { id: "dwb-new", name: "New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400, weight_kg: 12.6 },
+  { id: "dwb-reg", name: "Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 50 },
+  { id: "dwb-large", name: "Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 100 },
+  { id: "dwb-long", name: "Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 210 },
+  { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 240 },
+  { id: "dwb-new", name: "New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 50 },
   // Match
-  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_kg: 5.0 },
-  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_kg: 5.0 },
-  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000, weight_kg: 10.0 },
-  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000, weight_kg: 10.0 },
+  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50 },
+  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50 },
+  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50 },
+  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50 },
 ];
 
 function calculateAchievement(orderData: any) {
@@ -51,12 +51,13 @@ function calculateAchievement(orderData: any) {
     totals[cat] = SKUS
       .filter(sku => sku.category === cat)
       .reduce((sum, sku) => {
-        const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
         const ctn = Number(item.ctn || 0);
         const dzn = Number(item.dzn || 0);
         const pks = Number(item.pks || 0);
-        const packs = (ctn * sku.unitsPerCarton) + (dzn * sku.unitsPerDozen) + pks;
-        return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+        const packs = (ctn * (sku.unitsPerCarton || 0)) + (dzn * (sku.unitsPerDozen || 0)) + pks;
+        const cartons = (sku.unitsPerCarton || 0) > 0 ? packs / sku.unitsPerCarton : 0;
+        return sum + (isNaN(cartons) ? 0 : cartons);
       }, 0);
   });
   return totals;
@@ -309,27 +310,36 @@ async function startServer() {
   }
 
   function getSalesDataRow(order: any) {
-    const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
-    const catProdData = typeof order.category_productive_data === 'string' ? JSON.parse(order.category_productive_data) : (order.category_productive_data || {});
+    const isAbsent = order.visit_type === 'Absent';
+    const orderData = !isAbsent && typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
+    const catProdData = !isAbsent && typeof order.category_productive_data === 'string' ? JSON.parse(order.category_productive_data) : (order.category_productive_data || {});
     const visitTypeMap: Record<string, string> = { 'A': 'Alone', 'V': 'Van Sales', 'RR': 'Route Riding', 'Absent': 'Absent' };
     const visitTypeLabel = visitTypeMap[order.visit_type] || order.visit_type || 'Alone';
     
-    let totalTonnage = 0;
+    let totalTonnageKg = 0;
     const skuColumns = SKUS.map(sku => {
+      if (isAbsent) return 0;
       const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
       const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
       const ctns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
-      totalTonnage += ctns * (sku.weight_kg || 0);
+      
+      // Weight calculation: (Total Packs * Weight per Pack in gm) / 1000 = Kg
+      const weightKg = (totalPacks * (sku.weight_gm_per_pack || 0)) / 1000;
+      totalTonnageKg += weightKg;
+      
       return ctns;
     });
 
     return [
       order.date, order.director || '', order.nsm || '', order.rsm || '', order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
       order.zone || '', order.region || '',
-      order.total_shops, order.visited_shops, order.productive_shops, visitTypeLabel,
+      isAbsent ? 0 : order.total_shops, 
+      isAbsent ? 0 : order.visited_shops, 
+      isAbsent ? 0 : order.productive_shops, 
+      visitTypeLabel,
       ...skuColumns,
-      ...CATEGORIES.map(cat => catProdData[cat] || 0),
-      totalTonnage.toFixed(2),
+      ...CATEGORIES.map(cat => isAbsent ? 0 : (catProdData[cat] || 0)),
+      totalTonnageKg.toFixed(2),
       order.submitted_at, order.latitude || '', order.longitude || '', order.accuracy || ''
     ];
   }
@@ -440,15 +450,7 @@ async function startServer() {
 
   async function ensureSheetsExist(sheets: any, spreadsheetId: string) {
     const sheetConfigs: Record<string, string[]> = {
-      "Sales_Data": [
-        'Date', 'Director', 'NSM', 'RSM', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
-        'Zone', 'Region',
-        'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type',
-        ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-        ...CATEGORIES.map(cat => `${cat} Prod`),
-        'Total Tonnage (Kg)',
-        'Submitted At', 'Latitude', 'Longitude', 'Accuracy'
-      ],
+      "Sales_Data": getSalesDataHeaders(),
       "Team_Data": [
         'Director', 'NSM', 'RSM', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes',
         'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'
@@ -903,43 +905,8 @@ async function startServer() {
       const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all() as any[];
 
       // 1. Sales_Data (SKU Wise)
-      const salesHeaders = [
-        'Submitted At', 'Latitude', 'Longitude', 'Accuracy',
-        'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
-        'Total Shops', 'Visited Shops', 'Productive Shops',
-        'Visit Type',
-        ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-        ...CATEGORIES.map(cat => `${cat} Prod`),
-        'Zone', 'Region'
-      ];
-
-      const salesRows = orders.map((order: any) => {
-        const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
-        const catProdData = typeof order.category_productive_data === 'string' ? JSON.parse(order.category_productive_data) : (order.category_productive_data || {});
-        let visitTypeLabel = 'Alone';
-        if (order.visit_type === 'Absent') visitTypeLabel = 'Absent';
-        else if (order.visit_type === 'RR') visitTypeLabel = 'Route Riding';
-        else if (order.visit_type === 'V') visitTypeLabel = 'Van Sales';
-        
-        return [
-          order.submitted_at,
-          order.latitude || '',
-          order.longitude || '',
-          order.accuracy || '',
-          order.date, order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
-          order.total_shops, order.visited_shops, order.productive_shops,
-          visitTypeLabel,
-          ...SKUS.map(sku => {
-            const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-            const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-            const total = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
-            return total;
-          }),
-          ...CATEGORIES.map(cat => catProdData[cat] || 0),
-          order.zone || '',
-          order.region || ''
-        ];
-      });
+      const salesHeaders = getSalesDataHeaders();
+      const salesRows = orders.map((order: any) => getSalesDataRow(order));
 
       await sheets.spreadsheets.values.update({
         spreadsheetId,
@@ -1364,13 +1331,17 @@ async function startServer() {
 
   app.get("/api/orders", (req, res) => {
     try {
-      const { ob, tsm, from, to } = req.query;
+      const { ob, tsm, from, to, ob_contact } = req.query;
       let query = "SELECT * FROM submitted_orders WHERE 1=1";
       const params: any[] = [];
 
       if (ob) {
         query += " AND order_booker = ?";
         params.push(ob);
+      }
+      if (ob_contact) {
+        query += " AND ob_contact = ?";
+        params.push(ob_contact);
       }
       if (tsm) {
         query += " AND tsm = ?";
@@ -2031,7 +2002,7 @@ async function startServer() {
 
         const sku = SKUS.find(s => s.id === id);
         if (sku) {
-          if (weight > 0) sku.weight_kg = weight;
+          if (weight > 0) sku.weight_gm_per_pack = weight;
           if (unitsCtn > 0) sku.unitsPerCarton = unitsCtn;
           if (unitsDzn >= 0) sku.unitsPerDozen = unitsDzn;
         }
@@ -2046,7 +2017,7 @@ async function startServer() {
   async function pushProductConfig(sheets: any, spreadsheetId: string) {
     const headers = ['SKU ID', 'SKU Name', 'Category', 'Units Per Carton', 'Units Per Dozen', 'Weight (Kg)'];
     const rows = SKUS.map(sku => [
-      sku.id, sku.name, sku.category, sku.unitsPerCarton, sku.unitsPerDozen, sku.weight_kg
+      sku.id, sku.name, sku.category, sku.unitsPerCarton, sku.unitsPerDozen, sku.weight_gm_per_pack
     ]);
 
     await sheets.spreadsheets.values.update({

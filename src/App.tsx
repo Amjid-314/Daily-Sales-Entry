@@ -28,6 +28,8 @@ import {
   History,
   ArrowLeft,
   Download,
+  AlertTriangle,
+  RefreshCw,
   LayoutDashboard,
   ClipboardList,
   Settings,
@@ -40,7 +42,6 @@ import {
   Store,
   EyeOff,
   Upload,
-  RefreshCw,
   Link2,
   ExternalLink,
   Cloud,
@@ -73,7 +74,7 @@ const WhatsAppIcon = () => (
 );
 
 const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[], hierarchy: any[], categories: string[], skus: any[] }) => {
-  const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'OB'>('National');
+  const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>('National');
   const [filterValue, setFilterValue] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
 
@@ -86,26 +87,35 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
       
       let totalBags = 0;
       let brandSales: Record<string, number> = {};
+      let totalWeightKg = 0;
       
       skus.forEach(sku => {
-        if (brands.includes(sku.category)) {
-          const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-          const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
-          const ctns = Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0;
-          totalBags += ctns;
-          brandSales[sku.category] = (brandSales[sku.category] || 0) + ctns;
-        }
+        const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton || 0)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen || 0)) + Number(item.pks || 0);
+        const ctns = Number(sku.unitsPerCarton || 0) > 0 ? packs / Number(sku.unitsPerCarton) : 0;
+        
+        totalBags += ctns;
+        brandSales[sku.category] = (brandSales[sku.category] || 0) + ctns;
+        
+        totalWeightKg += (packs * (Number(sku.weight_gm_per_pack) || 0)) / 1000;
       });
+
+      const visitEfficiency = s.visited_shops > 0 ? s.productive_shops / s.visited_shops : 0;
+      const isFakeVisit = s.visited_shops >= 50 && s.productive_shops <= 20;
 
       return {
         ...s,
         region: h?.territory_region || s.region || 'Unassigned',
         tsm: h?.asm_tsm_name || s.tsm || 'Unassigned',
         town: h?.town_name || s.town || 'Unassigned',
+        distributor: h?.distributor_name || s.distributor || 'Unassigned',
         ob_name: h?.ob_name || s.order_booker || 'Unassigned',
         month: s.date.slice(0, 7),
         totalBags,
-        brandSales
+        brandSales,
+        totalWeightKg,
+        visitEfficiency,
+        isFakeVisit
       };
     });
   }, [stats, hierarchy, skus]);
@@ -117,7 +127,9 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
         if (filterLevel === 'Region') return s.region === filterValue;
         if (filterLevel === 'TSM') return s.tsm === filterValue;
         if (filterLevel === 'Town') return s.town === filterValue;
+        if (filterLevel === 'Distributor') return s.distributor === filterValue;
         if (filterLevel === 'OB') return s.ob_name === filterValue;
+        if (filterLevel === 'Route') return s.route === filterValue;
         return true;
       });
     }
@@ -128,6 +140,18 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
     return filteredStats.filter(s => s.month === selectedMonth);
   }, [filteredStats, selectedMonth]);
 
+  const filterOptions = useMemo(() => {
+    const options: Record<string, string[]> = {
+      Region: Array.from(new Set(processedStats.map(s => s.region))).filter(Boolean).sort() as string[],
+      TSM: Array.from(new Set(processedStats.map(s => s.tsm))).filter(Boolean).sort() as string[],
+      Town: Array.from(new Set(processedStats.map(s => s.town))).filter(Boolean).sort() as string[],
+      Distributor: Array.from(new Set(processedStats.map(s => s.distributor))).filter(Boolean).sort() as string[],
+      OB: Array.from(new Set(processedStats.map(s => s.ob_name))).filter(Boolean).sort() as string[],
+      Route: Array.from(new Set(processedStats.map(s => s.route))).filter(Boolean).sort() as string[],
+    };
+    return options;
+  }, [processedStats]);
+
   const obPerformance = useMemo(() => {
     const obs: Record<string, any> = {};
     monthStats.forEach(s => {
@@ -136,22 +160,57 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
           name: s.ob_name, 
           town: s.town, 
           tsm: s.tsm, 
+          distributor: s.distributor,
           totalSales: 0,
+          totalWeight: 0,
+          visited: 0,
+          productive: 0,
+          entries: 0,
           brandSales: { "Kite Glow": 0, "Vero": 0, "Burq Action": 0 }
         };
       }
       obs[s.ob_contact].totalSales += s.totalBags;
-      brands.forEach(b => {
+      obs[s.ob_contact].totalWeight += s.totalWeightKg;
+      obs[s.ob_contact].visited += s.visited_shops;
+      obs[s.ob_contact].productive += s.productive_shops;
+      obs[s.ob_contact].entries += 1;
+      CATEGORIES.forEach(b => {
+        if (!obs[s.ob_contact].brandSales[b]) obs[s.ob_contact].brandSales[b] = 0;
         obs[s.ob_contact].brandSales[b] += (s.brandSales[b] || 0);
       });
     });
 
     return Object.values(obs).map(ob => {
-      let category = 'D';
+      const workingDays = 25; // Default
+      const consistencyScore = (ob.entries / workingDays) * 100;
+      
+      // OB Productivity Score
+      // Weights: Sales 50%, Visit Coverage 30%, Productive Ratio 20%
+      // Sales Performance = (Actual / Target) - simplified to (Actual / Avg) for now if target missing
+      const salesPerf = Math.min(100, (ob.totalSales / 100) * 100); // Dummy target 100
+      const visitCoverage = Math.min(100, (ob.visited / (ob.entries * 50)) * 100); // 50 shops per day
+      const productiveRatio = ob.visited > 0 ? (ob.productive / ob.visited) * 100 : 0;
+      
+      const productivityScore = (0.5 * salesPerf) + (0.3 * visitCoverage) + (0.2 * productiveRatio);
+
+      let scoreLabel = 'Weak';
+      if (productivityScore >= 90) scoreLabel = 'Excellent';
+      else if (productivityScore >= 70) scoreLabel = 'Good';
+      else if (productivityScore >= 50) scoreLabel = 'Average';
+
+      let category: 'A' | 'B' | 'C' | 'D' = 'D';
       if (ob.totalSales >= 300) category = 'A';
       else if (ob.totalSales >= 200) category = 'B';
       else if (ob.totalSales >= 100) category = 'C';
-      return { ...ob, category };
+
+      return {
+        ...ob,
+        consistencyScore,
+        productivityScore,
+        scoreLabel,
+        isIrregular: consistencyScore < 70,
+        category
+      };
     });
   }, [monthStats]);
 
@@ -166,7 +225,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
     const costPerBag = totalSales > 0 ? totalSalaryCost / totalSales : 0;
 
     const brandTotals: Record<string, number> = {};
-    brands.forEach(b => {
+    CATEGORIES.forEach(b => {
       brandTotals[b] = monthStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0);
     });
 
@@ -222,16 +281,31 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
     });
   }, [obPerformance]);
 
-  const filterOptions = useMemo(() => {
-    const options = Array.from(new Set(processedStats.map(s => {
-      if (filterLevel === 'Region') return s.region;
-      if (filterLevel === 'TSM') return s.tsm;
-      if (filterLevel === 'Town') return s.town;
-      if (filterLevel === 'OB') return s.ob_name;
-      return null;
-    }))).filter(Boolean).sort() as string[];
-    return options;
-  }, [processedStats, filterLevel]);
+  const dailyHeatmap = useMemo(() => {
+    const days: Record<string, { day: string, sales: number, count: number }> = {
+      'Monday': { day: 'Mon', sales: 0, count: 0 },
+      'Tuesday': { day: 'Tue', sales: 0, count: 0 },
+      'Wednesday': { day: 'Wed', sales: 0, count: 0 },
+      'Thursday': { day: 'Thu', sales: 0, count: 0 },
+      'Friday': { day: 'Fri', sales: 0, count: 0 },
+      'Saturday': { day: 'Sat', sales: 0, count: 0 },
+      'Sunday': { day: 'Sun', sales: 0, count: 0 },
+    };
+
+    monthStats.forEach(s => {
+      const date = new Date(s.date);
+      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
+      if (days[dayName]) {
+        days[dayName].sales += s.totalBags;
+        days[dayName].count += 1;
+      }
+    });
+
+    return Object.values(days).map(d => ({
+      ...d,
+      avgSales: d.count > 0 ? d.sales / d.count : 0
+    }));
+  }, [monthStats]);
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
@@ -257,7 +331,9 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
               <option value="Region">Filter by Region</option>
               <option value="TSM">Filter by TSM</option>
               <option value="Town">Filter by Town</option>
+              <option value="Distributor">Filter by Distributor</option>
               <option value="OB">Filter by OB</option>
+              <option value="Route">Filter by Route</option>
             </select>
             {filterLevel !== 'National' && (
               <select 
@@ -266,9 +342,69 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
                 className="input-clean text-xs font-bold py-2 px-3"
               >
                 <option value="">Select {filterLevel}</option>
-                {filterOptions.map(opt => <option key={opt} value={opt}>{opt}</option>)}
+                {(filterOptions[filterLevel as keyof typeof filterOptions] || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
               </select>
             )}
+          </div>
+        </div>
+      </div>
+
+      {/* Critical Alerts Panel */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="card-clean p-4 bg-white border-l-4 border-rose-500">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Critical Alerts</h3>
+            <AlertTriangle className="w-4 h-4 text-rose-500" />
+          </div>
+          <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
+            {obPerformance.filter(ob => ob.isIrregular).map(ob => (
+              <div key={ob.name} className="flex items-center justify-between p-2 bg-rose-50 rounded-lg">
+                <span className="text-[10px] font-bold text-rose-700">{ob.name}</span>
+                <span className="text-[8px] font-black bg-rose-200 text-rose-800 px-2 py-0.5 rounded uppercase">Irregular</span>
+              </div>
+            ))}
+            {monthStats.filter(s => s.isFakeVisit).map((s, idx) => (
+              <div key={idx} className="flex items-center justify-between p-2 bg-orange-50 rounded-lg">
+                <span className="text-[10px] font-bold text-orange-700">{s.ob_name}</span>
+                <span className="text-[8px] font-black bg-orange-200 text-orange-800 px-2 py-0.5 rounded uppercase">Fake Visit?</span>
+              </div>
+            ))}
+            {obPerformance.length === 0 && <p className="text-[10px] text-slate-400 text-center py-4">No critical alerts</p>}
+          </div>
+        </div>
+
+        <div className="card-clean p-4 bg-white border-l-4 border-seablue">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Top Performers</h3>
+            <TrendingUp className="w-4 h-4 text-seablue" />
+          </div>
+          <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
+            {[...obPerformance].sort((a, b) => b.productivityScore - a.productivityScore).slice(0, 5).map(ob => (
+              <div key={ob.name} className="flex items-center justify-between p-2 bg-sky-50 rounded-lg">
+                <span className="text-[10px] font-bold text-sky-700">{ob.name}</span>
+                <span className="text-[8px] font-black bg-sky-200 text-sky-800 px-2 py-0.5 rounded uppercase">{ob.scoreLabel}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card-clean p-4 bg-white border-l-4 border-emerald-500">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brand Strength Map</h3>
+            <Package className="w-4 h-4 text-emerald-500" />
+          </div>
+          <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
+            {Array.from(new Set(monthStats.map(s => s.town))).map(town => {
+              const townStats = monthStats.filter(s => s.town === town);
+              const brandTotals = brands.map(b => ({ brand: b, total: townStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0) }));
+              const topBrand = brandTotals.sort((a, b) => b.total - a.total)[0];
+              return (
+                <div key={town} className="flex items-center justify-between p-2 bg-emerald-50 rounded-lg">
+                  <span className="text-[10px] font-bold text-emerald-700">{town}</span>
+                  <span className="text-[8px] font-black bg-emerald-200 text-emerald-800 px-2 py-0.5 rounded uppercase">{topBrand.brand}</span>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
@@ -422,54 +558,62 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst Performing OB (Lowest Sales)</h3>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst Performing OB (Bottom to Top)</h3>
           </div>
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">TSM</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Total Sales</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {worstOBs.map((ob, idx) => (
-                <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 text-xs font-bold text-slate-700">{ob.name}</td>
-                  <td className="px-6 py-4 text-xs text-slate-500">{ob.town}</td>
-                  <td className="px-6 py-4 text-xs text-slate-500">{ob.tsm}</td>
-                  <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{ob.totalSales.toFixed(1)}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Total Sales</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {[...obPerformance].sort((a, b) => a.totalSales - b.totalSales).slice(0, 50).map((ob, idx) => (
+                  <tr key={idx} className="hover:bg-rose-50/30 transition-colors">
+                    <td className="px-6 py-4 text-xs font-bold text-slate-700">
+                      <span className="text-slate-300 mr-2">{idx + 1}.</span>
+                      {ob.name}
+                    </td>
+                    <td className="px-6 py-4 text-xs text-slate-500">{ob.town}</td>
+                    <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{ob.totalSales.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
 
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst OB by Brand</h3>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst OB by Brand (Bottom 10 per Brand)</h3>
           </div>
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Brand</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Sales</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {worstByBrand.map((row, idx) => (
-                <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4 text-xs font-black text-seablue uppercase">{row.brand}</td>
-                  <td className="px-6 py-4 text-xs font-bold text-slate-700">{row.ob}</td>
-                  <td className="px-6 py-4 text-xs text-slate-500">{row.town}</td>
-                  <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{row.sales.toFixed(1)}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="border-b border-slate-100">
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Brand</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Sales</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {brands.flatMap(b => {
+                  return [...obPerformance]
+                    .sort((a, b) => a.brandSales[b] - b.brandSales[b])
+                    .slice(0, 10)
+                    .map(ob => ({ brand: b, ob: ob.name, sales: ob.brandSales[b] }));
+                }).map((row, idx) => (
+                  <tr key={idx} className="hover:bg-rose-50/30 transition-colors">
+                    <td className="px-6 py-4 text-[10px] font-black text-seablue uppercase">{row.brand}</td>
+                    <td className="px-6 py-4 text-xs font-bold text-slate-700">{row.ob}</td>
+                    <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{row.sales.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
 
@@ -497,7 +641,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
   );
 };
 
-const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void }) => (
+const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v: any) => void, role: string | null, onLogout: () => void }) => (
   <nav className="bg-white border-b border-slate-200 px-2 h-10 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto">
     <button onClick={() => setView('entry')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
       <ClipboardList className="w-4 h-4" />
@@ -508,6 +652,11 @@ const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void })
       <History className="w-4 h-4" />
       <span className="text-[7px] font-black uppercase tracking-tighter">History</span>
       {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
+    </button>
+    <button onClick={() => setView('reports')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'reports' ? 'text-seablue' : 'text-slate-400'}`}>
+      <Filter className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">Reports</span>
+      {view === 'reports' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
     <button onClick={() => setView('stocks')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'stocks' ? 'text-seablue' : 'text-slate-400'}`}>
       <Store className="w-4 h-4" />
@@ -524,16 +673,43 @@ const MainNav = ({ view, setView }: { view: string, setView: (v: any) => void })
       <span className="text-[7px] font-black uppercase tracking-tighter">National</span>
       {view === 'national' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
     </button>
-    <button onClick={() => setView('admin')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
-      <Settings className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">Admin</span>
-      {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
+    {role === 'Admin' && (
+      <button onClick={() => setView('admin')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
+        <Settings className="w-4 h-4" />
+        <span className="text-[7px] font-black uppercase tracking-tighter">Admin</span>
+        {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
+      </button>
+    )}
+    <button onClick={onLogout} className="p-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-rose-500 transition-colors min-w-[50px]">
+      <Lock className="w-4 h-4" />
+      <span className="text-[7px] font-black uppercase tracking-tighter">Exit</span>
     </button>
   </nav>
 );
 
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national'>('entry');
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports'>('entry');
+  const [userRole, setUserRole] = useState<'Admin' | 'TSM' | 'OB' | null>(() => localStorage.getItem('user_role') as any);
+  const [userName, setUserName] = useState<string | null>(() => localStorage.getItem('user_name'));
+  const [userContact, setUserContact] = useState<string | null>(() => localStorage.getItem('user_contact'));
+
+  const handleLogin = (role: 'Admin' | 'TSM' | 'OB', name: string, contact?: string) => {
+    setUserRole(role);
+    setUserName(name);
+    if (contact) setUserContact(contact);
+    localStorage.setItem('user_role', role);
+    localStorage.setItem('user_name', name);
+    if (contact) localStorage.setItem('user_contact', contact);
+  };
+
+  const handleLogout = () => {
+    setUserRole(null);
+    setUserName(null);
+    setUserContact(null);
+    localStorage.removeItem('user_role');
+    localStorage.removeItem('user_name');
+    localStorage.removeItem('user_contact');
+  };
   const [history, setHistory] = useState<any[]>([]);
   const [hierarchy, setHierarchy] = useState<any[]>([]);
   const [nationalStats, setNationalStats] = useState<any[]>([]);
@@ -774,9 +950,9 @@ export default function App() {
   useEffect(() => {
     if (order.obContact) {
       fetchTargetsForOB(order.obContact);
-      fetchMTDForOB(order.obContact);
+      fetchMTDForOB(order.obContact, order.date);
     }
-  }, [order.obContact]);
+  }, [order.obContact, order.date]);
 
   const handleTargetChange = async (category: string, value: number) => {
     setOrder(prev => ({
@@ -868,7 +1044,7 @@ export default function App() {
       return;
     }
     const totalPacks = (Object.values(categoryTotals) as number[]).reduce((a, b) => a + b, 0);
-    if (!order.isAbsent && totalPacks === 0) {
+    if (order.visitType !== 'Absent' && totalPacks === 0) {
       setMessage({ text: 'Order is empty', type: 'error' });
       setTimeout(() => setMessage(null), 3000);
       return;
@@ -878,20 +1054,22 @@ export default function App() {
 
   const confirmSubmit = async () => {
     // Validation: Brand-wise productive shops must be entered if sales > 0
-    const invalidCategories = CATEGORIES.filter(cat => {
-      const catTotal = categoryTotals[cat];
-      const catProd = order.categoryProductiveShops[cat] || 0;
-      return catTotal > 0 && catProd <= 0;
-    });
-
-    if (invalidCategories.length > 0) {
-      setMessage({ 
-        text: `MANDATORY: Enter productive shops for brands with sales: ${invalidCategories.join(', ')}`, 
-        type: 'error' 
+    if (order.visitType !== 'Absent') {
+      const invalidCategories = CATEGORIES.filter(cat => {
+        const catTotal = categoryTotals[cat];
+        const catProd = order.categoryProductiveShops[cat] || 0;
+        return catTotal > 0 && catProd <= 0;
       });
-      setTimeout(() => setMessage(null), 5000);
-      setIsConfirming(false);
-      return;
+
+      if (invalidCategories.length > 0) {
+        setMessage({ 
+          text: `MANDATORY: Enter productive shops for brands with sales: ${invalidCategories.join(', ')}`, 
+          type: 'error' 
+        });
+        setTimeout(() => setMessage(null), 5000);
+        setIsConfirming(false);
+        return;
+      }
     }
 
     setIsConfirming(false);
@@ -935,11 +1113,14 @@ export default function App() {
         })
       });
       if (response.ok) {
-        setLastSubmittedOrder({ ...order });
+        setLastSubmittedOrder({ ...order, order_booker: order.orderBooker });
         setMessage({ text: 'Submitted!', type: 'success' });
         // Auto-sync to Google Sheets
         syncGoogle();
         fetchHistory(true);
+        if (order.obContact) {
+          fetchMTDForOB(order.obContact, order.date);
+        }
         setOrder({
           date: getPSTDate(),
           tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
@@ -1106,7 +1287,7 @@ export default function App() {
 
   const fetchTargetsForOB = async (contact: string) => {
     try {
-      const currentMonth = new Date().toISOString().slice(0, 7);
+      const currentMonth = getPSTDate().slice(0, 7);
       const res = await fetch(`/api/admin/targets/${contact}?month=${currentMonth}`);
       if (res.ok) {
         const targets = await res.json();
@@ -1114,26 +1295,32 @@ export default function App() {
         targets.forEach((t: any) => { targetMap[t.brand_name] = t.target_ctn; });
         setOrder(prev => ({ ...prev, targets: targetMap }));
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { console.error("Target Fetch Error:", err); }
   };
 
-  const fetchMTDForOB = async (contact: string) => {
+  const fetchMTDForOB = async (contact: string, date?: string) => {
     try {
-      const res = await fetch('/api/orders');
+      // Use the provided date or the current order date, fallback to today in PST
+      const targetDate = date || order.date || getPSTDate();
+      const monthStr = targetDate.slice(0, 7); // YYYY-MM
+      
+      // Fetch only relevant orders for this OB and month
+      const res = await fetch(`/api/orders?ob_contact=${contact}&from=${monthStr}-01&to=${monthStr}-31`);
       if (res.ok) {
-        const allOrders = await res.json();
-        const currentMonth = new Date().toISOString().slice(0, 7);
-        const obOrders = allOrders.filter((o: any) => o.ob_contact === contact && o.date && typeof o.date === 'string' && o.date.startsWith(currentMonth));
+        const obOrders = await res.json();
         
         const mtd: Record<string, number> = {};
         CATEGORIES.forEach(cat => {
-          mtd[cat] = obOrders.reduce((sum: number, order: any) => {
-            const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
+          mtd[cat] = obOrders.reduce((sum: number, o: any) => {
+            const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
             const catTotal = SKUS
               .filter(sku => sku.category === cat)
               .reduce((s, sku) => {
                 const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                const ctn = Number(item.ctn || 0);
+                const dzn = Number(item.dzn || 0);
+                const pks = Number(item.pks || 0);
+                const packs = (ctn * sku.unitsPerCarton) + (dzn * sku.unitsPerDozen) + pks;
                 return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
               }, 0);
             return sum + catTotal;
@@ -1141,12 +1328,12 @@ export default function App() {
         });
         setMtdAchievement(mtd);
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { console.error("MTD Fetch Error:", err); }
   };
 
   const fetchTargetsForOBEdit = async (contact: string, month?: string) => {
     try {
-      const m = month || targetMonth;
+      const m = month || targetMonth || getPSTDate().slice(0, 7);
       const res = await fetch(`/api/admin/targets/${contact}?month=${m}`);
       if (res.ok) {
         const targets = await res.json();
@@ -1154,7 +1341,7 @@ export default function App() {
         targets.forEach((t: any) => { targetMap[t.brand_name] = t.target_ctn; });
         setObTargetsEdit(targetMap);
       }
-    } catch (err) { console.error(err); }
+    } catch (err) { console.error("Target Edit Fetch Error:", err); }
   };
 
   const handleTargetUpdate = async (obContact: string, brandName: string, value: string) => {
@@ -1709,173 +1896,184 @@ export default function App() {
   };
 
   if (view === 'dashboard') {
-    if (isLoadingHistory || isLoadingAdmin) {
-      return (
-        <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav view={view} setView={setView} />
-          <div className="flex-1 flex items-center justify-center">
-            <div className="flex flex-col items-center gap-4">
-              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Stats...</p>
-              <button onClick={() => { fetchHistory(true); fetchAdminData(); }} className="text-[10px] font-bold text-seablue underline">Retry</button>
+    try {
+      if (isLoadingHistory || isLoadingAdmin) {
+        return (
+          <div className="min-h-screen bg-slate-50 flex flex-col">
+            <MainNav view={view} setView={setView} />
+            <div className="flex-1 flex items-center justify-center">
+              <div className="flex flex-col items-center gap-4">
+                <Loader2 className="w-10 h-10 text-seablue animate-spin" />
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Stats...</p>
+                <button onClick={() => { fetchHistory(true); fetchAdminData(); }} className="text-[10px] font-bold text-seablue underline">Retry</button>
+              </div>
             </div>
           </div>
-        </div>
-      );
-    }
-
-    const today = new Date().toISOString().split('T')[0];
-    const currentMonth = today.slice(0, 7);
-    
-    const todayOrders = history.filter(h => h.date && typeof h.date === 'string' && h.date === today);
-    const mtdOrders = history.filter(h => h.date && typeof h.date === 'string' && h.date.startsWith(currentMonth));
-    
-    const calculateCatTotals = (orders: any[]) => {
-      const totals: Record<string, number> = {};
-      CATEGORIES.forEach(cat => {
-        totals[cat] = orders.reduce((sum, h) => {
-          const items = h.order_data || {};
-          const catAch = SKUS
-            .filter(sku => sku.category === cat)
-            .reduce((s, sku) => {
-              const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-              const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-              return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-            }, 0);
-          return sum + catAch;
-        }, 0);
-      });
-      return totals;
-    };
-
-    const globalToday = calculateCatTotals(todayOrders);
-    const globalMtd = calculateCatTotals(mtdOrders);
-    const globalTargets = (() => {
-      const totals: Record<string, number> = {};
-      CATEGORIES.forEach(cat => {
-        totals[cat] = obAssignments.reduce((sum, ob) => sum + (ob.targets?.[cat] || 0), 0);
-      });
-      return totals;
-    })();
-
-    const chartData = CATEGORIES.map(cat => ({
-      name: cat,
-      Target: globalTargets[cat] || 0,
-      Achievement: globalToday[cat] || 0,
-      MTD: globalMtd[cat] || 0,
-      AchPercent: globalTargets[cat] > 0 ? ((globalMtd[cat] / globalTargets[cat]) * 100).toFixed(1) : 0
-    }));
-
-    // TSM Sales Analysis
-    const tsmAnalysis = tsmList.map(tsmName => {
-      const tsmOrders = mtdOrders.filter(h => h.tsm === tsmName);
-      const totals: Record<string, number> = {};
-      CATEGORIES.forEach(cat => {
-        totals[cat] = tsmOrders.reduce((sum, h) => {
-          const items = h.order_data || {};
-          const catAch = SKUS
-            .filter(sku => sku.category === cat)
-            .reduce((s, sku) => {
-              const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-              const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-              return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-            }, 0);
-          return sum + catAch;
-        }, 0);
-      });
-      
-      const totalAch = Object.values(totals).reduce((a: number, b: number) => a + b, 0);
-      const tsmOBs = obAssignments.filter(ob => ob.tsm === tsmName);
-      const totalTarget = tsmOBs.reduce((sum, ob) => {
-        return sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0);
-      }, 0);
-
-      return {
-        name: tsmName,
-        totals,
-        totalAch,
-        target: totalTarget,
-        obCount: tsmOBs.length
-      };
-    }).sort((a, b) => b.totalAch - a.totalAch);
-
-    // OB Sales Analysis
-    const obAnalysis = obAssignments.map(ob => {
-      const obOrders = mtdOrders.filter(h => h.ob_contact === ob.contact);
-      const totals: Record<string, number> = {};
-      CATEGORIES.forEach(cat => {
-        totals[cat] = obOrders.reduce((sum, h) => {
-          const items = h.order_data || {};
-          const catAch = SKUS
-            .filter(sku => sku.category === cat)
-            .reduce((s, sku) => {
-              const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-              const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-              return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-            }, 0);
-          return sum + catAch;
-        }, 0);
-      });
-      
-      const totalVisited = obOrders.reduce((sum, h) => sum + (h.visited_shops || 0), 0);
-      const totalProductive = obOrders.reduce((sum, h) => sum + (h.productive_shops || 0), 0);
-      const totalShops = obOrders.length * (ob.total_shops || 50);
-
-      return {
-        name: ob.name,
-        contact: ob.contact,
-        totals,
-        totalAch: Object.values(totals).reduce((a: number, b: number) => a + b, 0),
-        target: Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0),
-        shops: { t: totalShops, v: totalVisited, p: totalProductive }
-      };
-    }).sort((a, b) => b.totalAch - a.totalAch);
-
-    // Route Sales Analysis
-    const routeAnalysis = mtdOrders.reduce((acc: any[], h) => {
-      const route = h.route || 'Unknown';
-      let routeData = acc.find(r => r.name === route);
-      if (!routeData) {
-        routeData = { name: route, ach: 0, shops: { t: 0, v: 0, p: 0 } };
-        acc.push(routeData);
+        );
       }
+
+      const today = new Date().toISOString().split('T')[0];
+      const currentMonth = today.slice(0, 7);
       
-      const items = h.order_data || {};
-      const orderAch = SKUS.reduce((sum, sku) => {
-        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-        const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-        return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-      }, 0);
+      const todayOrders = history.filter(h => h.date && typeof h.date === 'string' && h.date === today);
+      const mtdOrders = history.filter(h => h.date && typeof h.date === 'string' && h.date.startsWith(currentMonth));
       
-      routeData.ach += orderAch;
-      routeData.shops.t += (h.total_shops || 0);
-      routeData.shops.v += (h.visited_shops || 0);
-      routeData.shops.p += (h.productive_shops || 0);
-      return acc;
-    }, []).sort((a, b) => b.ach - a.ach);
+      const calculateCatTotals = (orders: any[]) => {
+        const totals: Record<string, number> = {};
+        CATEGORIES.forEach(cat => {
+          totals[cat] = orders.reduce((sum, h) => {
+            const items = h.order_data || {};
+            const catAch = SKUS
+              .filter(sku => sku.category === cat)
+              .reduce((s, sku) => {
+                const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+              }, 0);
+            return sum + catAch;
+          }, 0);
+        });
+        return totals;
+      };
 
-    // Performance Analysis
-    const slowOBs = obAnalysis.filter(ob => {
-      const achPercent = ob.target > 0 ? (ob.totalAch / ob.target) * 100 : 0;
-      return achPercent < timeGone.percentage;
-    }).sort((a, b) => (a.totalAch / (a.target || 1)) - (b.totalAch / (b.target || 1)));
+      const globalToday = calculateCatTotals(todayOrders);
+      const globalMtd = calculateCatTotals(mtdOrders);
+      const globalTargets = (() => {
+        const totals: Record<string, number> = {};
+        CATEGORIES.forEach(cat => {
+          totals[cat] = obAssignments.reduce((sum, ob) => sum + (ob.targets?.[cat] || 0), 0);
+        });
+        return totals;
+      })();
 
-    const topOBs = obAnalysis.filter(ob => {
-      const achPercent = ob.target > 0 ? (ob.totalAch / ob.target) * 100 : 0;
-      return achPercent >= timeGone.percentage;
-    }).sort((a, b) => (b.totalAch / (b.target || 1)) - (a.totalAch / (a.target || 1)));
+      const chartData = CATEGORIES.map(cat => ({
+        name: cat,
+        Target: globalTargets[cat] || 0,
+        Achievement: globalToday[cat] || 0,
+        MTD: globalMtd[cat] || 0,
+        AchPercent: globalTargets[cat] > 0 ? ((globalMtd[cat] / globalTargets[cat]) * 100).toFixed(1) : 0
+      }));
 
-    const underperformingRoutes = routeAnalysis.filter(r => {
-      const prodRate = r.shops.v > 0 ? (r.shops.p / r.shops.v) : 0;
-      return prodRate < 0.6 || r.ach < 5; // Less than 60% productivity or low sales
-    });
+      // TSM Sales Analysis
+      const tsmAnalysis = tsmList.map(tsmName => {
+        const tsmOrders = mtdOrders.filter(h => h.tsm === tsmName);
+        const totals: Record<string, number> = {};
+        CATEGORIES.forEach(cat => {
+          totals[cat] = tsmOrders.reduce((sum, h) => {
+            const items = h.order_data || {};
+            const catAch = SKUS
+              .filter(sku => sku.category === cat)
+              .reduce((s, sku) => {
+                const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+              }, 0);
+            return sum + catAch;
+          }, 0);
+        });
+        
+        const totalAch = Object.values(totals).reduce((a: number, b: number) => a + b, 0);
+        const tsmOBs = obAssignments.filter(ob => ob.tsm === tsmName);
+        const totalTarget = tsmOBs.reduce((sum, ob) => {
+          return sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0);
+        }, 0);
 
-    const zeroVisitRoutes = routeAnalysis.filter(r => r.shops.t > 0 && r.shops.v === 0).sort((a, b) => b.shops.t - a.shops.t);
-    const highVisitLowSales = routeAnalysis.filter(r => r.shops.v > 10 && r.ach < 2);
-    const highProdLowSales = routeAnalysis.filter(r => r.shops.p > 5 && r.ach < 1);
+        return {
+          name: tsmName,
+          totals,
+          totalAch,
+          target: totalTarget,
+          obCount: tsmOBs.length,
+          avgSalesPerOB: tsmOBs.length > 0 ? totalAch / tsmOBs.length : 0
+        };
+      }).sort((a, b) => b.totalAch - a.totalAch);
 
-    const bottom10OBs = [...obAnalysis].sort((a, b) => a.totalAch - b.totalAch).slice(0, 10);
-    const obRanking = [...obAnalysis].sort((a, b) => b.totalAch - a.totalAch);
+      // OB Sales Analysis
+      const obAnalysis = obAssignments.map(ob => {
+        const obOrders = mtdOrders.filter(h => h.ob_contact === ob.contact);
+        const totals: Record<string, number> = {};
+        CATEGORIES.forEach(cat => {
+          totals[cat] = obOrders.reduce((sum, h) => {
+            const items = h.order_data || {};
+            const catAch = SKUS
+              .filter(sku => sku.category === cat)
+              .reduce((s, sku) => {
+                const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+              }, 0);
+            return sum + catAch;
+          }, 0);
+        });
+        
+        const totalVisited = obOrders.reduce((sum, h) => sum + (h.visited_shops || 0), 0);
+        const totalProductive = obOrders.reduce((sum, h) => sum + (h.productive_shops || 0), 0);
+        const totalShops = obOrders.length * (ob.total_shops || 50);
+
+        const lastEntry = obOrders.length > 0 ? obOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date : '-';
+        const entryDays = obOrders.length;
+        const totalWorkingDays = timeGone.passed;
+        const consistencyScore = totalWorkingDays > 0 ? (entryDays / totalWorkingDays) * 100 : 0;
+
+        return {
+          name: ob.name,
+          contact: ob.contact,
+          totals,
+          totalAch: Object.values(totals).reduce((a: number, b: number) => a + b, 0),
+          target: Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0),
+          shops: { t: totalShops, v: totalVisited, p: totalProductive },
+          lastEntry,
+          entryDays,
+          consistencyScore
+        };
+      }).sort((a, b) => b.totalAch - a.totalAch);
+
+      // Route Sales Analysis
+      const routeAnalysis = mtdOrders.reduce((acc: any[], h) => {
+        const route = h.route || 'Unknown';
+        let routeData = acc.find(r => r.name === route);
+        if (!routeData) {
+          routeData = { name: route, obName: h.order_booker, ach: 0, shops: { t: 0, v: 0, p: 0 } };
+          acc.push(routeData);
+        }
+        const items = h.order_data || {};
+        const orderAch = SKUS.reduce((sum, sku) => {
+          const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+        }, 0);
+        routeData.ach += orderAch;
+        routeData.shops.t += (h.total_shops || 0);
+        routeData.shops.v += (h.visited_shops || 0);
+        routeData.shops.p += (h.productive_shops || 0);
+        const productiveRatio = routeData.shops.v > 0 ? (routeData.shops.p / routeData.shops.v) * 100 : 0;
+        const visitCoverage = routeData.shops.t > 0 ? (routeData.shops.v / routeData.shops.t) * 100 : 0;
+        const salesPerf = Math.min(100, (routeData.ach / 10) * 100); // Dummy target 10
+        
+        const score = (0.5 * salesPerf) + (0.3 * visitCoverage) + (0.2 * productiveRatio);
+        let scoreLabel = 'Weak';
+        if (score >= 90) scoreLabel = 'Excellent';
+        else if (score >= 70) scoreLabel = 'Good';
+        else if (score >= 50) scoreLabel = 'Average';
+        
+        routeData.score = score;
+        routeData.scoreLabel = scoreLabel;
+
+        return acc;
+      }, []).sort((a, b) => b.ach - a.ach);
+
+      const obRanking = [...obAnalysis].sort((a, b) => b.totalAch - a.totalAch);
+      const bottom10OBs = [...obRanking].reverse().slice(0, 10);
+      const underperformingRoutes = routeAnalysis.filter(r => r.shops.v > 0 && (r.shops.p / r.shops.v) < 0.6);
+      const weakBrands = CATEGORIES.filter(cat => {
+        const ach = globalMtd[cat] || 0;
+        const tgt = globalTargets[cat] || 0;
+        return tgt > 0 && (ach / tgt) < (timeGone.percentage / 100) * 0.7;
+      });
+
+      const zeroVisitRoutes = routeAnalysis.filter(r => r.shops.t > 0 && r.shops.v === 0).sort((a, b) => b.shops.t - a.shops.t);
+      const highVisitLowSales = routeAnalysis.filter(r => r.shops.v > 10 && r.ach < 2);
+      const highProdLowSales = routeAnalysis.filter(r => r.shops.p > 5 && r.ach < 1);
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
@@ -1936,12 +2134,24 @@ export default function App() {
             <div className="card-clean p-4 bg-seablue text-white shadow-blue-200 shadow-lg">
               <div className="text-[10px] uppercase font-bold text-white/60">Today Sales</div>
               <div className="text-2xl font-black">{(Object.values(globalToday) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(1)}</div>
-              <div className="text-[8px] font-bold mt-1 text-white/40 uppercase">Cartons</div>
+              <div className="grid grid-cols-2 gap-1 mt-2">
+                {CATEGORIES.map(cat => (
+                  <div key={cat} className="text-[7px] font-bold text-white/80 uppercase">
+                    {cat}: {globalToday[cat].toFixed(1)}
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="card-clean p-4 bg-emerald-600 text-white shadow-emerald-200 shadow-lg">
               <div className="text-[10px] uppercase font-bold text-white/60">MTD Sales</div>
               <div className="text-2xl font-black">{(Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(1)}</div>
-              <div className="text-[8px] font-bold mt-1 text-white/40 uppercase">Cartons</div>
+              <div className="grid grid-cols-2 gap-1 mt-2">
+                {CATEGORIES.map(cat => (
+                  <div key={cat} className="text-[7px] font-bold text-white/80 uppercase">
+                    {cat}: {globalMtd[cat].toFixed(1)}
+                  </div>
+                ))}
+              </div>
             </div>
             <div className="card-clean p-4 bg-white border border-slate-100">
               <div className="text-[10px] uppercase font-bold text-slate-400">Time Gone</div>
@@ -2064,49 +2274,67 @@ export default function App() {
               </div>
             </div>
 
-            <div className="card-clean p-4">
-              <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">TSM Performance (MTD)</h3>
-              <div className="space-y-3">
-                {obRanking.slice(0, 10).map((ob, idx) => (
-                  <div key={ob.contact} className="flex items-center justify-between p-2 rounded-lg hover:bg-slate-50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold ${idx === 0 ? 'bg-amber-100 text-amber-600' : idx === 1 ? 'bg-slate-100 text-slate-600' : idx === 2 ? 'bg-orange-100 text-orange-600' : 'bg-slate-50 text-slate-400'}`}>
-                        {idx + 1}
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-700">{ob.name}</div>
-                        <div className="text-[8px] text-slate-400 uppercase font-bold">{ob.shops.p} Productive Shops</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-black text-seablue">{ob.totalAch.toFixed(1)}</div>
-                      <div className="text-[8px] text-emerald-600 font-bold">{ob.target > 0 ? ((ob.totalAch / ob.target) * 100).toFixed(0) : 0}%</div>
-                    </div>
-                  </div>
-                ))}
+            <div className="card-clean p-4 md:col-span-2">
+              <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">OB Ranking (Brand Wise)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[10px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                      <th className="py-2">OB Name</th>
+                      {CATEGORIES.map(cat => <th key={cat} className="py-2 text-center">{cat}</th>)}
+                      <th className="py-2 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {obRanking.slice(0, 50).map((ob, idx) => (
+                      <tr key={ob.contact} className="hover:bg-slate-50">
+                        <td className="py-2 font-bold text-slate-700">
+                          <span className="text-slate-300 mr-1">{idx + 1}.</span>
+                          {ob.name}
+                        </td>
+                        {CATEGORIES.map(cat => (
+                          <td key={cat} className="py-2 text-center font-mono">{ob.totals[cat].toFixed(1)}</td>
+                        ))}
+                        <td className="py-2 text-right font-black text-seablue">{ob.totalAch.toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            <div className="card-clean p-4">
-              <h3 className="text-sm font-bold mb-4 text-rose-600 uppercase">Bottom 10 OBs</h3>
-              <div className="space-y-3">
-                {bottom10OBs.map((ob, idx) => (
-                  <div key={ob.contact} className="flex items-center justify-between p-2 rounded-lg hover:bg-rose-50 transition-colors">
-                    <div className="flex items-center gap-3">
-                      <div className="w-6 h-6 bg-rose-50 text-rose-400 rounded-full flex items-center justify-center text-[10px] font-bold">
-                        {obRanking.length - idx}
-                      </div>
-                      <div>
-                        <div className="text-xs font-bold text-slate-700">{ob.name}</div>
-                        <div className="text-[8px] text-slate-400 uppercase font-bold">{ob.shops.p} Productive Shops</div>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <div className="text-xs font-black text-rose-600">{ob.totalAch.toFixed(1)}</div>
-                      <div className="text-[8px] text-rose-400 font-bold">{ob.target > 0 ? ((ob.totalAch / ob.target) * 100).toFixed(0) : 0}%</div>
-                    </div>
-                  </div>
-                ))}
+            <div className="card-clean p-4 md:col-span-2">
+              <h3 className="text-sm font-bold mb-4 text-rose-600 uppercase">Bottom 50 OBs (Risk Analysis)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-[10px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                      <th className="py-2">OB Name</th>
+                      <th className="py-2">TSM</th>
+                      <th className="py-2 text-right">Ach %</th>
+                      <th className="py-2 text-right">Total Sales</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {[...obRanking].reverse().slice(0, 50).map((ob, idx) => {
+                      const assignment = obAssignments.find(a => a.contact === ob.contact);
+                      const achPerc = ob.target > 0 ? (ob.totalAch / ob.target) * 100 : 0;
+                      return (
+                        <tr key={ob.contact} className="hover:bg-rose-50/30">
+                          <td className="py-2 font-bold text-slate-700">
+                            <span className="text-slate-300 mr-1">{obRanking.length - idx}.</span>
+                            {ob.name}
+                          </td>
+                          <td className="py-2 text-slate-500">{assignment?.tsm}</td>
+                          <td className={`py-2 text-right font-bold ${achPerc < timeGone.percentage ? 'text-rose-600' : 'text-amber-600'}`}>
+                            {achPerc.toFixed(0)}%
+                          </td>
+                          <td className="py-2 text-right font-black text-rose-600">{ob.totalAch.toFixed(1)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -2165,35 +2393,29 @@ export default function App() {
             </div>
           </div>
 
+
           <div className="card-clean p-4">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-bold text-seablue uppercase">Route Performance (Visited vs Productive)</h3>
-              <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
-                {underperformingRoutes.length} Routes need attention
-              </span>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {routeAnalysis.slice(0, 6).map(r => {
-                const prodRate = r.shops.v > 0 ? (r.shops.p / r.shops.v) * 100 : 0;
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">OB Wise Submission Status</h3>
+            <div className="space-y-3">
+              {obAssignments.map(ob => {
+                const obOrders = mtdOrders.filter(o => o.ob_contact === ob.contact);
+                const lastOrder = [...obOrders].sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
+                const totalWorkingDays = Number(appConfig.total_working_days || 25);
+                const entryDays = new Set(obOrders.map(o => o.date)).size;
+                const isLate = lastOrder ? (new Date().getTime() - new Date(lastOrder.date).getTime()) > (2 * 24 * 60 * 60 * 1000) : true;
+
                 return (
-                  <div key={r.route} className="p-3 bg-white border border-slate-100 rounded-xl shadow-sm">
-                    <div className="flex justify-between items-start mb-2">
-                      <div>
-                        <div className="text-[10px] font-bold text-slate-700">{r.route}</div>
-                        <div className="text-[8px] text-slate-400 uppercase font-bold">{r.obName}</div>
-                      </div>
-                      <div className={`text-[10px] font-black ${prodRate >= 60 ? 'text-emerald-600' : 'text-amber-600'}`}>
-                        {prodRate.toFixed(0)}%
-                      </div>
+                  <div key={ob.contact} className={`flex justify-between items-center p-2 rounded-lg border ${isLate ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
+                    <div>
+                      <div className="text-[10px] font-bold text-slate-700">{ob.name}</div>
+                      <div className="text-[8px] text-slate-400">Last: {lastOrder?.date || 'No Entry'} • {lastOrder?.route || 'N/A'}</div>
                     </div>
-                    <div className="flex gap-2 text-[9px] font-bold text-slate-500">
-                      <div className="flex-1 bg-slate-50 p-1 rounded text-center">
-                        <div className="text-[7px] uppercase text-slate-400">Visited</div>
-                        {r.shops.v}
+                    <div className="text-right">
+                      <div className={`text-[10px] font-black ${entryDays >= timeGone.passed ? 'text-emerald-600' : 'text-amber-600'}`}>
+                        {entryDays} / {totalWorkingDays} Days
                       </div>
-                      <div className="flex-1 bg-slate-50 p-1 rounded text-center">
-                        <div className="text-[7px] uppercase text-slate-400">Productive</div>
-                        {r.shops.p}
+                      <div className="text-[7px] text-slate-400 uppercase font-bold">
+                        {isLate ? 'Missing > 2 Days' : 'Active'}
                       </div>
                     </div>
                   </div>
@@ -2203,48 +2425,24 @@ export default function App() {
           </div>
 
           <div className="card-clean p-4">
-            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Recent Submissions</h3>
-            <div className="space-y-3">
-              {history.slice(0, 5).map(h => (
-                <div key={h.id} className="flex justify-between items-center p-2 bg-slate-50 rounded-lg border border-slate-100">
-                  <div>
-                    <div className="text-[10px] font-bold text-slate-700">{h.order_booker}</div>
-                    <div className="text-[8px] text-slate-400">{h.route} • {h.date}</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-[10px] font-black text-seablue">
-                      {((Object.values(h.order_data || {}) as any[]).reduce((sum: number, item: any) => {
-                        return sum + (Number(item.ctn) || 0) + (Number(item.dzn) || 0) / 12 + (Number(item.pks) || 0) / 24;
-                      }, 0)).toFixed(1)}
-                    </div>
-                    <div className="text-[7px] text-slate-400 uppercase font-bold">
-                      {h.latitude ? `${h.latitude.toFixed(4)}, ${h.longitude.toFixed(4)}` : 'No Location'}
-                      <br />
-                      {h.submitted_at ? new Date(h.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {history.length === 0 && <p className="text-center text-[10px] text-slate-400 py-4">No recent activity</p>}
-            </div>
-          </div>
-
-          <div className="card-clean p-4">
-            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Route-to-Route Analysis (MTD)</h3>
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">Route-to-Route Analysis (MTD)</h3>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-[10px]">
                 <thead>
                   <tr className="border-b border-slate-100 text-slate-400 uppercase">
                     <th className="py-2">Route Name</th>
+                    <th className="py-2">OB Name</th>
                     <th className="py-2 text-center">T/V/P</th>
                     <th className="py-2 text-right">Achievement</th>
                     <th className="py-2 text-right">Efficiency</th>
+                    <th className="py-2 text-right">Score</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {routeAnalysis.map(route => (
                     <tr key={route.name} className="hover:bg-slate-50">
                       <td className="py-2 font-bold text-slate-700">{route.name}</td>
+                      <td className="py-2 text-slate-500">{route.obName}</td>
                       <td className="py-2 text-center text-slate-500">{route.shops.t}/{route.shops.v}/{route.shops.p}</td>
                       <td className="py-2 text-right font-mono font-bold text-seablue">{route.ach.toFixed(1)}</td>
                       <td className="py-2 text-right">
@@ -2252,45 +2450,26 @@ export default function App() {
                           {route.shops.v > 0 ? ((route.shops.p / route.shops.v) * 100).toFixed(0) : 0}%
                         </span>
                       </td>
+                      <td className="py-2 text-right">
+                        <span className={`px-1.5 py-0.5 rounded-full font-bold text-[8px] uppercase ${
+                          route.scoreLabel === 'Excellent' ? 'bg-emerald-100 text-emerald-700' :
+                          route.scoreLabel === 'Good' ? 'bg-blue-100 text-blue-700' :
+                          route.scoreLabel === 'Average' ? 'bg-orange-100 text-orange-700' :
+                          'bg-rose-100 text-rose-700'
+                        }`}>
+                          {route.scoreLabel}
+                        </span>
+                      </td>
                     </tr>
                   ))}
                   {routeAnalysis.length === 0 && (
-                    <tr><td colSpan={4} className="py-8 text-center text-slate-400 italic">No route data available for this month</td></tr>
+                    <tr><td colSpan={5} className="py-8 text-center text-slate-400 italic">No route data available for this month</td></tr>
                   )}
                 </tbody>
               </table>
             </div>
           </div>
 
-          <div className="card-clean p-4">
-            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">TSM Performance (MTD)</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-[10px]">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
-                    <th className="py-2">TSM Name</th>
-                    <th className="py-2 text-center">OBs</th>
-                    <th className="py-2 text-right">Achievement</th>
-                    <th className="py-2 text-right">Target</th>
-                    <th className="py-2 text-right">%</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {tsmAnalysis.map(tsm => (
-                    <tr key={tsm.name} className="hover:bg-slate-50">
-                      <td className="py-2 font-bold text-slate-700">{tsm.name}</td>
-                      <td className="py-2 text-center text-slate-500">{tsm.obCount}</td>
-                      <td className="py-2 text-right font-mono font-bold text-emerald-600">{tsm.totalAch.toFixed(1)}</td>
-                      <td className="py-2 text-right font-mono text-slate-400">{tsm.target.toFixed(1)}</td>
-                      <td className="py-2 text-right font-bold text-seablue">
-                        {tsm.target > 0 ? ((tsm.totalAch / tsm.target) * 100).toFixed(0) : 0}%
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
 
           <div className="card-clean p-4">
             <h3 className="text-sm font-bold mb-4 text-seablue uppercase">OB Sales Analysis (MTD)</h3>
@@ -2299,6 +2478,8 @@ export default function App() {
                 <thead>
                   <tr className="border-b border-slate-100 text-slate-400 uppercase">
                     <th className="py-2">OB Name</th>
+                    <th className="py-2 text-center">Last Entry</th>
+                    <th className="py-2 text-center">Consistency</th>
                     <th className="py-2 text-center">T/V/P</th>
                     {CATEGORIES.map(cat => <th key={cat} className="py-2 text-center">{cat}</th>)}
                     <th className="py-2 text-right">Ach/Tgt</th>
@@ -2308,6 +2489,10 @@ export default function App() {
                   {obAnalysis.map(ob => (
                     <tr key={ob.contact} className="hover:bg-slate-50">
                       <td className="py-2 font-bold text-slate-700">{ob.name}</td>
+                      <td className="py-2 text-center text-slate-500">{ob.lastEntry}</td>
+                      <td className={`py-2 text-center font-bold ${ob.consistencyScore < 70 ? 'text-rose-600' : 'text-emerald-600'}`}>
+                        {ob.consistencyScore.toFixed(0)}%
+                      </td>
                       <td className="py-2 text-center text-slate-500">{ob.shops.t}/{ob.shops.v}/{ob.shops.p}</td>
                       {CATEGORIES.map(cat => (
                         <td key={cat} className="py-2 text-center font-mono">{ob.totals[cat].toFixed(1)}</td>
@@ -2322,11 +2507,80 @@ export default function App() {
               </table>
             </div>
           </div>
+
+          <div className="card-clean p-4">
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Route Weakness Detection (Last 4 Visits)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[10px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                    <th className="py-2">OB Name</th>
+                    <th className="py-2">Route</th>
+                    <th className="py-2 text-center">Last 4 Sales</th>
+                    <th className="py-2 text-center">Trend</th>
+                    <th className="py-2 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {routeAnalysis.map(route => {
+                    const routeOrders = mtdOrders.filter(o => o.route === route.name).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()).slice(0, 4);
+                    const salesTrend = routeOrders.map(o => {
+                      const items = o.order_data || {};
+                      return SKUS.reduce((sum, sku) => {
+                        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                        return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                      }, 0);
+                    }).reverse();
+
+                    let trendIcon = '→';
+                    let trendColor = 'text-slate-400';
+                    if (salesTrend.length >= 2) {
+                      const isDeclining = salesTrend.every((val, i) => i === 0 || val < salesTrend[i-1]);
+                      const isImproving = salesTrend.every((val, i) => i === 0 || val > salesTrend[i-1]);
+                      if (isDeclining) { trendIcon = '↓'; trendColor = 'text-rose-600'; }
+                      else if (isImproving) { trendIcon = '↑'; trendColor = 'text-emerald-600'; }
+                    }
+
+                    return (
+                      <tr key={route.name} className="hover:bg-slate-50">
+                        <td className="py-2 font-bold text-slate-700">{route.obName}</td>
+                        <td className="py-2 text-slate-500">{route.name}</td>
+                        <td className="py-2 text-center font-mono">{salesTrend.map(s => s.toFixed(1)).join(' → ')}</td>
+                        <td className={`py-2 text-center font-black text-lg ${trendColor}`}>{trendIcon}</td>
+                        <td className="py-2 text-right">
+                          {trendIcon === '↓' && <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 rounded text-[8px] font-bold uppercase">Declining</span>}
+                          {trendIcon === '↑' && <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[8px] font-bold uppercase">Improving</span>}
+                          {trendIcon === '→' && <span className="px-1.5 py-0.5 bg-slate-100 text-slate-700 rounded text-[8px] font-bold uppercase">Stable</span>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
           </>
           )}
         </main>
       </div>
     );
+    } catch (err) {
+      console.error("Dashboard Error:", err);
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col">
+          <MainNav view={view} setView={setView} />
+          <div className="flex-1 flex items-center justify-center p-10">
+            <div className="card-clean p-8 max-w-md text-center space-y-4">
+              <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto" />
+              <h2 className="text-xl font-black text-seablue uppercase">Stats Error</h2>
+              <p className="text-sm text-slate-500">There was an error processing the sales data. This usually happens if some entries have malformed data.</p>
+              <button onClick={() => { fetchHistory(true); fetchAdminData(); }} className="btn-seablue w-full py-3">Retry Loading</button>
+            </div>
+          </div>
+        </div>
+      );
+    }
   }
 
   if (view === 'national') {
@@ -3423,6 +3677,53 @@ export default function App() {
             </div>
           ) : (
             <>
+              <div className="card-clean p-4">
+                <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-[9px]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200">
+                        <th className="px-2 py-2 font-black text-slate-400 uppercase sticky left-0 bg-slate-50 z-10 border-r border-slate-200 min-w-[100px]">OB Name</th>
+                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                          <th key={day} className="px-1 py-2 font-black text-slate-600 text-center border-r border-slate-100 min-w-[30px]">{day}</th>
+                        ))}
+                        <th className="px-2 py-2 font-black text-seablue text-right sticky right-0 bg-slate-50 z-10 border-l border-slate-200">Total</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {obAssignments.filter(ob => !historyFilters.tsm || ob.tsm === historyFilters.tsm).map(ob => {
+                        const obOrders = history.filter(h => h.ob_contact === ob.contact && h.date.startsWith(new Date().toISOString().slice(0, 7)));
+                        let obTotal = 0;
+                        return (
+                          <tr key={ob.contact} className="hover:bg-slate-50/50">
+                            <td className="px-2 py-2 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{ob.name}</td>
+                            {Array.from({ length: 31 }, (_, i) => {
+                              const day = (i + 1).toString().padStart(2, '0');
+                              const dateStr = `${new Date().toISOString().slice(0, 7)}-${day}`;
+                              const dayOrder = obOrders.find(o => o.date === dateStr);
+                              const daySales = dayOrder ? SKUS.reduce((sum, sku) => {
+                                const items = dayOrder.order_data || {};
+                                const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                                const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                                return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                              }, 0) : 0;
+                              obTotal += daySales;
+                              return (
+                                <td key={day} className={`px-1 py-2 text-center border-r border-slate-100 ${daySales > 0 ? 'bg-emerald-50 font-bold text-emerald-700' : 'text-slate-300'}`}>
+                                  {daySales > 0 ? daySales.toFixed(0) : '-'}
+                                </td>
+                              );
+                            })}
+                            <td className="px-2 py-2 font-black text-seablue text-right sticky right-0 bg-white z-10 border-l border-slate-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)]">{obTotal.toFixed(0)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="mt-2 text-[8px] text-slate-400 italic">* Matrix shows total bags/cartons per day for the current month.</div>
+              </div>
+
               <div className="card-clean overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse">
@@ -3472,7 +3773,8 @@ export default function App() {
                                 const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
                                 const totalCtns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
                                 if (totalCtns === 0) return null;
-                                return `*${sku.name}:* ${totalCtns.toFixed(2)} Ctns`;
+                                const label = sku.category === 'Kite Glow' || sku.category === 'Burq Action' || sku.category === 'Vero' ? 'Bags' : 'Ctns';
+                                return `${sku.name}: ${totalCtns.toFixed(2)} ${label}`;
                               }).filter(Boolean).join('\n');
 
                               const catProdDetails = CATEGORIES.map(cat => {
@@ -3480,16 +3782,18 @@ export default function App() {
                                 return `*${cat} Prod:* ${prod}`;
                               }).join('\n');
 
-                              const summary = `*Sales Summary - ${h.date}*\n` +
+                      const summary = `*Sales Summary*\n` +
+                                `*${h.date}*\n` +
                                 `*OB:* ${h.order_booker}\n` +
                                 `*Route:* ${h.route}\n` +
-                                `*Shops (T/V/P):* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
-                                `------------------\n` +
-                                `*Brand-wise Productive Shops:*\n${catProdDetails}\n` +
+                                `*Shops T/V/P:* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
                                 `------------------\n` +
                                 `*SKU Details:*\n${skuDetails}\n` +
                                 `------------------\n` +
-                                CATEGORIES.map(cat => `*${cat}:* ${totals[cat].toFixed(2)} Ctns`).join('\n') +
+                                CATEGORIES.map(cat => {
+                                  const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
+                                  return `*${cat}:* ${totals[cat].toFixed(2)} ${label}`;
+                                }).join('\n') +
                                 `\n------------------\n` +
                                 `*Total Achievement:* ${totalAch.toFixed(2)}`;
                               const encodedMsg = encodeURIComponent(summary);
@@ -3524,8 +3828,8 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-40">
-      <MainNav view={view} setView={setView} />
-      <header className="bg-white border-b border-slate-200 sticky top-10 z-30 shadow-sm">
+      <MainNavWithRole />
+      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-3 py-2">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -3581,12 +3885,13 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-3 py-3 space-y-3">
-        {/* TSM Filter */}
-        {tsmList.length > 0 && (
+        {/* TSM Filter - Restricted by Role */}
+        {(userRole === 'Admin' || userRole === 'TSM') && tsmList.length > 0 && (
           <div className="card-clean p-2 flex items-center gap-3 bg-seablue/5 border-seablue/10">
             <label className="text-[9px] font-black text-seablue uppercase tracking-widest">TSM:</label>
             <select 
               value={selectedTSM} 
+              disabled={userRole === 'TSM'}
               onChange={(e) => {
                 setSelectedTSM(e.target.value);
                 setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50 }));
@@ -3607,7 +3912,12 @@ export default function App() {
           </div>
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">OB</label>
-            <select value={order.obContact} onChange={(e) => handleMetaChange('obContact', e.target.value)} className="input-clean w-full text-[10px] py-1">
+            <select 
+              value={order.obContact} 
+              disabled={userRole === 'OB'}
+              onChange={(e) => handleMetaChange('obContact', e.target.value)} 
+              className="input-clean w-full text-[10px] py-1"
+            >
               <option value="">Select OB</option>
               {filteredOBs.map(ob => (
                 <option key={ob.contact} value={ob.contact}>
@@ -3826,39 +4136,39 @@ export default function App() {
                     
                     const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
                     
-                    const skuDetails = SKUS.map(sku => {
-                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                      if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
-                      
-                      const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                      const totalBags = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
-                      const label = sku.category === 'Vero' || sku.category === 'DWB' || sku.category === 'Match' ? 'Bags' : 'Ctns';
-                      
-                      return `• ${sku.name}: ${totalBags.toFixed(2)} ${label}`;
-                    }).filter(Boolean).join('\n');
+    const skuDetails = SKUS.map(sku => {
+      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+      if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
+      
+      const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+      const totalBags = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+      const label = sku.category === 'Kite Glow' || sku.category === 'Burq Action' || sku.category === 'Vero' ? 'Bags' : 'Ctns';
+      
+      return `${sku.name}: ${totalBags.toFixed(2)} ${label}`;
+    }).filter(Boolean).join('\n');
 
-                    const brandTotals = CATEGORIES.map(cat => {
-                      const catSkus = SKUS.filter(s => s.category === cat);
-                      const catTotal = catSkus.reduce((sum, sku) => {
-                        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
-                        return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
-                      }, 0);
-                      if (catTotal === 0) return null;
-                      const label = cat === 'Vero' || cat === 'DWB' || cat === 'Match' ? 'Bags' : 'Ctns';
-                      return `*${cat}:* ${catTotal.toFixed(2)} ${label}`;
-                    }).filter(Boolean).join('\n');
+    const brandTotals = CATEGORIES.map(cat => {
+      const catSkus = SKUS.filter(s => s.category === cat);
+      const catTotal = catSkus.reduce((sum, sku) => {
+        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+        return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
+      }, 0);
+      const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
+      return `*${cat}:* ${catTotal.toFixed(2)} ${label}`;
+    }).join('\n');
 
-                    const summary = `*Sales Summary - ${lastSubmittedOrder.date}*\n` +
+                    const summary = `*Sales Summary*\n` +
+                      `*${lastSubmittedOrder.date}*\n` +
                       `*OB:* ${lastSubmittedOrder.order_booker || lastSubmittedOrder.orderBooker}\n` +
                       `*Route:* ${lastSubmittedOrder.route}\n` +
-                      `*Shops:* ${lastSubmittedOrder.productiveShops}/${lastSubmittedOrder.visitedShops}/${lastSubmittedOrder.totalShops}\n` +
+                      `*Shops T/V/P:* ${lastSubmittedOrder.totalShops}/${lastSubmittedOrder.visitedShops}/${lastSubmittedOrder.productiveShops}\n` +
                       `------------------\n` +
-                      `*SKU Wise Details:*\n${skuDetails}\n` +
+                      `*SKU Details:*\n${skuDetails}\n` +
                       `------------------\n` +
-                      `*Brand Totals:*\n${brandTotals}\n` +
+                      `${brandTotals}\n` +
                       `------------------\n` +
-                      `*Total Achievement:* ${totalAch.toFixed(2)} Bags/Ctns`;
+                      `*Total Achievement:* ${totalAch.toFixed(2)}`;
                     
                     const encodedMsg = encodeURIComponent(summary);
                     window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
