@@ -51,7 +51,9 @@ import {
   DollarSign,
   Package,
   ChevronRight,
-  Filter
+  Filter,
+  ArrowDownRight,
+  Mail
 } from 'lucide-react';
 import { SKUS, CATEGORIES, OrderState, OrderItem, SKU, OBAssignment } from './types';
 
@@ -73,7 +75,7 @@ const WhatsAppIcon = () => (
   </svg>
 );
 
-const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[], hierarchy: any[], categories: string[], skus: any[] }) => {
+const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean }) => {
   const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>('National');
   const [filterValue, setFilterValue] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
@@ -214,6 +216,47 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
     });
   }, [monthStats]);
 
+  const routeWeakness = useMemo(() => {
+    const routes: Record<string, any[]> = {};
+    filteredStats.forEach(s => {
+      const key = `${s.ob_contact}-${s.route}`;
+      if (!routes[key]) routes[key] = [];
+      routes[key].push(s);
+    });
+
+    const weakRoutes: any[] = [];
+    Object.entries(routes).forEach(([key, entries]) => {
+      const sorted = entries.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
+      if (sorted.length < 2) return;
+
+      const latest = sorted[0];
+      const previous = sorted[1];
+
+      const salesDeclining = latest.totalBags < previous.totalBags;
+      const productiveDeclining = latest.productive_shops < previous.productive_shops;
+      const lowCoverage = latest.visited_shops < 40;
+
+      if (salesDeclining || productiveDeclining || lowCoverage) {
+        weakRoutes.push({
+          ob: latest.ob_name,
+          route: latest.route,
+          latestSales: latest.totalBags,
+          prevSales: previous.totalBags,
+          latestProd: latest.productive_shops,
+          prevProd: previous.productive_shops,
+          coverage: latest.visited_shops,
+          reasons: [
+            salesDeclining && 'Declining Sales',
+            productiveDeclining && 'Lower Productivity',
+            lowCoverage && 'Low Coverage'
+          ].filter(Boolean)
+        });
+      }
+    });
+
+    return weakRoutes.sort((a, b) => a.latestSales - b.latestSales).slice(0, 10);
+  }, [filteredStats]);
+
   const summary = useMemo(() => {
     const totalSales = monthStats.reduce((sum, s) => sum + s.totalBags, 0);
     const uniqueOBs = new Set(monthStats.map(s => s.ob_contact)).size;
@@ -229,7 +272,9 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
       brandTotals[b] = monthStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0);
     });
 
-    return { totalSales, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, brandTotals };
+    const totalTonnage = monthStats.reduce((sum, s) => sum + (s.totalWeightKg || 0), 0) / 1000;
+
+    return { totalSales, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, brandTotals, totalTonnage };
   }, [monthStats]);
 
   const categoryStats = useMemo(() => {
@@ -275,37 +320,49 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
   }, [obPerformance]);
 
   const worstByBrand = useMemo(() => {
-    return brands.map(b => {
-      const worst = [...obPerformance].sort((a, b) => a.brandSales[b] - b.brandSales[b])[0];
-      return { brand: b, ob: worst?.name || '-', town: worst?.town || '-', sales: worst?.brandSales[b] || 0 };
+    const brandWorst: Record<string, any[]> = {};
+    CATEGORIES.forEach(cat => {
+      brandWorst[cat] = [...obPerformance]
+        .sort((a, b) => (a.brandSales[cat] || 0) - (b.brandSales[cat] || 0))
+        .slice(0, 50)
+        .map(ob => ({
+          name: ob.name,
+          town: ob.town,
+          tsm: ob.tsm,
+          region: ob.region,
+          sales: ob.brandSales[cat] || 0
+        }));
     });
+    return brandWorst;
   }, [obPerformance]);
 
-  const dailyHeatmap = useMemo(() => {
-    const days: Record<string, { day: string, sales: number, count: number }> = {
-      'Monday': { day: 'Mon', sales: 0, count: 0 },
-      'Tuesday': { day: 'Tue', sales: 0, count: 0 },
-      'Wednesday': { day: 'Wed', sales: 0, count: 0 },
-      'Thursday': { day: 'Thu', sales: 0, count: 0 },
-      'Friday': { day: 'Fri', sales: 0, count: 0 },
-      'Saturday': { day: 'Sat', sales: 0, count: 0 },
-      'Sunday': { day: 'Sun', sales: 0, count: 0 },
-    };
-
+  const categoryWiseSales = useMemo(() => {
+    const groups: Record<string, any> = {};
+    
     monthStats.forEach(s => {
-      const date = new Date(s.date);
-      const dayName = date.toLocaleDateString('en-US', { weekday: 'long' });
-      if (days[dayName]) {
-        days[dayName].sales += s.totalBags;
-        days[dayName].count += 1;
+      const key = filterLevel === 'National' ? 'National' : 
+                  filterLevel === 'Region' ? s.region :
+                  filterLevel === 'TSM' ? s.tsm :
+                  filterLevel === 'Town' ? s.town : 'Other';
+      
+      if (!groups[key]) {
+        groups[key] = { name: key, obCount: new Set(), totalSales: 0, brandSales: {} };
+        CATEGORIES.forEach(cat => groups[key].brandSales[cat] = 0);
       }
+      
+      groups[key].obCount.add(s.ob_contact);
+      groups[key].totalSales += s.totalBags;
+      CATEGORIES.forEach(cat => {
+        groups[key].brandSales[cat] += (s.brandSales[cat] || 0);
+      });
     });
 
-    return Object.values(days).map(d => ({
-      ...d,
-      avgSales: d.count > 0 ? d.sales / d.count : 0
+    return Object.values(groups).map(g => ({
+      ...g,
+      obCount: g.obCount.size,
+      avgSales: g.obCount.size > 0 ? g.totalSales / g.obCount.size : 0
     }));
-  }, [monthStats]);
+  }, [monthStats, filterLevel]);
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
@@ -316,6 +373,14 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Hierarchical Performance & Cost Analysis</p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button 
+              onClick={() => (window as any).handleMasterSync?.()}
+              disabled={isSyncing}
+              className="flex items-center gap-2 bg-seablue text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/90 transition-all shadow-lg shadow-seablue/20 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+              {isSyncing ? 'Syncing...' : 'Sync All Data'}
+            </button>
             <input 
               type="month" 
               value={selectedMonth} 
@@ -409,13 +474,20 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-6 gap-4">
         <div className="card-clean p-4 bg-white border-l-4 border-seablue">
           <div className="flex items-center gap-2 text-slate-400 mb-1">
             <Package className="w-3 h-3" />
             <p className="text-[8px] font-black uppercase tracking-widest">Total Sales (Bags)</p>
           </div>
           <h2 className="text-xl font-black text-seablue">{summary.totalSales.toFixed(0)}</h2>
+        </div>
+        <div className="card-clean p-4 bg-white border-l-4 border-emerald-500">
+          <div className="flex items-center gap-2 text-slate-400 mb-1">
+            <TrendingUp className="w-3 h-3" />
+            <p className="text-[8px] font-black uppercase tracking-widest">Total Tonnage (T)</p>
+          </div>
+          <h2 className="text-xl font-black text-emerald-600">{summary.totalTonnage.toFixed(2)}</h2>
         </div>
         <div className="card-clean p-4 bg-white border-l-4 border-emerald-500">
           <div className="flex items-center gap-2 text-slate-400 mb-1">
@@ -496,61 +568,61 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="card-clean bg-white overflow-hidden lg:col-span-2">
-          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Category Wise OB Sales</h3>
+      <div className="grid grid-cols-1 gap-6">
+        <div className="card-clean bg-white overflow-hidden">
+          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Category Wise OB Sales ({filterLevel})</h3>
           </div>
-          <table className="w-full text-left">
-            <thead>
-              <tr className="border-b border-slate-100">
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Category</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Count</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Total Sales</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Avg Sales</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {categoryStats.map(row => (
-                <tr key={row.category} className="hover:bg-slate-50 transition-colors">
-                  <td className="px-6 py-4">
-                    <span className={`px-2 py-1 rounded text-[10px] font-black ${
-                      row.category === 'A' ? 'bg-emerald-100 text-emerald-700' :
-                      row.category === 'B' ? 'bg-blue-100 text-blue-700' :
-                      row.category === 'C' ? 'bg-orange-100 text-orange-700' :
-                      'bg-rose-100 text-rose-700'
-                    }`}>Category {row.category}</span>
-                  </td>
-                  <td className="px-6 py-4 text-xs font-bold text-slate-600">{row.count}</td>
-                  <td className="px-6 py-4 text-xs font-black text-seablue">{row.totalSales.toFixed(0)}</td>
-                  <td className="px-6 py-4 text-xs font-bold text-slate-500">{row.avgSales.toFixed(1)}</td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[800px]">
+              <thead>
+                <tr className="border-b border-slate-100 bg-slate-50/50">
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">{filterLevel}</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center">OBs</th>
+                  {CATEGORIES.map(cat => (
+                    <th key={cat} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">{cat}</th>
+                  ))}
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Total</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Avg/OB</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-
-        <div className="card-clean p-6 bg-white space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Salary vs Sales</h3>
-          <div className="space-y-6">
-            <div className="space-y-2">
-              <div className="flex justify-between text-[10px] font-black uppercase">
-                <span className="text-slate-400">Total Salary Cost</span>
-                <span className="text-rose-600">Rs. {summary.totalSalaryCost.toLocaleString()}</span>
-              </div>
-              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div className="bg-rose-500 h-full" style={{ width: '100%' }} />
-              </div>
-            </div>
-            <div className="space-y-2">
-              <div className="flex justify-between text-[10px] font-black uppercase">
-                <span className="text-slate-400">Monthly Cost Per Bag</span>
-                <span className="text-rose-600">Rs. {summary.costPerBag.toFixed(1)}</span>
-              </div>
-              <div className="text-[8px] text-slate-400 font-bold uppercase leading-relaxed">
-                Based on OB (50k) & TSM (70k) salaries divided by total bags sold.
-              </div>
-            </div>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {categoryWiseSales.map(row => (
+                  <tr key={row.name} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <span className="text-xs font-black text-slate-700">{row.name}</span>
+                    </td>
+                    <td className="px-6 py-4 text-xs font-bold text-slate-500 text-center">{row.obCount}</td>
+                    {CATEGORIES.map(cat => (
+                      <td key={cat} className="px-6 py-4 text-xs font-bold text-slate-600 text-right">
+                        {(row.brandSales[cat] || 0).toFixed(1)}
+                      </td>
+                    ))}
+                    <td className="px-6 py-4 text-xs font-black text-seablue text-right">{row.totalSales.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-xs font-bold text-emerald-600 text-right">{row.avgSales.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-slate-50 font-black">
+                <tr>
+                  <td className="px-6 py-4 text-xs uppercase tracking-widest text-slate-400">Total</td>
+                  <td className="px-6 py-4 text-xs text-center text-slate-600">
+                    {categoryWiseSales.reduce((sum, r) => sum + r.obCount, 0)}
+                  </td>
+                  {CATEGORIES.map(cat => (
+                    <td key={cat} className="px-6 py-4 text-xs text-right text-slate-600">
+                      {categoryWiseSales.reduce((sum, r) => sum + (r.brandSales[cat] || 0), 0).toFixed(1)}
+                    </td>
+                  ))}
+                  <td className="px-6 py-4 text-xs text-right text-seablue">
+                    {categoryWiseSales.reduce((sum, r) => sum + r.totalSales, 0).toFixed(1)}
+                  </td>
+                  <td className="px-6 py-4 text-xs text-right text-emerald-600">
+                    {(categoryWiseSales.reduce((sum, r) => sum + r.totalSales, 0) / Math.max(1, categoryWiseSales.reduce((sum, r) => sum + r.obCount, 0))).toFixed(1)}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
           </div>
         </div>
       </div>
@@ -558,14 +630,14 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst Performing OB (Bottom to Top)</h3>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst Performing OB (Bottom 50)</h3>
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto max-h-[500px]">
             <table className="w-full text-left">
-              <thead>
+              <thead className="sticky top-0 bg-white z-10">
                 <tr className="border-b border-slate-100">
                   <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town / TSM</th>
                   <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Total Sales</th>
                 </tr>
               </thead>
@@ -576,7 +648,10 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
                       <span className="text-slate-300 mr-2">{idx + 1}.</span>
                       {ob.name}
                     </td>
-                    <td className="px-6 py-4 text-xs text-slate-500">{ob.town}</td>
+                    <td className="px-6 py-4">
+                      <p className="text-[10px] font-bold text-slate-500">{ob.town}</p>
+                      <p className="text-[8px] text-slate-400 uppercase tracking-widest">{ob.tsm}</p>
+                    </td>
                     <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{ob.totalSales.toFixed(1)}</td>
                   </tr>
                 ))}
@@ -587,32 +662,94 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus }: { stats: any[
 
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst OB by Brand (Bottom 10 per Brand)</h3>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst OB by Brand (Bottom 50 per Brand)</h3>
+          </div>
+          <div className="p-4 space-y-6 max-h-[500px] overflow-y-auto">
+            {CATEGORIES.map(cat => (
+              <div key={cat} className="space-y-2">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-1">
+                  <h4 className="text-[10px] font-black text-seablue uppercase tracking-widest">{cat}</h4>
+                  <span className="text-[8px] font-black text-slate-400 uppercase">Bottom 50</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {worstByBrand[cat]?.map((ob, idx) => (
+                    <div key={idx} className="flex justify-between items-center p-2 bg-slate-50 rounded-lg hover:bg-rose-50 transition-colors">
+                      <div className="min-w-0">
+                        <p className="text-[10px] font-bold text-slate-700 truncate">{idx + 1}. {ob.name}</p>
+                        <p className="text-[8px] text-slate-400 truncate">{ob.town} | {ob.tsm}</p>
+                      </div>
+                      <span className="font-black text-rose-600 ml-2 text-[10px]">{ob.sales.toFixed(1)}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card-clean bg-white overflow-hidden">
+          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Route Weakness Detection</h3>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>
                 <tr className="border-b border-slate-100">
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Brand</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Sales</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB / Route</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Sales Trend</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Alerts</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
-                {brands.flatMap(b => {
-                  return [...obPerformance]
-                    .sort((a, b) => a.brandSales[b] - b.brandSales[b])
-                    .slice(0, 10)
-                    .map(ob => ({ brand: b, ob: ob.name, sales: ob.brandSales[b] }));
-                }).map((row, idx) => (
-                  <tr key={idx} className="hover:bg-rose-50/30 transition-colors">
-                    <td className="px-6 py-4 text-[10px] font-black text-seablue uppercase">{row.brand}</td>
-                    <td className="px-6 py-4 text-xs font-bold text-slate-700">{row.ob}</td>
-                    <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{row.sales.toFixed(1)}</td>
+                {routeWeakness.map((rw, idx) => (
+                  <tr key={idx} className="hover:bg-rose-50 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="text-xs font-bold text-slate-700">{rw.ob}</p>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{rw.route}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-black text-rose-600">{rw.latestSales.toFixed(1)}</span>
+                        <ArrowDownRight className="w-3 h-3 text-rose-500" />
+                        <span className="text-[10px] text-slate-400 font-bold">vs {rw.prevSales.toFixed(1)}</span>
+                      </div>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1">
+                        {rw.reasons.map((r: string) => (
+                          <span key={r} className="text-[8px] font-black bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded uppercase tracking-tighter">{r}</span>
+                        ))}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+
+        <div className="card-clean bg-white p-6">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2 mb-4">Daily Sales Heatmap (MTD)</h3>
+          <div className="h-64">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={monthStats.reduce((acc: any[], s) => {
+                const existing = acc.find(a => a.date === s.date);
+                if (existing) existing.sales += s.totalBags;
+                else acc.push({ date: s.date.split('-')[2], sales: s.totalBags });
+                return acc;
+              }, []).sort((a, b) => a.date.localeCompare(b.date))}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis dataKey="date" fontSize={10} fontWeight="bold" tick={{ fill: '#94a3b8' }} />
+                <YAxis fontSize={10} fontWeight="bold" tick={{ fill: '#94a3b8' }} />
+                <Tooltip 
+                  contentStyle={{ backgroundColor: '#fff', borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  labelStyle={{ fontWeight: '900', color: '#1e293b', fontSize: '10px', textTransform: 'uppercase' }}
+                />
+                <Bar dataKey="sales" fill="#0066cc" radius={[4, 4, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
@@ -687,6 +824,404 @@ const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v:
   </nav>
 );
 
+const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES }: any) => {
+  const currentMonth = getPSTDate().slice(0, 7);
+  const today = getPSTDate();
+  const dayOfMonth = parseInt(today.split('-')[2]);
+  
+  // Calculate working days till date
+  const calculateWorkingDaysTillDate = () => {
+    const now = new Date(today);
+    const year = now.getFullYear();
+    const month = now.getMonth();
+    const holidaysStr = appConfig.holidays || '';
+    const holidays = holidaysStr.split(',').map(h => h.trim()).filter(h => h);
+    
+    let workingDays = 0;
+    for (let d = 1; d <= dayOfMonth; d++) {
+      const date = new Date(year, month, d);
+      const dateStr = date.toISOString().split('T')[0];
+      const isSunday = date.getDay() === 0;
+      const isHoliday = holidays.includes(dateStr);
+      if (!isSunday && !isHoliday) workingDays++;
+    }
+    return workingDays;
+  };
+
+  const workingDaysTillDate = calculateWorkingDaysTillDate();
+  const totalWorkingDays = parseInt(appConfig.total_working_days || '25');
+
+  return (
+    <div className="space-y-6">
+      {/* OB Submission Status Report */}
+      <section className="card-clean bg-white overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">OB Wise Submission Status</h3>
+          <div className="flex gap-4">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Working Days (MTD): {workingDaysTillDate}</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Target: {totalWorkingDays}</span>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                <th className="px-6 py-3">OB Name</th>
+                <th className="px-6 py-3">TSM</th>
+                <th className="px-6 py-3 text-center">Till Date Entries</th>
+                <th className="px-6 py-3 text-center">Missing Days</th>
+                <th className="px-6 py-3">Last Entry</th>
+                <th className="px-6 py-3 text-right">Efficiency</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {obAssignments.map((ob: any) => {
+                const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
+                // Unique entry days
+                const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
+                const missing = Math.max(0, workingDaysTillDate - uniqueEntryDays);
+                const lastEntry = obStats.sort((a: any, b: any) => b.date.localeCompare(a.date))[0];
+                const efficiency = workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0;
+                
+                return (
+                  <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="text-xs font-black text-slate-700">{ob.name}</p>
+                      <p className="text-[9px] text-slate-400 font-bold">{ob.town}</p>
+                    </td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.tsm}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-emerald-600">{uniqueEntryDays}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-rose-600">{missing}</td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{lastEntry?.date || 'Never'}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`text-[8px] font-black px-2 py-1 rounded uppercase tracking-widest ${efficiency < 80 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {efficiency.toFixed(0)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot className="bg-slate-50 font-black">
+              <tr>
+                <td colSpan={2} className="px-6 py-4 text-xs uppercase tracking-widest text-slate-400">Total / Average</td>
+                <td className="px-6 py-4 text-center text-xs text-emerald-600">
+                  {obAssignments.reduce((sum: number, ob: any) => sum + new Set(history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth)).map((h: any) => h.date)).size, 0)}
+                </td>
+                <td className="px-6 py-4 text-center text-xs text-rose-600">
+                  {obAssignments.reduce((sum: number, ob: any) => sum + Math.max(0, workingDaysTillDate - new Set(history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth)).map((h: any) => h.date)).size), 0)}
+                </td>
+                <td className="px-6 py-4"></td>
+                <td className="px-6 py-4 text-right">
+                  <span className="text-[10px] font-black text-slate-700">
+                    {(obAssignments.reduce((sum: number, ob: any) => {
+                      const uniqueDays = new Set(history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth)).map((h: any) => h.date)).size;
+                      return sum + (workingDaysTillDate > 0 ? (uniqueDays / workingDaysTillDate) * 100 : 0);
+                    }, 0) / Math.max(1, obAssignments.length)).toFixed(0)}%
+                  </span>
+                </td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      {/* Route-to-Route Analysis */}
+      <section className="card-clean bg-white overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">Route-to-Route Analysis (MTD)</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                <th className="px-6 py-3">Route Name</th>
+                <th className="px-6 py-3">OB Name</th>
+                <th className="px-6 py-3 text-center">T/V/P</th>
+                <th className="px-6 py-3 text-center">Achievement</th>
+                <th className="px-6 py-3 text-center">Efficiency</th>
+                <th className="px-6 py-3 text-right">Score</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {obAssignments.flatMap((ob: any) => {
+                const obOrders = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
+                const routes = Array.from(new Set([...(ob.routes || []), ...obOrders.map((h: any) => h.route)])).filter(Boolean);
+                
+                return routes.map(route => {
+                  const routeOrders = obOrders.filter((h: any) => h.route === route);
+                  const t = routeOrders.reduce((sum, h) => sum + (h.total_shops || 0), 0);
+                  const v = routeOrders.reduce((sum, h) => sum + (h.visited_shops || 0), 0);
+                  const p = routeOrders.reduce((sum, h) => sum + (h.productive_shops || 0), 0);
+                  
+                  const ach = routeOrders.reduce((sum, h) => {
+                    const data = h.order_data || {};
+                    return sum + SKUS.reduce((s, sku) => {
+                      const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                      const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                      return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                    }, 0);
+                  }, 0);
+
+                  const efficiency = v > 0 ? (p / v) * 100 : 0;
+                  const coverage = t > 0 ? (v / t) * 100 : 0;
+                  const score = (ach * 0.5) + (coverage * 0.3) + (efficiency * 0.2);
+
+                  return (
+                    <tr key={`${ob.contact}-${route}`} className="hover:bg-slate-50/50 transition-colors">
+                      <td className="px-6 py-4 text-xs font-bold text-slate-700">{route}</td>
+                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.name}</td>
+                      <td className="px-6 py-4 text-center text-[10px] font-mono text-slate-600">{t}/{v}/{p}</td>
+                      <td className="px-6 py-4 text-center text-xs font-black text-seablue">{ach.toFixed(1)}</td>
+                      <td className="px-6 py-4 text-center text-xs font-bold text-emerald-600">{efficiency.toFixed(0)}%</td>
+                      <td className="px-6 py-4 text-right">
+                        <span className={`text-[10px] font-black ${score > 50 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                          {score.toFixed(1)}
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                });
+              })}
+            </tbody>
+            <tfoot className="bg-slate-50 font-black">
+              <tr>
+                <td colSpan={2} className="px-6 py-4 text-xs uppercase tracking-widest text-slate-400">Total / Average</td>
+                <td className="px-6 py-4 text-center text-[10px] text-slate-600">
+                  {(() => {
+                    const allRouteOrders = history.filter((h: any) => h.date.startsWith(currentMonth));
+                    const t = allRouteOrders.reduce((sum: number, h: any) => sum + (h.total_shops || 0), 0);
+                    const v = allRouteOrders.reduce((sum: number, h: any) => sum + (h.visited_shops || 0), 0);
+                    const p = allRouteOrders.reduce((sum: number, h: any) => sum + (h.productive_shops || 0), 0);
+                    return `${t}/${v}/${p}`;
+                  })()}
+                </td>
+                <td className="px-6 py-4 text-center text-xs text-seablue">
+                  {history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((sum: number, h: any) => {
+                    const data = h.order_data || {};
+                    return sum + SKUS.reduce((s: number, sku: any) => {
+                      const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                      const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                      return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                    }, 0);
+                  }, 0).toFixed(1)}
+                </td>
+                <td className="px-6 py-4 text-center text-xs text-emerald-600">
+                  {(() => {
+                    const allRouteOrders = history.filter((h: any) => h.date.startsWith(currentMonth));
+                    const v = allRouteOrders.reduce((sum: number, h: any) => sum + (h.visited_shops || 0), 0);
+                    const p = allRouteOrders.reduce((sum: number, h: any) => sum + (h.productive_shops || 0), 0);
+                    return v > 0 ? ((p / v) * 100).toFixed(0) + '%' : '0%';
+                  })()}
+                </td>
+                <td className="px-6 py-4 text-right"></td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </section>
+
+      {/* TSM Activity Report */}
+      <section className="card-clean bg-white overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">TSM Activity Report</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                <th className="px-6 py-3">TSM Name</th>
+                <th className="px-6 py-3 text-center">OBs Assigned</th>
+                <th className="px-6 py-3 text-center">Entries Today</th>
+                <th className="px-6 py-3 text-center">Missing OBs</th>
+                <th className="px-6 py-3 text-right">Supervision</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {tsmList.map((tsm: string) => {
+                const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm);
+                const todayEntries = history.filter((h: any) => h.tsm === tsm && h.date === getPSTDate());
+                const missingCount = tsmOBs.length - todayEntries.length;
+                
+                return (
+                  <tr key={tsm} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4 text-xs font-black text-slate-700">{tsm}</td>
+                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-600">{tsmOBs.length}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-emerald-600">{todayEntries.length}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-rose-600">{missingCount}</td>
+                    <td className="px-6 py-4 text-right">
+                      <span className={`text-[8px] font-black px-2 py-1 rounded uppercase tracking-widest ${missingCount > (tsmOBs.length / 2) ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {missingCount > (tsmOBs.length / 2) ? 'Required' : 'Good'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Brand Target vs Achievement Report */}
+      <section className="card-clean bg-white overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">Brand Target vs Achievement (MTD)</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                <th className="px-6 py-3">OB Name</th>
+                {CATEGORIES.map((cat: string) => (
+                  <th key={cat} className="px-4 py-3 text-center">{cat}</th>
+                ))}
+                <th className="px-6 py-3 text-right">Total Ach</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {obAssignments.map((ob: any) => {
+                const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
+                let totalA = 0;
+
+                return (
+                  <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4 text-xs font-black text-slate-700">{ob.name}</td>
+                    {CATEGORIES.map((cat: string) => {
+                      const ach = obStats.reduce((sum: number, h: any) => {
+                        const data = h.order_data || {};
+                        const catTotal = SKUS.filter((s: any) => s.category === cat).reduce((s: number, sku: any) => {
+                          const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                          return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                        }, 0);
+                        return sum + catTotal;
+                      }, 0);
+                      totalA += ach;
+                      return (
+                        <td key={cat} className="px-4 py-4 text-center text-[10px] font-bold text-seablue">
+                          {ach.toFixed(1)}
+                        </td>
+                      );
+                    })}
+                    <td className="px-6 py-4 text-right text-xs font-black text-emerald-600">
+                      {totalA.toFixed(1)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+const LoginScreen = ({ handleLogin, ADMIN_PASSWORD }: any) => {
+  const [tsmName, setTsmName] = useState('');
+  const [tsmGmail, setTsmGmail] = useState('');
+  const [isAdminMode, setIsAdminMode] = useState(false);
+
+  const onTsmLogin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (tsmName.trim() && tsmGmail.trim()) {
+      handleLogin('TSM', tsmName.trim(), tsmGmail.trim());
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
+      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl space-y-8">
+        <div className="text-center space-y-2">
+          <div className="w-16 h-16 bg-seablue rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg shadow-blue-200">
+            <Waves className="w-10 h-10" />
+          </div>
+          <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">SalesPulse</h1>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">TSM Performance & Field Intelligence</p>
+        </div>
+
+        {!isAdminMode ? (
+          <form onSubmit={onTsmLogin} className="space-y-5">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">TSM Name</label>
+              <div className="relative">
+                <Users className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="text" 
+                  required
+                  placeholder="Enter your full name"
+                  value={tsmName}
+                  onChange={(e) => setTsmName(e.target.value)}
+                  className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-slate-100 focus:border-seablue focus:outline-none text-sm font-bold text-slate-700 bg-slate-50 transition-all"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Gmail Address</label>
+              <div className="relative">
+                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input 
+                  type="email" 
+                  required
+                  placeholder="yourname@gmail.com"
+                  value={tsmGmail}
+                  onChange={(e) => setTsmGmail(e.target.value)}
+                  className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-slate-100 focus:border-seablue focus:outline-none text-sm font-bold text-slate-700 bg-slate-50 transition-all"
+                />
+              </div>
+            </div>
+
+            <button 
+              type="submit"
+              className="w-full py-4 bg-seablue text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg shadow-blue-100 hover:bg-seablue-dark transition-all active:scale-[0.98]"
+            >
+              Start Session
+            </button>
+
+            <button 
+              type="button"
+              onClick={() => setIsAdminMode(true)}
+              className="w-full text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-seablue transition-colors"
+            >
+              Admin Access
+            </button>
+          </form>
+        ) : (
+          <div className="space-y-5">
+            <div className="space-y-2">
+              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Admin Password</label>
+              <input 
+                type="password" 
+                autoFocus
+                placeholder="••••••••"
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    const pass = (e.target as HTMLInputElement).value;
+                    if (pass === ADMIN_PASSWORD) handleLogin('Admin', 'Administrator');
+                    else alert('Invalid Password');
+                  }
+                }}
+                className="w-full p-4 rounded-2xl border-2 border-slate-100 focus:border-seablue focus:outline-none text-sm font-bold text-slate-700 bg-slate-50 transition-all"
+              />
+            </div>
+            <button 
+              onClick={() => setIsAdminMode(false)}
+              className="w-full text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-seablue transition-colors"
+            >
+              Back to TSM Login
+            </button>
+          </div>
+        )}
+
+        <p className="text-center text-[8px] font-bold text-slate-300 uppercase tracking-widest">v2.6.0 • TSM Intelligence App</p>
+      </motion.div>
+    </div>
+  );
+};
+
 export default function App() {
   const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports'>('entry');
   const [userRole, setUserRole] = useState<'Admin' | 'TSM' | 'OB' | null>(() => localStorage.getItem('user_role') as any);
@@ -697,6 +1232,7 @@ export default function App() {
     setUserRole(role);
     setUserName(name);
     if (contact) setUserContact(contact);
+    if (role === 'TSM') setSelectedTSM(name);
     localStorage.setItem('user_role', role);
     localStorage.setItem('user_name', name);
     if (contact) localStorage.setItem('user_contact', contact);
@@ -706,6 +1242,7 @@ export default function App() {
     setUserRole(null);
     setUserName(null);
     setUserContact(null);
+    setSelectedTSM('');
     localStorage.removeItem('user_role');
     localStorage.removeItem('user_name');
     localStorage.removeItem('user_contact');
@@ -731,7 +1268,11 @@ export default function App() {
   const [stockHistory, setStockHistory] = useState<any[]>([]);
   const [adminAuthenticated, setAdminAuthenticated] = useState(false);
   const [adminPassInput, setAdminPassInput] = useState('');
-  const [selectedTSM, setSelectedTSM] = useState<string>('');
+  const [selectedTSM, setSelectedTSM] = useState<string>(() => {
+    const role = localStorage.getItem('user_role');
+    const name = localStorage.getItem('user_name');
+    return role === 'TSM' ? name || '' : '';
+  });
   const [selectedAdminTSM, setSelectedAdminTSM] = useState<string>('');
   const [targetMonth, setTargetMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [distributors, setDistributors] = useState<any[]>([]);
@@ -798,7 +1339,10 @@ export default function App() {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [stockOrders, setStockOrders] = useState<Record<string, Record<string, { ctn: number }>>>({});
   const [selectedStockTSM, setSelectedStockTSM] = useState<string>('');
+  const [selectedStockRegion, setSelectedStockRegion] = useState<string>('');
+  const [selectedStockTown, setSelectedStockTown] = useState<string>('');
   const [isSubmittingStocks, setIsSubmittingStocks] = useState(false);
+  const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
   const inputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   useEffect(() => {
@@ -1214,13 +1758,6 @@ export default function App() {
 
   const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
 
-  useEffect(() => {
-    // Auto-sync on mount if config is available
-    if (appConfig.google_spreadsheet_id && !isSyncingGlobal) {
-      syncEverything();
-    }
-  }, []);
-
   const syncEverything = async () => {
     setIsSyncingGlobal(true);
     try {
@@ -1232,6 +1769,7 @@ export default function App() {
       setAppConfig(prev => ({ ...prev, last_sync_at: data.last_sync_at }));
       fetchAdminData();
       fetchHistory(true);
+      fetchNationalData(); // Refresh national data after sync
     } catch (err: any) {
       setMessage({ text: 'Sync Error: ' + err.message, type: 'error' });
     } finally {
@@ -1239,6 +1777,19 @@ export default function App() {
       setTimeout(() => setMessage(null), 5000);
     }
   };
+
+  useEffect(() => {
+    // Auto-sync on mount if config is available
+    if (appConfig.google_spreadsheet_id && !isSyncingGlobal) {
+      syncEverything();
+    }
+  }, [appConfig.google_spreadsheet_id]);
+
+  // Expose to window for NationalDashboard
+  useEffect(() => {
+    (window as any).handleMasterSync = syncEverything;
+    return () => { delete (window as any).handleMasterSync; };
+  }, [syncEverything]);
 
   useEffect(() => {
     if (view === 'national') {
@@ -1834,8 +2385,21 @@ export default function App() {
   }, [obAssignments, distributors]);
 
   const filteredOBs = useMemo(() => {
-    return selectedTSM ? obAssignments.filter(ob => ob.tsm === selectedTSM) : obAssignments;
-  }, [obAssignments, selectedTSM]);
+    const obs = selectedTSM ? obAssignments.filter(ob => ob.tsm === selectedTSM) : [...obAssignments];
+    if (selectedTSM) {
+      // Add TSM themselves as an option
+      obs.unshift({
+        name: `*TSM - ${selectedTSM}`,
+        contact: `TSM-${selectedTSM}`,
+        town: distributors.find(d => d.tsm === selectedTSM)?.town || '',
+        distributor: distributors.find(d => d.tsm === selectedTSM)?.name || '',
+        routes: ['TSM Route'],
+        tsm: selectedTSM,
+        total_shops: 50
+      });
+    }
+    return obs;
+  }, [obAssignments, selectedTSM, distributors]);
 
   const groupedHistory = useMemo(() => {
     const groups: Record<string, any[]> = {};
@@ -1895,12 +2459,51 @@ export default function App() {
     }
   };
 
+  if (!userRole) {
+    return <LoginScreen handleLogin={handleLogin} ADMIN_PASSWORD={ADMIN_PASSWORD} />;
+  }
+
+  const MainNavWithRole = () => <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />;
+
+  if (view === 'reports') {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-40">
+        <MainNavWithRole />
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+          <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 bg-seablue rounded-xl flex items-center justify-center text-white">
+                <Filter className="w-6 h-6" />
+              </div>
+              <div>
+                <h1 className="text-xl font-black text-seablue uppercase tracking-tight">Intelligence Reports</h1>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Currency & Performance Analysis</p>
+              </div>
+            </div>
+          </div>
+        </header>
+
+        <main className="max-w-6xl mx-auto px-4 py-6">
+          <ReportsView 
+            history={history} 
+            obAssignments={obAssignments} 
+            tsmList={tsmList} 
+            appConfig={appConfig} 
+            getPSTDate={getPSTDate} 
+            SKUS={SKUS} 
+            CATEGORIES={CATEGORIES} 
+          />
+        </main>
+      </div>
+    );
+  }
+
   if (view === 'dashboard') {
     try {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
           <div className="min-h-screen bg-slate-50 flex flex-col">
-            <MainNav view={view} setView={setView} />
+            <MainNavWithRole />
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-4">
                 <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -1915,8 +2518,23 @@ export default function App() {
       const today = new Date().toISOString().split('T')[0];
       const currentMonth = today.slice(0, 7);
       
-      const todayOrders = history.filter(h => h.date && typeof h.date === 'string' && h.date === today);
-      const mtdOrders = history.filter(h => h.date && typeof h.date === 'string' && h.date.startsWith(currentMonth));
+      // Role-based data filtering
+      const filteredHistory = history.filter(h => {
+        if (userRole === 'Admin') return true;
+        if (userRole === 'TSM') return h.tsm === userName;
+        if (userRole === 'OB') return h.ob_contact === userContact;
+        return false;
+      });
+
+      const filteredOBAssignments = obAssignments.filter(ob => {
+        if (userRole === 'Admin') return true;
+        if (userRole === 'TSM') return ob.tsm === userName;
+        if (userRole === 'OB') return ob.contact === userContact;
+        return false;
+      });
+
+      const todayOrders = filteredHistory.filter(h => h.date && typeof h.date === 'string' && h.date === today);
+      const mtdOrders = filteredHistory.filter(h => h.date && typeof h.date === 'string' && h.date.startsWith(currentMonth));
       
       const calculateCatTotals = (orders: any[]) => {
         const totals: Record<string, number> = {};
@@ -1941,7 +2559,7 @@ export default function App() {
       const globalTargets = (() => {
         const totals: Record<string, number> = {};
         CATEGORIES.forEach(cat => {
-          totals[cat] = obAssignments.reduce((sum, ob) => sum + (ob.targets?.[cat] || 0), 0);
+          totals[cat] = filteredOBAssignments.reduce((sum, ob) => sum + (ob.targets?.[cat] || 0), 0);
         });
         return totals;
       })();
@@ -1989,7 +2607,7 @@ export default function App() {
       }).sort((a, b) => b.totalAch - a.totalAch);
 
       // OB Sales Analysis
-      const obAnalysis = obAssignments.map(ob => {
+      const obAnalysis = filteredOBAssignments.map(ob => {
         const obOrders = mtdOrders.filter(h => h.ob_contact === ob.contact);
         const totals: Record<string, number> = {};
         CATEGORIES.forEach(cat => {
@@ -2030,6 +2648,8 @@ export default function App() {
 
       // Route Sales Analysis
       const routeAnalysis = mtdOrders.reduce((acc: any[], h) => {
+        if (userRole === 'TSM' && h.tsm !== userName) return acc;
+        if (userRole === 'OB' && h.ob_contact !== userContact) return acc;
         const route = h.route || 'Unknown';
         let routeData = acc.find(r => r.name === route);
         if (!routeData) {
@@ -2077,14 +2697,20 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav view={view} setView={setView} />
+        <MainNavWithRole />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
                 <LayoutDashboard className="w-5 h-5" />
               </div>
-              <h1 className="text-lg font-bold text-seablue">Dashboard</h1>
+              <div>
+                <h1 className="text-lg font-bold text-seablue leading-tight">Dashboard</h1>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[8px] font-black bg-seablue/10 text-seablue px-1.5 py-0.5 rounded uppercase tracking-widest">{userRole}</span>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{userName}</span>
+                </div>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <button 
@@ -2163,11 +2789,11 @@ export default function App() {
               <div className="text-2xl font-black text-emerald-600">
                 {(() => {
                   const ach = (Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0);
-                  const tgt = obAssignments.reduce((sum, ob) => sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0), 0);
+                  const tgt = filteredOBAssignments.reduce((sum, ob) => sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0), 0);
                   return tgt > 0 ? ((ach / tgt) * 100).toFixed(0) : 0;
                 })()}%
               </div>
-              <div className="text-[8px] font-bold mt-1 text-slate-400 uppercase">vs Monthly Target</div>
+              <div className="text-[8px] font-bold mt-1 text-slate-400 uppercase">vs {userRole === 'Admin' ? 'National' : 'My Team'} Target</div>
             </div>
           </div>
 
@@ -2218,7 +2844,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="card-clean p-4 md:col-span-2 overflow-hidden">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-bold text-seablue uppercase tracking-widest">OB Performance (MTD)</h3>
+                <h3 className="text-sm font-bold text-seablue uppercase tracking-widest">{userRole === 'Admin' ? 'National' : 'My Team'} OB Performance (MTD)</h3>
                 <span className="text-[10px] font-bold bg-seablue/10 text-seablue px-2 py-0.5 rounded-full">{obAnalysis.length} OBs</span>
               </div>
               <div className="overflow-x-auto -mx-4 px-4">
@@ -2242,7 +2868,7 @@ export default function App() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {obAnalysis.map(ob => {
-                      const assignment = obAssignments.find(a => a.contact === ob.contact);
+                      const assignment = filteredOBAssignments.find(a => a.contact === ob.contact);
                       return (
                         <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
                           <td className="px-3 py-2 text-[10px] font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-100 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{ob.name}</td>
@@ -2395,9 +3021,9 @@ export default function App() {
 
 
           <div className="card-clean p-4">
-            <h3 className="text-sm font-bold mb-4 text-seablue uppercase">OB Wise Submission Status</h3>
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">{userRole === 'Admin' ? 'National' : 'My Team'} OB Submission Status</h3>
             <div className="space-y-3">
-              {obAssignments.map(ob => {
+              {filteredOBAssignments.map(ob => {
                 const obOrders = mtdOrders.filter(o => o.ob_contact === ob.contact);
                 const lastOrder = [...obOrders].sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
                 const totalWorkingDays = Number(appConfig.total_working_days || 25);
@@ -2569,7 +3195,7 @@ export default function App() {
       console.error("Dashboard Error:", err);
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav view={view} setView={setView} />
+          <MainNavWithRole />
           <div className="flex-1 flex items-center justify-center p-10">
             <div className="card-clean p-8 max-w-md text-center space-y-4">
               <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto" />
@@ -2586,7 +3212,7 @@ export default function App() {
   if (view === 'national') {
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
-        <MainNav view={view} setView={setView} />
+        <MainNavWithRole />
         {isLoadingNational ? (
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
             <div className="flex flex-col items-center gap-4">
@@ -2599,7 +3225,8 @@ export default function App() {
             stats={nationalStats} 
             hierarchy={hierarchy} 
             categories={CATEGORIES} 
-            skus={SKUS} 
+            skus={SKUS}
+            isSyncing={isSyncingGlobal}
           />
         )}
       </div>
@@ -2610,7 +3237,7 @@ export default function App() {
     if (isLoadingAdmin) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav view={view} setView={setView} />
+          <MainNavWithRole />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -2625,7 +3252,7 @@ export default function App() {
     if (!adminAuthenticated) {
       return (
         <div className="min-h-screen bg-slate-50">
-          <MainNav view={view} setView={setView} />
+          <MainNavWithRole />
           <div className="flex items-center justify-center p-4 pt-20">
             <div className="card-clean p-8 max-w-sm w-full space-y-6 text-center">
               <Lock className="w-12 h-12 text-seablue mx-auto" />
@@ -2653,7 +3280,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav view={view} setView={setView} />
+        <MainNavWithRole />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -3339,13 +3966,26 @@ export default function App() {
   if (view === 'stocks') {
     // Combine distributors from OB assignments and the explicit distributors table
     // Prioritize explicit distributors table for town/tsm info
-    const allDistributors = [
-      ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm })),
-      ...obAssignments.map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm }))
-    ].filter((v, i, a) => a.findIndex(t => t.distributor === v.distributor) === i);
+    const allDistributors = useMemo(() => {
+      const combined = [
+        ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm, region: d.region })),
+        ...obAssignments.map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm, region: ob.region }))
+      ];
+      return combined.filter((v, i, a) => a.findIndex(t => t.distributor === v.distributor) === i);
+    }, [distributors, obAssignments]);
 
-    const filteredDistributors = allDistributors
-      .filter(d => !selectedStockTSM || d.tsm === selectedStockTSM);
+    const filteredDistributors = useMemo(() => {
+      return allDistributors.filter(d => {
+        const matchTSM = !selectedStockTSM || d.tsm === selectedStockTSM;
+        const matchRegion = !selectedStockRegion || d.region === selectedStockRegion;
+        const matchTown = !selectedStockTown || d.town === selectedStockTown;
+        return matchTSM && matchRegion && matchTown;
+      });
+    }, [allDistributors, selectedStockTSM, selectedStockRegion, selectedStockTown]);
+
+    const regions = useMemo(() => Array.from(new Set(allDistributors.map(d => d.region).filter(Boolean))).sort(), [allDistributors]);
+    const towns = useMemo(() => Array.from(new Set(allDistributors.map(d => d.town).filter(Boolean))).sort(), [allDistributors]);
+    const tsms = useMemo(() => Array.from(new Set(allDistributors.map(d => d.tsm).filter(Boolean))).sort(), [allDistributors]);
 
     const handleStockChange = (distributor: string, skuId: string, val: number) => {
       setStockOrders(prev => ({
@@ -3392,7 +4032,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-20">
-        <MainNav view={view} setView={setView} />
+        <MainNavWithRole />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -3401,14 +4041,14 @@ export default function App() {
               </div>
               <h1 className="text-lg font-bold text-seablue">Distributor Stocks</h1>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button 
                 onClick={() => {
-                  const headers = ['Distributor', 'Town', 'TSM', ...SKUS.map(s => s.name)];
+                  const headers = ['Distributor', 'Town', 'TSM', 'Region', ...SKUS.map(s => s.name)];
                   const rows = filteredDistributors.map(d => {
                     const stocks = stockOrders[d.distributor] || {};
                     return [
-                      d.distributor, d.town, d.tsm,
+                      d.distributor, d.town, d.tsm, d.region || '',
                       ...SKUS.map(sku => stocks[sku.id]?.ctn || 0)
                     ];
                   });
@@ -3428,12 +4068,28 @@ export default function App() {
                 Export CSV
               </button>
               <select 
+                value={selectedStockRegion} 
+                onChange={e => setSelectedStockRegion(e.target.value)}
+                className="input-clean py-1.5 text-xs min-w-[100px]"
+              >
+                <option value="">All Regions</option>
+                {regions.map(r => <option key={r} value={r}>{r}</option>)}
+              </select>
+              <select 
                 value={selectedStockTSM} 
                 onChange={e => setSelectedStockTSM(e.target.value)}
-                className="input-clean py-1.5 text-xs min-w-[150px]"
+                className="input-clean py-1.5 text-xs min-w-[100px]"
               >
                 <option value="">All TSMs</option>
-                {tsmList.map(t => <option key={t} value={t}>{t}</option>)}
+                {tsms.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <select 
+                value={selectedStockTown} 
+                onChange={e => setSelectedStockTown(e.target.value)}
+                className="input-clean py-1.5 text-xs min-w-[100px]"
+              >
+                <option value="">All Towns</option>
+                {towns.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
               <button 
                 onClick={handleSubmitAllStocks}
@@ -3509,7 +4165,7 @@ export default function App() {
     if (isLoadingHistory) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav view={view} setView={setView} />
+          <MainNavWithRole />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -3526,7 +4182,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav view={view} setView={setView} />
+        <MainNavWithRole />
         <header className="bg-white border-b border-slate-200 p-4 sticky top-12 z-20 shadow-sm">
           <div className="max-w-4xl mx-auto flex flex-col gap-4">
             <div className="flex justify-between items-center">
@@ -3724,102 +4380,94 @@ export default function App() {
                 <div className="mt-2 text-[8px] text-slate-400 italic">* Matrix shows total bags/cartons per day for the current month.</div>
               </div>
 
-              <div className="card-clean overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse">
-                <thead>
-                  <tr className="bg-slate-50/50 text-[9px] uppercase font-black text-slate-400 border-b border-slate-100">
-                    <th className="px-4 py-3">Date / OB</th>
-                    <th className="px-4 py-3">Route</th>
-                    <th className="px-4 py-3 text-center">T/V/P</th>
-                    {CATEGORIES.map(cat => <th key={cat} className="px-4 py-3 text-center">{cat}</th>)}
-                    <th className="px-4 py-3 text-right">Total</th>
-                    <th className="px-4 py-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {paginatedHistory.map(h => {
-                    const items = h.order_data || {};
-                    const totals: Record<string, number> = {};
-                    CATEGORIES.forEach(cat => {
-                      totals[cat] = SKUS
-                        .filter(sku => sku.category === cat)
-                        .reduce((sum, sku) => {
-                          const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                          const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                          return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                        }, 0);
-                    });
-                    const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
+              <div className="space-y-4">
+                {groupedHistory.map(group => (
+                  <div key={group.obName} className="card-clean overflow-hidden">
+                    <div className="bg-slate-50 px-4 py-2 border-b border-slate-100 flex justify-between items-center">
+                      <h3 className="text-xs font-black text-seablue uppercase tracking-widest">{group.obName}</h3>
+                      <span className="text-[9px] font-bold text-slate-400 uppercase">{group.entries.length} Entries</span>
+                    </div>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left border-collapse">
+                        <thead>
+                          <tr className="bg-white text-[9px] uppercase font-black text-slate-400 border-b border-slate-100">
+                            <th className="px-4 py-3">Date</th>
+                            <th className="px-4 py-3">Route</th>
+                            <th className="px-4 py-3 text-center">T/V/P</th>
+                            {CATEGORIES.map(cat => <th key={cat} className="px-4 py-3 text-center">{cat}</th>)}
+                            <th className="px-4 py-3 text-right">Total</th>
+                            <th className="px-4 py-3 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-50">
+                          {group.entries.map(h => {
+                            const items = h.order_data || {};
+                            const totals: Record<string, number> = {};
+                            CATEGORIES.forEach(cat => {
+                              totals[cat] = SKUS
+                                .filter(sku => sku.category === cat)
+                                .reduce((sum, sku) => {
+                                  const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                                  const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                                  return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                                }, 0);
+                            });
+                            const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
 
-                    return (
-                      <tr key={h.id} className="hover:bg-slate-50/50 transition-colors group">
-                        <td className="px-4 py-3">
-                          <div className="text-[10px] font-bold text-slate-700">{h.date}</div>
-                          <div className="text-[9px] text-slate-400">{h.order_booker}</div>
-                        </td>
-                        <td className="px-4 py-3 text-[10px] font-medium text-slate-600">{h.route}</td>
-                        <td className="px-4 py-3 text-center text-[10px] text-slate-500">{h.total_shops}/{h.visited_shops}/{h.productive_shops}</td>
-                        {CATEGORIES.map(cat => (
-                          <td key={cat} className="px-4 py-3 text-center font-mono text-[10px]">{totals[cat].toFixed(1)}</td>
-                        ))}
-                        <td className="px-4 py-3 text-right font-black text-seablue text-[10px]">{totalAch.toFixed(2)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <button 
-                            onClick={() => {
-                              const items = h.order_data || {};
-                              const skuDetails = SKUS.map(sku => {
-                                const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                                const totalCtns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
-                                if (totalCtns === 0) return null;
-                                const label = sku.category === 'Kite Glow' || sku.category === 'Burq Action' || sku.category === 'Vero' ? 'Bags' : 'Ctns';
-                                return `${sku.name}: ${totalCtns.toFixed(2)} ${label}`;
-                              }).filter(Boolean).join('\n');
+                            return (
+                              <tr key={h.id} className="hover:bg-slate-50/50 transition-colors group">
+                                <td className="px-4 py-3 text-[10px] font-bold text-slate-700">{h.date}</td>
+                                <td className="px-4 py-3 text-[10px] font-medium text-slate-600">{h.route}</td>
+                                <td className="px-4 py-3 text-center text-[10px] text-slate-500">{h.total_shops}/{h.visited_shops}/{h.productive_shops}</td>
+                                {CATEGORIES.map(cat => (
+                                  <td key={cat} className="px-4 py-3 text-center font-mono text-[10px]">{totals[cat].toFixed(1)}</td>
+                                ))}
+                                <td className="px-4 py-3 text-right font-black text-seablue text-[10px]">{totalAch.toFixed(2)}</td>
+                                <td className="px-4 py-3 text-center">
+                                  <button 
+                                    onClick={() => {
+                                      const items = h.order_data || {};
+                                      const skuDetails = SKUS.map(sku => {
+                                        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                                        const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                                        const totalCtns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+                                        if (totalCtns === 0) return null;
+                                        const label = sku.category === 'Kite Glow' || sku.category === 'Burq Action' || sku.category === 'Vero' ? 'Bags' : 'Ctns';
+                                        return `${sku.name}: ${totalCtns.toFixed(2)} ${label}`;
+                                      }).filter(Boolean).join('\n');
 
-                              const catProdDetails = CATEGORIES.map(cat => {
-                                const prod = h.category_productive_data?.[cat] || 0;
-                                return `*${cat} Prod:* ${prod}`;
-                              }).join('\n');
-
-                      const summary = `*Sales Summary*\n` +
-                                `*${h.date}*\n` +
-                                `*OB:* ${h.order_booker}\n` +
-                                `*Route:* ${h.route}\n` +
-                                `*Shops T/V/P:* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
-                                `------------------\n` +
-                                `*SKU Details:*\n${skuDetails}\n` +
-                                `------------------\n` +
-                                CATEGORIES.map(cat => {
-                                  const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
-                                  return `*${cat}:* ${totals[cat].toFixed(2)} ${label}`;
-                                }).join('\n') +
-                                `\n------------------\n` +
-                                `*Total Achievement:* ${totalAch.toFixed(2)}`;
-                              const encodedMsg = encodeURIComponent(summary);
-                              window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
-                            }}
-                            className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg"
-                          >
-                            <WhatsAppIcon />
-                          </button>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {totalPages > 1 && (
-            <div className="flex justify-center gap-2">
-              <button disabled={historyPage === 1} onClick={() => setHistoryPage(p => p - 1)} className="btn-seablue px-3 py-1 text-xs disabled:opacity-50">Prev</button>
-              <span className="text-xs font-bold flex items-center">Page {historyPage} of {totalPages}</span>
-              <button disabled={historyPage === totalPages} onClick={() => setHistoryPage(p => p + 1)} className="btn-seablue px-3 py-1 text-xs disabled:opacity-50">Next</button>
-            </div>
-          )}
-          </>
+                                      const summary = `*Sales Summary*\n` +
+                                        `*${h.date}*\n` +
+                                        `*OB:* ${h.order_booker}\n` +
+                                        `*Route:* ${h.route}\n` +
+                                        `*Shops T/V/P:* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
+                                        `------------------\n` +
+                                        `*SKU Details:*\n${skuDetails}\n` +
+                                        `------------------\n` +
+                                        CATEGORIES.map(cat => {
+                                          const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
+                                          return `*${cat}:* ${totals[cat].toFixed(2)} ${label}`;
+                                        }).join('\n') +
+                                        `\n------------------\n` +
+                                        `*Total Achievement:* ${totalAch.toFixed(2)}`;
+                                      const encodedMsg = encodeURIComponent(summary);
+                                      window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
+                                    }}
+                                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg"
+                                  >
+                                    <WhatsAppIcon />
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
           )}
         </main>
       </div>
@@ -3841,9 +4489,9 @@ export default function App() {
                 )}
               </div>
               <div>
-                <h1 className="text-sm font-black text-seablue uppercase tracking-tight leading-none">OB Sales</h1>
-                <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">
-                  {lastUpdated ? `Updated: ${lastUpdated}` : 'Secondary Sales'}
+                <h1 className="text-sm font-black text-seablue uppercase tracking-tight leading-none">SalesPulse</h1>
+                <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">
+                  {lastUpdated ? `Updated: ${lastUpdated}` : 'Secondary Sales Intelligence'}
                 </p>
               </div>
             </div>
@@ -4140,11 +4788,16 @@ export default function App() {
       const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
       if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
       
+      const prefix = sku.category === 'Kite Glow' ? 'K' : 
+                     sku.category === 'Burq Action' ? 'B' : 
+                     sku.category === 'Vero' ? 'V' : 
+                     sku.category === 'DWB' ? 'D' : 'M';
+      
       const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
       const totalBags = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
-      const label = sku.category === 'Kite Glow' || sku.category === 'Burq Action' || sku.category === 'Vero' ? 'Bags' : 'Ctns';
+      const label = sku.category === 'Kite Glow' || sku.category === 'Burq Action' || sku.category === 'Vero' ? 'Bags' : 'Ctn';
       
-      return `${sku.name}: ${totalBags.toFixed(2)} ${label}`;
+      return `${prefix}-${sku.name} – ${totalBags.toFixed(1)} ${label}`;
     }).filter(Boolean).join('\n');
 
     const brandTotals = CATEGORIES.map(cat => {
@@ -4154,21 +4807,15 @@ export default function App() {
         const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
         return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
       }, 0);
-      const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
-      return `*${cat}:* ${catTotal.toFixed(2)} ${label}`;
+      const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctn';
+      return `${cat}: ${catTotal.toFixed(1)} ${label}`;
     }).join('\n');
 
-                    const summary = `*Sales Summary*\n` +
-                      `*${lastSubmittedOrder.date}*\n` +
-                      `*OB:* ${lastSubmittedOrder.order_booker || lastSubmittedOrder.orderBooker}\n` +
-                      `*Route:* ${lastSubmittedOrder.route}\n` +
-                      `*Shops T/V/P:* ${lastSubmittedOrder.totalShops}/${lastSubmittedOrder.visitedShops}/${lastSubmittedOrder.productiveShops}\n` +
-                      `------------------\n` +
-                      `*SKU Details:*\n${skuDetails}\n` +
-                      `------------------\n` +
-                      `${brandTotals}\n` +
-                      `------------------\n` +
-                      `*Total Achievement:* ${totalAch.toFixed(2)}`;
+                    const summary = `OB: ${lastSubmittedOrder.order_booker || lastSubmittedOrder.orderBooker}\n` +
+                      `Route: ${lastSubmittedOrder.route}\n` +
+                      `Date: ${lastSubmittedOrder.date}\n\n` +
+                      `SKU Sales:\n${skuDetails}\n\n` +
+                      `Brand Summary:\n${brandTotals}`;
                     
                     const encodedMsg = encodeURIComponent(summary);
                     window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
