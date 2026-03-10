@@ -1261,10 +1261,18 @@ export default function App() {
     setUserRole(role);
     setUserName(name);
     if (contact) setUserContact(contact);
-    if (role === 'TSM') setSelectedTSM(name);
+    if (role === 'TSM') {
+      setSelectedTSM(name);
+      setSelectedStockTSM(name);
+    }
     localStorage.setItem('user_role', role);
     localStorage.setItem('user_name', name);
-    if (contact) localStorage.setItem('user_contact', contact);
+    if (contact) {
+      localStorage.setItem('user_contact', contact);
+      localStorage.setItem('user_id', contact);
+    } else {
+      localStorage.setItem('user_id', name);
+    }
   };
 
   const handleLogout = () => {
@@ -1359,6 +1367,20 @@ export default function App() {
     }
     return defaultState;
   });
+
+  const calculateAchievement = (orderData: any) => {
+    const ach: Record<string, number> = {};
+    CATEGORIES.forEach(cat => {
+      ach[cat] = SKUS
+        .filter(sku => sku.category === cat)
+        .reduce((sum, sku) => {
+          const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+          return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
+        }, 0);
+    });
+    return ach;
+  };
 
   const [isSaving, setIsSaving] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -1809,8 +1831,6 @@ export default function App() {
       console.error(err);
     }
   };
-
-  const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
 
   const syncEverything = async () => {
     setIsSyncingGlobal(true);
@@ -2439,14 +2459,14 @@ export default function App() {
   }, [obAssignments, distributors]);
 
   const filteredOBs = useMemo(() => {
-    const obs = selectedTSM ? obAssignments.filter(ob => ob.tsm === selectedTSM) : [...obAssignments];
+    const obs = selectedTSM ? obAssignments.filter(ob => (ob.tsm || '').toLowerCase() === selectedTSM.toLowerCase()) : [...obAssignments];
     if (selectedTSM) {
       // Add TSM themselves as an option
       obs.unshift({
         name: `*TSM - ${selectedTSM}`,
         contact: `TSM-${selectedTSM}`,
-        town: distributors.find(d => d.tsm === selectedTSM)?.town || '',
-        distributor: distributors.find(d => d.tsm === selectedTSM)?.name || '',
+        town: distributors.find(d => (d.tsm || '').toLowerCase() === selectedTSM.toLowerCase())?.town || '',
+        distributor: distributors.find(d => (d.tsm || '').toLowerCase() === selectedTSM.toLowerCase())?.name || '',
         routes: ['TSM Route'],
         tsm: selectedTSM,
         total_shops: 50
@@ -2680,7 +2700,7 @@ export default function App() {
         
         const totalVisited = obOrders.reduce((sum, h) => sum + (h.visited_shops || 0), 0);
         const totalProductive = obOrders.reduce((sum, h) => sum + (h.productive_shops || 0), 0);
-        const totalShops = obOrders.length * (ob.total_shops || 50);
+        const totalShops = obOrders.length * 50;
 
         const lastEntry = obOrders.length > 0 ? obOrders.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0].date : '-';
         const entryDays = obOrders.length;
@@ -2876,6 +2896,38 @@ export default function App() {
           </div>
 
           {/* Route Weakness Detection - TOP in Stats */}
+          <div className="card-clean p-4">
+            <h3 className="text-sm font-bold mb-4 text-rose-600 uppercase tracking-widest">Route Weakness Detection (Declining Trend - Last 8 Visits)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[10px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                    <th className="py-2">Route</th>
+                    <th className="py-2">OB Name</th>
+                    <th className="py-2 text-center">Last 8 Sales</th>
+                    <th className="py-2 text-right">Recent Ach</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {routeWeakness.map(route => (
+                    <tr key={route.name} className="hover:bg-rose-50/50">
+                      <td className="py-2 font-bold text-slate-700">{route.name}</td>
+                      <td className="py-2 text-slate-500">{route.obName}</td>
+                      <td className="py-2 text-center">
+                        <div className="flex justify-center gap-1">
+                          {route.sales.map((s, i) => (
+                            <div key={i} className={`w-2 h-4 rounded-sm ${s > 0 ? 'bg-rose-400' : 'bg-slate-200'}`} title={`Sale: ${s.toFixed(1)}`}></div>
+                          ))}
+                        </div>
+                      </td>
+                      <td className="py-2 text-right font-black text-rose-600">{route.recentAch.toFixed(1)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="card-clean p-4 md:col-span-2 overflow-hidden">
               <div className="flex justify-between items-center mb-4">
@@ -2964,43 +3016,44 @@ export default function App() {
                 })}
               </div>
             </div>
+          </div>
 
-            <div className="card-clean p-4 md:col-span-2">
-              <h3 className="text-sm font-bold mb-4 text-rose-600 uppercase tracking-widest">Route Weakness Detection (Declining Trend - Last 8 Visits)</h3>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-[10px]">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-slate-400 uppercase">
-                      <th className="py-2">Route</th>
-                      <th className="py-2">OB Name</th>
-                      <th className="py-2 text-center">Last 8 Sales</th>
-                      <th className="py-2 text-right">Recent Ach</th>
+          {/* Brand Target vs Achievement (MTD) - Added here as requested */}
+          <div className="card-clean p-4">
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">Brand Target vs Achievement (MTD)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[10px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                    <th className="py-2">Brand Name</th>
+                    <th className="py-2 text-right">Target (Ctn)</th>
+                    <th className="py-2 text-right">Ach (Ctn)</th>
+                    <th className="py-2 text-right">Ach %</th>
+                    <th className="py-2 text-right">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {chartData.map(d => (
+                    <tr key={d.name} className="hover:bg-slate-50">
+                      <td className="py-2 font-bold text-slate-700">{d.name}</td>
+                      <td className="py-2 text-right font-mono">{d.Target.toFixed(1)}</td>
+                      <td className="py-2 text-right font-mono font-bold text-seablue">{d.MTD.toFixed(1)}</td>
+                      <td className={`py-2 text-right font-black ${Number(d.AchPercent) >= timeGone.percentage ? 'text-emerald-600' : 'text-amber-600'}`}>{d.AchPercent}%</td>
+                      <td className="py-2 text-right">
+                        <span className={`px-1.5 py-0.5 rounded-full font-bold text-[8px] uppercase ${Number(d.AchPercent) >= timeGone.percentage ? 'bg-emerald-100 text-emerald-700' : 'bg-amber-100 text-amber-700'}`}>
+                          {Number(d.AchPercent) >= timeGone.percentage ? 'On Track' : 'Behind'}
+                        </span>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {routeWeakness.map(route => (
-                      <tr key={route.name} className="hover:bg-rose-50/50">
-                        <td className="py-2 font-bold text-slate-700">{route.name}</td>
-                        <td className="py-2 text-slate-500">{route.obName}</td>
-                        <td className="py-2 text-center">
-                          <div className="flex justify-center gap-1">
-                            {route.sales.map((s, i) => (
-                              <div key={i} className={`w-2 h-4 rounded-sm ${s > 0 ? 'bg-rose-400' : 'bg-slate-200'}`} title={`Sale: ${s.toFixed(1)}`}></div>
-                            ))}
-                          </div>
-                        </td>
-                        <td className="py-2 text-right font-black text-rose-600">{route.recentAch.toFixed(1)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="card-clean p-4">
-              <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Brand Wise Achievement</h3>
+              <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Brand Wise Achievement Chart</h3>
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
@@ -3042,10 +3095,106 @@ export default function App() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="card-clean p-4 md:col-span-2">
-              <h3 className="text-sm font-bold mb-4 text-rose-600 uppercase">Critical Alerts (Routes)</h3>
+          {/* TSM Activity Report - Added here as requested */}
+          <div className="card-clean p-4">
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">TSM Activity Report</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[10px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                    <th className="py-2">TSM Name</th>
+                    <th className="py-2 text-center">Total OBs</th>
+                    <th className="py-2 text-center">Active OBs</th>
+                    <th className="py-2 text-center">T/V/P</th>
+                    <th className="py-2 text-right">Achievement</th>
+                    <th className="py-2 text-right">Target</th>
+                    <th className="py-2 text-right">Ach %</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {tsmList.map(tsm => {
+                    const tsmOBs = obAssignments.filter(ob => ob.tsm === tsm);
+                    const tsmOrders = mtdOrders.filter(o => tsmOBs.some(ob => ob.contact === o.ob_contact));
+                    const activeOBs = new Set(tsmOrders.map(o => o.ob_contact)).size;
+                    const totalVisited = tsmOrders.reduce((sum, o) => sum + (o.visited_shops || 0), 0);
+                    const totalProductive = tsmOrders.reduce((sum, o) => sum + (o.productive_shops || 0), 0);
+                    const totalShops = tsmOrders.length * 50;
+                    const tsmAch = tsmOrders.reduce((sum, o) => {
+                      const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
+                      const ach = calculateAchievement(orderData);
+                      return sum + Object.values(ach).reduce((a: number, b: number) => a + b, 0);
+                    }, 0);
+                    const tsmTarget = tsmOBs.reduce((sum, ob) => sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0), 0);
+                    const achPerc = tsmTarget > 0 ? (tsmAch / tsmTarget) * 100 : 0;
 
+                    return (
+                      <tr key={tsm} className="hover:bg-slate-50">
+                        <td className="py-2 font-bold text-slate-700">{tsm}</td>
+                        <td className="py-2 text-center">{tsmOBs.length}</td>
+                        <td className="py-2 text-center">{activeOBs}</td>
+                        <td className="py-2 text-center text-slate-500">{totalShops}/{totalVisited}/{totalProductive}</td>
+                        <td className="py-2 text-right font-mono font-bold text-seablue">{tsmAch.toFixed(1)}</td>
+                        <td className="py-2 text-right font-mono text-slate-400">{tsmTarget.toFixed(1)}</td>
+                        <td className={`py-2 text-right font-black ${achPerc >= timeGone.percentage ? 'text-emerald-600' : 'text-amber-600'}`}>{achPerc.toFixed(0)}%</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="card-clean p-4">
+            <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">Route-to-Route Analysis (MTD)</h3>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-[10px]">
+                <thead>
+                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                    <th className="py-2">Route Name</th>
+                    <th className="py-2">OB Name</th>
+                    <th className="py-2 text-center">T/V/P</th>
+                    {CATEGORIES.map(cat => <th key={cat} className="py-2 text-center">{cat}</th>)}
+                    <th className="py-2 text-right">Achievement</th>
+                    <th className="py-2 text-right">Efficiency</th>
+                    <th className="py-2 text-right">Score</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {routeAnalysis.map(route => (
+                    <tr key={route.name} className="hover:bg-slate-50">
+                      <td className="py-2 font-bold text-slate-700">{route.name}</td>
+                      <td className="py-2 text-slate-500">{route.obName}</td>
+                      <td className="py-2 text-center text-slate-500">{route.shops.t}/{route.shops.v}/{route.shops.p}</td>
+                      {CATEGORIES.map(cat => (
+                        <td key={cat} className="py-2 text-center font-mono">{route.totals[cat].toFixed(1)}</td>
+                      ))}
+                      <td className="py-2 text-right font-mono font-bold text-seablue">{route.ach.toFixed(1)}</td>
+                      <td className="py-2 text-right">
+                        <span className={`px-1.5 py-0.5 rounded-full font-bold ${route.shops.v > 0 && (route.shops.p / route.shops.v) > 0.7 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+                          {route.shops.v > 0 ? ((route.shops.p / route.shops.v) * 100).toFixed(0) : 0}%
+                        </span>
+                      </td>
+                      <td className="py-2 text-right">
+                        <span className={`px-1.5 py-0.5 rounded-full font-bold text-[8px] uppercase ${
+                          route.scoreLabel === 'Excellent' ? 'bg-emerald-100 text-emerald-700' :
+                          route.scoreLabel === 'Good' ? 'bg-blue-100 text-blue-700' :
+                          route.scoreLabel === 'Average' ? 'bg-orange-100 text-orange-700' :
+                          'bg-rose-100 text-rose-700'
+                        }`}>
+                          {route.scoreLabel}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                  {routeAnalysis.length === 0 && (
+                    <tr><td colSpan={5} className="py-8 text-center text-slate-400 italic">No route data available for this month</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="card-clean p-4 md:col-span-2">
               <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">OB Ranking (Brand Wise)</h3>
               <div className="overflow-x-auto">
@@ -3164,58 +3313,6 @@ export default function App() {
               </div>
             </div>
           </div>
-
-
-          <div className="card-clean p-4">
-            <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">Route-to-Route Analysis (MTD)</h3>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-[10px]">
-                <thead>
-                  <tr className="border-b border-slate-100 text-slate-400 uppercase">
-                    <th className="py-2">Route Name</th>
-                    <th className="py-2">OB Name</th>
-                    <th className="py-2 text-center">T/V/P</th>
-                    {CATEGORIES.map(cat => <th key={cat} className="py-2 text-center">{cat}</th>)}
-                    <th className="py-2 text-right">Achievement</th>
-                    <th className="py-2 text-right">Efficiency</th>
-                    <th className="py-2 text-right">Score</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-50">
-                  {routeAnalysis.map(route => (
-                    <tr key={route.name} className="hover:bg-slate-50">
-                      <td className="py-2 font-bold text-slate-700">{route.name}</td>
-                      <td className="py-2 text-slate-500">{route.obName}</td>
-                      <td className="py-2 text-center text-slate-500">{route.shops.t}/{route.shops.v}/{route.shops.p}</td>
-                      {CATEGORIES.map(cat => (
-                        <td key={cat} className="py-2 text-center font-mono">{route.totals[cat].toFixed(1)}</td>
-                      ))}
-                      <td className="py-2 text-right font-mono font-bold text-seablue">{route.ach.toFixed(1)}</td>
-                      <td className="py-2 text-right">
-                        <span className={`px-1.5 py-0.5 rounded-full font-bold ${route.shops.v > 0 && (route.shops.p / route.shops.v) > 0.7 ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-                          {route.shops.v > 0 ? ((route.shops.p / route.shops.v) * 100).toFixed(0) : 0}%
-                        </span>
-                      </td>
-                      <td className="py-2 text-right">
-                        <span className={`px-1.5 py-0.5 rounded-full font-bold text-[8px] uppercase ${
-                          route.scoreLabel === 'Excellent' ? 'bg-emerald-100 text-emerald-700' :
-                          route.scoreLabel === 'Good' ? 'bg-blue-100 text-blue-700' :
-                          route.scoreLabel === 'Average' ? 'bg-orange-100 text-orange-700' :
-                          'bg-rose-100 text-rose-700'
-                        }`}>
-                          {route.scoreLabel}
-                        </span>
-                      </td>
-                    </tr>
-                  ))}
-                  {routeAnalysis.length === 0 && (
-                    <tr><td colSpan={5} className="py-8 text-center text-slate-400 italic">No route data available for this month</td></tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
 
           </>
           )}
@@ -3893,7 +3990,12 @@ export default function App() {
                     </div>
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold text-slate-400 uppercase">Routes (comma separated)</label>
-                      <input type="text" defaultValue={ob.routes.join(", ")} onBlur={async (e) => { const routes = e.target.value.split(",").map(r => r.trim()).filter(r => r); await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, routes }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={ob.routes.join(", ")} onBlur={async (e) => { 
+                        const routes = e.target.value.split(",").map(r => r.trim()).filter(r => r); 
+                        const updatedOb = { ...ob, routes };
+                        setObAssignments(prev => prev.map(a => a.contact === ob.contact ? updatedOb : a));
+                        await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedOb) }); 
+                      }} className="input-clean w-full" />
                     </div>
                   </div>
                   <div className="flex justify-between items-center pt-2 border-t border-slate-50">
@@ -4444,6 +4546,29 @@ export default function App() {
                                         return `${sku.name}: ${totalCtns.toFixed(2)} ${label}`;
                                       }).filter(Boolean).join('\n');
 
+                                      const currentMonth = h.date.slice(0, 7);
+                                      const obMtdOrders = history.filter(o => o.ob_contact === h.ob_contact && o.date.startsWith(currentMonth));
+                                      const mtdBrandSales = CATEGORIES.map(cat => {
+                                        const catSkus = SKUS.filter(s => s.category === cat);
+                                        const mtdTotal = obMtdOrders.reduce((sum, o) => {
+                                          const hData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : o.order_data;
+                                          const hCatTotal = catSkus.reduce((sSum, sku) => {
+                                            const item = hData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                                            const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+                                            return sSum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
+                                          }, 0);
+                                          return sum + hCatTotal;
+                                        }, 0);
+                                        return `${cat}: ${mtdTotal.toFixed(2)}`;
+                                      }).join('\n');
+
+                                      const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
+                                      const mtdTotal = obMtdOrders.reduce((sum, o) => {
+                                        const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
+                                        const ach = calculateAchievement(orderData);
+                                        return sum + Object.values(ach).reduce((a, b) => a + b, 0);
+                                      }, 0);
+
                                       const summary = `*Sales Summary*\n` +
                                         `*${h.date}*\n` +
                                         `*OB:* ${h.order_booker}\n` +
@@ -4457,7 +4582,9 @@ export default function App() {
                                           return `*${cat}:* ${totals[cat].toFixed(2)} ${label}`;
                                         }).join('\n') +
                                         `\n------------------\n` +
-                                        `*Total Achievement:* ${totalAch.toFixed(2)}`;
+                                        `*Total Achievement:* ${totalAch.toFixed(2)}\n\n` +
+                                        `*MTD Sales Brand Wise:*\n${mtdBrandSales}\n` +
+                                        `*Total MTD:* ${mtdTotal.toFixed(2)}`;
                                       const encodedMsg = encodeURIComponent(summary);
                                       window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
                                     }}
