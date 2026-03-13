@@ -53,12 +53,12 @@ import {
   ChevronRight,
   Filter,
   ArrowDownRight,
-  Mail
+  Mail,
+  Key
 } from 'lucide-react';
 import { SKUS, CATEGORIES, OrderState, OrderItem, SKU, OBAssignment } from './types';
 
 const STORAGE_KEY = 'ob_order_draft';
-const ADMIN_PASSWORD = 'admin';
 const LOGO_STORAGE_KEY = 'app_logo_base64';
 
 const getPSTDate = () => {
@@ -75,10 +75,28 @@ const WhatsAppIcon = () => (
   </svg>
 );
 
-const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void }) => {
+const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any }) => {
   const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>('National');
   const [filterValue, setFilterValue] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+
+  const visibleFilterLevels = useMemo(() => {
+    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM' || userRole === 'SC') {
+      return ['National', 'Region', 'TSM', 'Town', 'Distributor', 'OB', 'Route'];
+    } else if (userRole === 'RSM') {
+      return ['Region', 'TSM', 'Town', 'Distributor', 'OB', 'Route'];
+    } else if (userRole === 'TSM') {
+      return ['TSM', 'OB', 'Route'];
+    } else {
+      return ['OB', 'Route'];
+    }
+  }, [userRole]);
+
+  useEffect(() => {
+    if (!visibleFilterLevels.includes(filterLevel)) {
+      setFilterLevel(visibleFilterLevels[0] as any);
+    }
+  }, [visibleFilterLevels]);
 
   const brands = ["Kite Glow", "Vero", "Burq Action"];
 
@@ -778,53 +796,44 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   );
 };
 
-const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v: any) => void, role: string | null, onLogout: () => void }) => (
-  <nav className="bg-white border-b border-slate-200 px-2 h-10 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto">
-    <button onClick={() => setView('entry')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'entry' ? 'text-seablue' : 'text-slate-400'}`}>
-      <ClipboardList className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">Entry</span>
-      {view === 'entry' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
-    </button>
-    <button onClick={() => setView('history')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'history' ? 'text-seablue' : 'text-slate-400'}`}>
-      <History className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">History</span>
-      {view === 'history' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
-    </button>
-    <button onClick={() => setView('reports')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'reports' ? 'text-seablue' : 'text-slate-400'}`}>
-      <Filter className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">Reports</span>
-      {view === 'reports' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
-    </button>
-    <button onClick={() => setView('stocks')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'stocks' ? 'text-seablue' : 'text-slate-400'}`}>
-      <Store className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">Stocks</span>
-      {view === 'stocks' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
-    </button>
-    <button onClick={() => setView('dashboard')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'dashboard' ? 'text-seablue' : 'text-slate-400'}`}>
-      <LayoutDashboard className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">Stats</span>
-      {view === 'dashboard' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
-    </button>
-    <button onClick={() => setView('national')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'national' ? 'text-seablue' : 'text-slate-400'}`}>
-      <Waves className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">National</span>
-      {view === 'national' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
-    </button>
-    {role === 'Admin' && (
-      <button onClick={() => setView('admin')} className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[50px] ${view === 'admin' ? 'text-seablue' : 'text-slate-400'}`}>
-        <Settings className="w-4 h-4" />
-        <span className="text-[7px] font-black uppercase tracking-tighter">Admin</span>
-        {view === 'admin' && <motion.div layoutId="nav-indicator" className="h-0.5 w-3 bg-seablue rounded-full" />}
-      </button>
-    )}
-    <button onClick={onLogout} className="p-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-rose-500 transition-colors min-w-[50px]">
-      <Lock className="w-4 h-4" />
-      <span className="text-[7px] font-black uppercase tracking-tighter">Exit</span>
-    </button>
-  </nav>
-);
+const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v: any) => void, role: string | null, onLogout: () => void }) => {
+  const tabs = [
+    { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'SC'] },
+    { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'dashboard', label: 'Stats & Reports', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'national', label: 'National', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director'] },
+    { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
+  ];
 
-const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES }: any) => {
+  const visibleTabs = tabs.filter(tab => !role || tab.roles.includes(role));
+
+  return (
+    <nav className="bg-white border-b border-slate-200 px-2 h-12 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar">
+      {visibleTabs.map((tab) => (
+        <button
+          key={tab.id}
+          onClick={() => setView(tab.id as any)}
+          className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[60px] ${
+            view === tab.id ? 'text-seablue' : 'text-slate-400 hover:text-slate-600'
+          }`}
+        >
+          <tab.icon className="w-4 h-4" />
+          <span className="text-[8px] font-black uppercase tracking-tighter">{tab.label}</span>
+          {view === tab.id && (
+            <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />
+          )}
+        </button>
+      ))}
+      <button onClick={onLogout} className="p-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-red-500 transition-colors min-w-[60px]">
+        <EyeOff className="w-4 h-4" />
+        <span className="text-[8px] font-black uppercase tracking-tighter">Logout</span>
+      </button>
+    </nav>
+  );
+};
+
+const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName }: any) => {
   const currentMonth = getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
@@ -1148,104 +1157,97 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
   );
 };
 
-const LoginScreen = ({ handleLogin, ADMIN_PASSWORD }: any) => {
-  const [tsmName, setTsmName] = useState('');
-  const [tsmGmail, setTsmGmail] = useState('');
-  const [isAdminMode, setIsAdminMode] = useState(false);
+const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => {
+  const [email, setEmail] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
-  const onTsmLogin = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (tsmName.trim() && tsmGmail.trim()) {
-      handleLogin('TSM', tsmName.trim(), tsmGmail.trim());
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        onLogin(data.token, data.user);
+      } else {
+        setError(data.error || 'Login failed');
+      }
+    } catch (err) {
+      setError('Connection error');
+    } finally {
+      setIsLoading(false);
     }
   };
 
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4">
-      <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="bg-white rounded-3xl p-8 w-full max-w-md shadow-2xl space-y-8">
-        <div className="text-center space-y-2">
-          <div className="w-16 h-16 bg-seablue rounded-2xl flex items-center justify-center text-white mx-auto shadow-lg shadow-blue-200">
-            <Waves className="w-10 h-10" />
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-200"
+      >
+        <div className="flex flex-col items-center mb-8">
+          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-200">
+            <Waves className="text-white w-8 h-8" />
           </div>
-          <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">SalesPulse</h1>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest italic">TSM Performance & Field Intelligence</p>
+          <h1 className="text-2xl font-bold text-slate-900">SalesPulse</h1>
+          <p className="text-slate-500 text-sm mt-1">Enter your Gmail to continue</p>
         </div>
 
-        {!isAdminMode ? (
-          <form onSubmit={onTsmLogin} className="space-y-5">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">TSM Name</label>
-              <div className="relative">
-                <Users className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="text" 
-                  required
-                  placeholder="Enter your full name"
-                  value={tsmName}
-                  onChange={(e) => setTsmName(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-slate-100 focus:border-seablue focus:outline-none text-sm font-bold text-slate-700 bg-slate-50 transition-all"
-                />
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Gmail Address</label>
-              <div className="relative">
-                <Mail className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input 
-                  type="email" 
-                  required
-                  placeholder="yourname@gmail.com"
-                  value={tsmGmail}
-                  onChange={(e) => setTsmGmail(e.target.value)}
-                  className="w-full pl-12 pr-4 py-4 rounded-2xl border-2 border-slate-100 focus:border-seablue focus:outline-none text-sm font-bold text-slate-700 bg-slate-50 transition-all"
-                />
-              </div>
-            </div>
-
-            <button 
-              type="submit"
-              className="w-full py-4 bg-seablue text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg shadow-blue-100 hover:bg-seablue-dark transition-all active:scale-[0.98]"
-            >
-              Start Session
-            </button>
-
-            <button 
-              type="button"
-              onClick={() => setIsAdminMode(true)}
-              className="w-full text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-seablue transition-colors"
-            >
-              Admin Access
-            </button>
-          </form>
-        ) : (
-          <div className="space-y-5">
-            <div className="space-y-2">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Admin Password</label>
-              <input 
-                type="password" 
-                autoFocus
-                placeholder="••••••••"
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const pass = (e.target as HTMLInputElement).value;
-                    if (pass === ADMIN_PASSWORD) handleLogin('Admin', 'Administrator');
-                    else alert('Invalid Password');
-                  }
-                }}
-                className="w-full p-4 rounded-2xl border-2 border-slate-100 focus:border-seablue focus:outline-none text-sm font-bold text-slate-700 bg-slate-50 transition-all"
+        <form onSubmit={handleSubmit} className="space-y-6">
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Gmail Address</label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+              <input
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                placeholder="example@gmail.com"
+                required
               />
             </div>
-            <button 
-              onClick={() => setIsAdminMode(false)}
-              className="w-full text-[10px] font-black text-slate-300 uppercase tracking-widest hover:text-seablue transition-colors"
-            >
-              Back to TSM Login
-            </button>
           </div>
-        )}
 
-        <p className="text-center text-[8px] font-bold text-slate-300 uppercase tracking-widest">v2.6.0 • TSM Intelligence App</p>
+          {error && (
+            <motion.div 
+              initial={{ opacity: 0, x: -10 }}
+              animate={{ opacity: 1, x: 0 }}
+              className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2 text-red-600 text-sm"
+            >
+              <AlertCircle className="w-4 h-4" />
+              {error}
+            </motion.div>
+          )}
+
+          <button
+            type="submit"
+            disabled={isLoading}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <Loader2 className="w-5 h-5 animate-spin" />
+            ) : (
+              <>
+                Continue to App
+                <ChevronRight className="w-5 h-5" />
+              </>
+            )}
+          </button>
+        </form>
+
+        <div className="mt-8 pt-6 border-t border-slate-100 text-center">
+          <p className="text-xs text-slate-400">
+            Authorized Personnel Only • SalesPulse v2.0
+          </p>
+        </div>
       </motion.div>
     </div>
   );
@@ -1253,36 +1255,67 @@ const LoginScreen = ({ handleLogin, ADMIN_PASSWORD }: any) => {
 
 export default function App() {
   const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports'>('entry');
-  const [userRole, setUserRole] = useState<'Admin' | 'TSM' | 'OB' | null>(() => localStorage.getItem('user_role') as any);
-  const [userName, setUserName] = useState<string | null>(() => localStorage.getItem('user_name'));
-  const [userContact, setUserContact] = useState<string | null>(() => localStorage.getItem('user_contact'));
+  const [token, setToken] = useState<string | null>(() => {
+    const saved = localStorage.getItem('auth_token');
+    return (saved === 'null' || !saved) ? null : saved;
+  });
+  const [user, setUser] = useState<any | null>(() => {
+    const saved = localStorage.getItem('user_data');
+    try { return saved ? JSON.parse(saved) : null; } catch(e) { return null; }
+  });
+  const [userRole, setUserRole] = useState<'Super Admin' | 'Admin' | 'TSM' | 'OB' | 'Director' | 'NSM' | 'RSM' | 'SC' | null>(() => user?.role || null);
+  const [userName, setUserName] = useState<string | null>(() => user?.name || null);
+  const [userContact, setUserContact] = useState<string | null>(() => user?.contact || null);
+  const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
 
-  const handleLogin = (role: 'Admin' | 'TSM' | 'OB', name: string, contact?: string) => {
-    setUserRole(role);
-    setUserName(name);
-    if (contact) setUserContact(contact);
-    if (role === 'TSM') {
-      setSelectedTSM(name);
-      setSelectedStockTSM(name);
+  const handleLogin = (token: string, userData: any) => {
+    setToken(token);
+    setUser(userData);
+    setUserRole(userData.role);
+    setUserName(userData.name);
+    setUserContact(userData.contact);
+    setUserEmail(userData.email);
+    localStorage.setItem('auth_token', token);
+    localStorage.setItem('user_data', JSON.stringify(userData));
+    
+    if (userData.role === 'TSM') {
+      setSelectedTSM(userData.name);
+      setSelectedStockTSM(userData.name);
     }
-    localStorage.setItem('user_role', role);
-    localStorage.setItem('user_name', name);
-    if (contact) {
-      localStorage.setItem('user_contact', contact);
-      localStorage.setItem('user_id', contact);
-    } else {
-      localStorage.setItem('user_id', name);
+
+    if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'].includes(userData.role)) {
+      setView('dashboard');
     }
   };
 
   const handleLogout = () => {
+    setToken(null);
+    setUser(null);
     setUserRole(null);
     setUserName(null);
     setUserContact(null);
-    setSelectedTSM('');
-    localStorage.removeItem('user_role');
-    localStorage.removeItem('user_name');
-    localStorage.removeItem('user_contact');
+    setUserEmail(null);
+    localStorage.clear();
+  };
+
+  const apiFetch = async (url: string, options: any = {}) => {
+    if (!token || token === 'null') {
+      throw new Error("No authentication token found");
+    }
+    const headers = {
+      ...options.headers,
+      'Authorization': `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    };
+    const response = await fetch(url, { ...options, headers });
+    if (response.status === 401 || response.status === 403) {
+      const errorMsg = response.status === 401 ? "Session expired. Please login again." : "Access denied. You don't have permission for this action.";
+      setMessage({ text: errorMsg, type: 'error' });
+      handleLogout();
+      setTimeout(() => setMessage(null), 5000);
+      throw new Error(errorMsg);
+    }
+    return response;
   };
   const [history, setHistory] = useState<any[]>([]);
   const [hierarchy, setHierarchy] = useState<any[]>([]);
@@ -1303,8 +1336,6 @@ export default function App() {
   const [appConfig, setAppConfig] = useState<Record<string, string>>({ total_working_days: '25' });
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [stockHistory, setStockHistory] = useState<any[]>([]);
-  const [adminAuthenticated, setAdminAuthenticated] = useState(false);
-  const [adminPassInput, setAdminPassInput] = useState('');
   const [selectedTSM, setSelectedTSM] = useState<string>(() => {
     const role = localStorage.getItem('user_role');
     const name = localStorage.getItem('user_name');
@@ -1471,7 +1502,7 @@ export default function App() {
 
   const checkDuplicate = async (date: string, obContact: string) => {
     try {
-      const res = await fetch(`/api/check-duplicate?date=${date}&ob_contact=${obContact}`);
+      const res = await apiFetch(`/api/check-duplicate?date=${date}&ob_contact=${obContact}`);
       const data = await res.json();
       return data.exists;
     } catch (e) {
@@ -1482,7 +1513,7 @@ export default function App() {
   const fetchDailyStatus = async (date: string) => {
     setIsLoadingDailyStatus(true);
     try {
-      const res = await fetch(`/api/daily-status?date=${date}`);
+      const res = await apiFetch(`/api/daily-status?date=${date}`);
       if (res.ok) {
         const data = await res.json();
         setDailyStatus(data);
@@ -1568,11 +1599,12 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!token || token === 'null') return;
     if (order.obContact) {
       fetchTargetsForOB(order.obContact);
       fetchMTDForOB(order.obContact, order.date);
     }
-  }, [order.obContact, order.date]);
+  }, [order.obContact, order.date, token]);
 
   const handleTargetChange = async (category: string, value: number) => {
     setOrder(prev => ({
@@ -1583,9 +1615,8 @@ export default function App() {
     // Persist to database if OB is selected
     if (order.obContact) {
       try {
-        await fetch('/api/admin/targets', {
+        await apiFetch('/api/admin/targets', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             obContact: order.obContact,
             brandName: category,
@@ -1642,9 +1673,8 @@ export default function App() {
   const saveDraft = async () => {
     setIsSaving(true);
     try {
-      const response = await fetch('/api/draft', {
+      const response = await apiFetch('/api/draft', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id: 'current_draft', data: order })
       });
       if (response.ok) setMessage({ text: 'Draft saved', type: 'success' });
@@ -1720,9 +1750,8 @@ export default function App() {
     }
 
     try {
-      const response = await fetch('/api/submit', {
+      const response = await apiFetch('/api/submit', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           data: { 
             ...order,
@@ -1769,7 +1798,7 @@ export default function App() {
         if (historyFilters.to) params.append('to', historyFilters.to);
       }
 
-      const response = await fetch(`/api/orders?${params.toString()}`);
+      const response = await apiFetch(`/api/orders?${params.toString()}`);
       if (response.ok) {
         const data = await response.json();
         if (Array.isArray(data)) {
@@ -1822,9 +1851,8 @@ export default function App() {
   const updateConfig = async (key: string, value: string) => {
     setAppConfig(prev => ({ ...prev, [key]: value }));
     try {
-      await fetch('/api/admin/config', {
+      await apiFetch('/api/admin/config', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ key, value })
       });
     } catch (err) {
@@ -1835,7 +1863,7 @@ export default function App() {
   const syncEverything = async () => {
     setIsSyncingGlobal(true);
     try {
-      const res = await fetch('/api/admin/master-sync', { method: 'POST' });
+      const res = await apiFetch('/api/admin/master-sync', { method: 'POST' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Sync failed');
       
@@ -1853,11 +1881,12 @@ export default function App() {
   };
 
   useEffect(() => {
-    // Auto-sync on mount if config is available
-    if (appConfig.google_spreadsheet_id && !isSyncingGlobal) {
+    if (!token || token === 'null') return;
+    // Auto-sync on mount if config is available - ONLY FOR ADMINS to prevent 403 logout
+    if ((userRole === 'Admin' || userRole === 'Super Admin') && appConfig.google_spreadsheet_id && !isSyncingGlobal) {
       syncEverything();
     }
-  }, [appConfig.google_spreadsheet_id]);
+  }, [appConfig.google_spreadsheet_id, token, userRole]);
 
   // Expose to window for NationalDashboard
   useEffect(() => {
@@ -1866,29 +1895,152 @@ export default function App() {
   }, [syncEverything]);
 
   useEffect(() => {
+    if (!token || token === 'null') return;
     if (view === 'national') {
       fetchNationalData();
     }
-  }, [view]);
+  }, [view, token]);
+
+  const [users, setUsers] = useState<any[]>([]);
+  const [isLoadingUsers, setIsLoadingUsers] = useState(false);
+  const [isRegisteringUser, setIsRegisteringUser] = useState(false);
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '' });
+
+  const fetchUsers = async () => {
+    if (!token || token === 'null') return;
+    setIsLoadingUsers(true);
+    try {
+      const res = await apiFetch('/api/admin/users');
+      if (res.ok) setUsers(await res.json());
+    } catch (err) { console.error(err); }
+    finally { setIsLoadingUsers(false); }
+  };
+
+  const handleRegisterUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUser.username || !newUser.password || !newUser.name) {
+      setMessage({ text: "Username, Password and Name are required", type: 'error' });
+      return;
+    }
+    setIsRegisteringUser(true);
+    try {
+      const res = await apiFetch('/api/auth/register', {
+        method: 'POST',
+        body: JSON.stringify(newUser)
+      });
+      if (res.ok) {
+        setMessage({ text: "User registered successfully", type: 'success' });
+        setNewUser({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '' });
+        fetchUsers();
+      } else {
+        const data = await res.json();
+        throw new Error(data.error || "Registration failed");
+      }
+    } catch (err: any) {
+      setMessage({ text: err.message, type: 'error' });
+    } finally {
+      setIsRegisteringUser(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const handleDeleteUser = async (id: number) => {
+    if (!window.confirm("Are you sure you want to delete this user?")) return;
+    try {
+      const res = await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setMessage({ text: "User deleted", type: 'success' });
+        fetchUsers();
+      }
+    } catch (err) { console.error(err); }
+    finally { setTimeout(() => setMessage(null), 3000); }
+  };
+
+  const autoGenerateUsersFromTeam = async () => {
+    if (!window.confirm("This will create login accounts for all OBs and TSMs who don't have one. Default password will be '123456'. Continue?")) return;
+    
+    setIsLoadingAdmin(true);
+    let count = 0;
+    try {
+      // 1. Get all unique TSMs
+      const tsms = Array.from(new Set(obAssignments.map(ob => ob.tsm).filter(Boolean))) as string[];
+      
+      // 2. Combine with OBs
+      const teamToRegister = [
+        ...tsms.map(name => ({ name, contact: `TSM-${name.replace(/\s+/g, '-')}`, role: 'TSM', town: '', region: '' })),
+        ...obAssignments.map(ob => ({ name: ob.name, contact: ob.contact, role: 'OB', town: ob.town, region: ob.region }))
+      ];
+
+      for (const member of teamToRegister) {
+        // Check if user already exists (by contact or username)
+        const exists = users.some(u => u.contact === member.contact || u.username === member.contact);
+        if (!exists) {
+          await apiFetch('/api/auth/register', {
+            method: 'POST',
+            body: JSON.stringify({
+              username: member.contact, // Use contact ID as username
+              password: 'password123', // Default password
+              role: member.role,
+              name: member.name,
+              contact: member.contact,
+              region: member.region || '',
+              town: member.town || ''
+            })
+          });
+          count++;
+        }
+      }
+      setMessage({ text: `Successfully created ${count} user accounts!`, type: 'success' });
+      fetchUsers();
+    } catch (err) {
+      setMessage({ text: "Failed to auto-generate users", type: 'error' });
+    } finally {
+      setIsLoadingAdmin(false);
+      setTimeout(() => setMessage(null), 5000);
+    }
+  };
 
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
-      const [obsRes, distsRes, configRes, googleRes, stocksRes, hierarchyRes] = await Promise.all([
-        fetch('/api/admin/obs'),
-        fetch('/api/admin/distributors'),
-        fetch('/api/admin/config'),
-        fetch('/api/google/status'),
-        fetch('/api/stocks'),
-        fetch('/api/admin/hierarchy')
-      ]);
+      const isAdmin = userRole === 'Admin' || userRole === 'Super Admin';
+      const isStaff = ['Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'].includes(userRole || '');
       
-      if (obsRes.ok) setObAssignments(await obsRes.json());
-      if (distsRes.ok) setDistributors(await distsRes.json());
-      if (configRes.ok) setAppConfig(await configRes.json());
-      if (googleRes.ok) setGoogleStatus(await googleRes.json());
-      if (stocksRes.ok) setStockHistory(await stocksRes.json());
-      if (hierarchyRes.ok) setHierarchy(await hierarchyRes.json());
+      const requests = [
+        apiFetch('/api/admin/obs'),
+        apiFetch('/api/stocks'),
+      ];
+
+      if (isStaff) {
+        requests.push(apiFetch('/api/admin/distributors'));
+        requests.push(apiFetch('/api/admin/config'));
+        requests.push(apiFetch('/api/admin/hierarchy'));
+      }
+      
+      if (isAdmin) {
+        requests.push(apiFetch('/api/google/status'));
+      }
+
+      const results = await Promise.all(requests);
+      
+      // Map results back to states
+      if (results[0].ok) setObAssignments(await results[0].json());
+      if (results[1].ok) setStockHistory(await results[1].json());
+      
+      let nextIdx = 2;
+      if (isStaff) {
+        if (results[nextIdx]?.ok) setDistributors(await results[nextIdx].json());
+        nextIdx++;
+        if (results[nextIdx]?.ok) setAppConfig(await results[nextIdx].json());
+        nextIdx++;
+        if (results[nextIdx]?.ok) setHierarchy(await results[nextIdx].json());
+        nextIdx++;
+      }
+      
+      if (isAdmin) {
+        if (results[nextIdx]?.ok) setGoogleStatus(await results[nextIdx].json());
+        nextIdx++;
+      }
     } catch (err) { console.error(err); }
     finally { setIsLoadingAdmin(false); }
   };
@@ -1896,8 +2048,7 @@ export default function App() {
   const fetchNationalData = async () => {
     setIsLoadingNational(true);
     try {
-      const requesterId = localStorage.getItem('user_id') || 'ADMIN';
-      const res = await fetch(`/api/national/stats?requesterId=${requesterId}`);
+      const res = await apiFetch(`/api/national/stats`);
       if (res.ok) {
         const data = await res.json();
         setNationalStats(data.stats || []);
@@ -1913,7 +2064,7 @@ export default function App() {
   const fetchTargetsForOB = async (contact: string) => {
     try {
       const currentMonth = getPSTDate().slice(0, 7);
-      const res = await fetch(`/api/admin/targets/${contact}?month=${currentMonth}`);
+      const res = await apiFetch(`/api/admin/targets/${contact}?month=${currentMonth}`);
       if (res.ok) {
         const targets = await res.json();
         const targetMap: Record<string, number> = {};
@@ -1930,7 +2081,7 @@ export default function App() {
       const monthStr = targetDate.slice(0, 7); // YYYY-MM
       
       // Fetch only relevant orders for this OB and month
-      const res = await fetch(`/api/orders?ob_contact=${contact}&from=${monthStr}-01&to=${monthStr}-31`);
+      const res = await apiFetch(`/api/orders?ob_contact=${contact}&from=${monthStr}-01&to=${monthStr}-31`);
       if (res.ok) {
         const obOrders = await res.json();
         
@@ -1959,7 +2110,7 @@ export default function App() {
   const fetchTargetsForOBEdit = async (contact: string, month?: string) => {
     try {
       const m = month || targetMonth || getPSTDate().slice(0, 7);
-      const res = await fetch(`/api/admin/targets/${contact}?month=${m}`);
+      const res = await apiFetch(`/api/admin/targets/${contact}?month=${m}`);
       if (res.ok) {
         const targets = await res.json();
         const targetMap: Record<string, number> = {};
@@ -1973,32 +2124,38 @@ export default function App() {
     const targetCtn = parseFloat(value) || 0;
     setObTargetsEdit(prev => ({ ...prev, [brandName]: targetCtn }));
     try {
-      await fetch('/api/admin/targets', {
+      await apiFetch('/api/admin/targets', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ obContact, brandName, targetCtn, month: targetMonth })
       });
     } catch (err) { console.error(err); }
   };
 
   useEffect(() => {
-    fetchAdminData();
+    if (!token || token === 'null') return;
+    if (['Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'].includes(userRole || '')) {
+      fetchAdminData();
+      if (userRole === 'Admin' || userRole === 'Super Admin') {
+        fetchUsers();
+      }
+    }
     fetchHistory();
     
     // Auto-refresh every 2 minutes to keep stats updated from other team members
     const interval = setInterval(() => {
       if (view === 'dashboard' || view === 'history' || view === 'admin') {
         fetchHistory(view === 'dashboard' || view === 'admin');
-        if (view === 'admin' && adminAuthenticated) {
+        if (view === 'admin' && (userRole === 'Admin' || userRole === 'Super Admin')) {
           fetchDailyStatus(new Date().toISOString().split('T')[0]);
         }
       }
     }, 120000);
 
     return () => clearInterval(interval);
-  }, [view, adminAuthenticated]);
+  }, [view, userRole, token]);
 
   useEffect(() => {
+    if (!token || token === 'null') return;
     const handleMessage = (event: MessageEvent) => {
       if (event.data?.type === 'GOOGLE_AUTH_SUCCESS') {
         fetchAdminData();
@@ -2008,11 +2165,11 @@ export default function App() {
     };
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
-  }, []);
+  }, [token]);
 
   const connectGoogle = async () => {
     try {
-      const res = await fetch('/api/auth/google/url');
+      const res = await apiFetch('/api/auth/google/url');
       const { url } = await res.json();
       window.open(url, 'google_auth', 'width=600,height=700');
     } catch (err) {
@@ -2025,7 +2182,7 @@ export default function App() {
     try {
       // Try Service Account sync first if configured
       if (appConfig.google_spreadsheet_id && appConfig.google_private_key) {
-        const res = await fetch('/api/admin/sync-sheets', { method: 'POST' });
+        const res = await apiFetch('/api/admin/sync-sheets', { method: 'POST' });
         const data = await res.json();
         if (res.ok) {
           setMessage({ text: 'Synced to Google Sheets (Service Account)!', type: 'success' });
@@ -2034,7 +2191,7 @@ export default function App() {
       }
 
       // Fallback to OAuth2 sync
-      const res = await fetch('/api/google/sync', { method: 'POST' });
+      const res = await apiFetch('/api/google/sync', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
         setGoogleStatus(prev => ({ ...prev, spreadsheetId: data.spreadsheetId }));
@@ -2105,9 +2262,8 @@ export default function App() {
         setMessage({ text: `Uploading ${dists.length} records...`, type: 'info' });
 
         try {
-          const res = await fetch('/api/admin/distributors/bulk-upload', {
+          const res = await apiFetch('/api/admin/distributors/bulk-upload', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ distributors: dists, clearExisting })
           });
           const data = await res.json();
@@ -2188,9 +2344,8 @@ export default function App() {
         setMessage({ text: `Uploading ${hierarchyData.length} hierarchy records...`, type: 'info' });
 
         try {
-          const res = await fetch('/api/admin/hierarchy/bulk-upload', {
+          const res = await apiFetch('/api/admin/hierarchy/bulk-upload', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ hierarchy: hierarchyData, clearExisting })
           });
           const data = await res.json();
@@ -2242,9 +2397,8 @@ export default function App() {
           
           setMessage({ text: `Uploading ${targets.length} targets for ${targetMonth}...`, type: 'info' });
           try {
-            const res = await fetch('/api/admin/targets/bulk', {
+            const res = await apiFetch('/api/admin/targets/bulk', {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ targets, month: targetMonth })
             });
             if (res.ok) {
@@ -2297,9 +2451,8 @@ export default function App() {
         const contact = `TSM-${(tsm as string).replace(/\s+/g, '-')}`;
         // Find a sample assignment for this TSM to get town/distributor
         const sample = obAssignments.find(ob => ob.tsm === tsm);
-        await fetch('/api/admin/obs', {
+        await apiFetch('/api/admin/obs', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             name: `${tsm} (TSM)`,
             contact: contact,
@@ -2392,9 +2545,8 @@ export default function App() {
         setMessage({ text: `Uploading ${team.length} records...`, type: 'info' });
 
         try {
-          const res = await fetch('/api/admin/bulk-upload', {
+          const res = await apiFetch('/api/admin/bulk-upload', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ team, clearExisting })
           });
           const data = await res.json();
@@ -2491,7 +2643,7 @@ export default function App() {
   const resetDatabase = async () => {
     if (window.confirm("WARNING: This will delete ALL history (submitted orders and drafts). Continue?")) {
       try {
-        const res = await fetch('/api/admin/reset', { method: 'POST' });
+        const res = await apiFetch('/api/admin/reset', { method: 'POST' });
         if (res.ok) {
           setMessage({ text: 'History Cleared', type: 'success' });
           fetchHistory();
@@ -2504,7 +2656,7 @@ export default function App() {
   const reseedTeam = async () => {
     if (window.confirm("This will replace all current OB assignments with the new team structure. Continue?")) {
       try {
-        const res = await fetch('/api/admin/reseed', { method: 'POST' });
+        const res = await apiFetch('/api/admin/reseed', { method: 'POST' });
         if (res.ok) {
           setMessage({ text: 'Team Re-seeded!', type: 'success' });
           fetchAdminData();
@@ -2533,43 +2685,10 @@ export default function App() {
     }
   };
 
-  if (!userRole) {
-    return <LoginScreen handleLogin={handleLogin} ADMIN_PASSWORD={ADMIN_PASSWORD} />;
-  }
-
   const MainNavWithRole = () => <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />;
 
-  if (view === 'reports') {
-    return (
-      <div className="min-h-screen bg-slate-50 pb-40">
-        <MainNavWithRole />
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
-          <div className="max-w-6xl mx-auto px-4 py-4 flex justify-between items-center">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-seablue rounded-xl flex items-center justify-center text-white">
-                <Filter className="w-6 h-6" />
-              </div>
-              <div>
-                <h1 className="text-xl font-black text-seablue uppercase tracking-tight">Intelligence Reports</h1>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Data Currency & Performance Analysis</p>
-              </div>
-            </div>
-          </div>
-        </header>
-
-        <main className="max-w-6xl mx-auto px-4 py-6">
-          <ReportsView 
-            history={history} 
-            obAssignments={obAssignments} 
-            tsmList={tsmList} 
-            appConfig={appConfig} 
-            getPSTDate={getPSTDate} 
-            SKUS={SKUS} 
-            CATEGORIES={CATEGORIES} 
-          />
-        </main>
-      </div>
-    );
+  if (!token || token === 'null') {
+    return <Login onLogin={handleLogin} />;
   }
 
   if (view === 'dashboard') {
@@ -2891,7 +3010,7 @@ export default function App() {
                   return tgt > 0 ? ((ach / tgt) * 100).toFixed(0) : 0;
                 })()}%
               </div>
-              <div className="text-[8px] font-bold mt-1 text-slate-400 uppercase">vs {userRole === 'Admin' ? 'National' : 'My Team'} Target</div>
+              <div className="text-[8px] font-bold mt-1 text-slate-400 uppercase">vs {(userRole === 'Admin' || userRole === 'Super Admin') ? 'National' : 'My Team'} Target</div>
             </div>
           </div>
 
@@ -2931,7 +3050,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             <div className="card-clean p-4 md:col-span-2 overflow-hidden">
               <div className="flex justify-between items-center mb-4">
-                <h3 className="text-sm font-bold text-seablue uppercase tracking-widest">{userRole === 'Admin' ? 'National' : 'My Team'} OB Performance (MTD)</h3>
+                <h3 className="text-sm font-bold text-seablue uppercase tracking-widest">{(userRole === 'Admin' || userRole === 'Super Admin') ? 'National' : 'My Team'} OB Performance (MTD)</h3>
                 <span className="text-[10px] font-bold bg-seablue/10 text-seablue px-2 py-0.5 rounded-full">{obAnalysis.length} OBs</span>
               </div>
               <div className="overflow-x-auto -mx-4 px-4">
@@ -2988,7 +3107,7 @@ export default function App() {
             </div>
 
             <div className="card-clean p-4">
-              <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">{userRole === 'Admin' ? 'National' : 'My Team'} OB Submission Status</h3>
+              <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">{(userRole === 'Admin' || userRole === 'Super Admin') ? 'National' : 'My Team'} OB Submission Status</h3>
               <div className="space-y-3">
                 {filteredOBAssignments.map(ob => {
                   const obOrders = mtdOrders.filter(o => o.ob_contact === ob.contact);
@@ -3211,7 +3330,7 @@ export default function App() {
                       <tr key={ob.contact} className="hover:bg-slate-50">
                         <td className="py-2 font-bold text-slate-700">
                           <span className="text-slate-300 mr-1">{idx + 1}.</span>
-                          {ob.name}
+                          {ob.name} <span className="text-[8px] text-slate-400">({ob.contact})</span>
                         </td>
                         {CATEGORIES.map(cat => (
                           <td key={cat} className="py-2 text-center font-mono">{ob.totals[cat].toFixed(1)}</td>
@@ -3244,7 +3363,7 @@ export default function App() {
                         <tr key={ob.contact} className="hover:bg-rose-50/30">
                           <td className="py-2 font-bold text-slate-700">
                             <span className="text-slate-300 mr-1">{obRanking.length - idx}.</span>
-                            {ob.name}
+                            {ob.name} <span className="text-[8px] text-slate-400">({ob.contact})</span>
                           </td>
                           <td className="py-2 text-slate-500">{assignment?.tsm}</td>
                           <td className={`py-2 text-right font-bold ${achPerc < timeGone.percentage ? 'text-rose-600' : 'text-amber-600'}`}>
@@ -3314,6 +3433,73 @@ export default function App() {
             </div>
           </div>
 
+          {/* Reports Section Merged into Stats */}
+          {(userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'RSM' || userRole === 'NSM' || userRole === 'Director' || userRole === 'SC') && (
+            <div className="mt-8 space-y-6">
+              <div className="flex items-center gap-3 px-4">
+                <div className="h-px flex-1 bg-slate-200"></div>
+                <h2 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Intelligence Reports</h2>
+                <div className="h-px flex-1 bg-slate-200"></div>
+              </div>
+              
+              <ReportsView 
+                history={history} 
+                obAssignments={obAssignments} 
+                tsmList={tsmList} 
+                appConfig={appConfig} 
+                getPSTDate={() => new Date().toISOString().split('T')[0]} 
+                SKUS={SKUS} 
+                CATEGORIES={CATEGORIES} 
+                userRole={userRole} 
+                userName={userName} 
+              />
+            </div>
+          )}
+
+          {/* Admin Quick Actions */}
+          {(userRole === 'Admin' || userRole === 'Super Admin') && (
+            <div className="mt-12 p-6 bg-slate-900 rounded-3xl text-white shadow-2xl shadow-slate-200">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                  <h2 className="text-xl font-black uppercase tracking-tight">Admin Quick Actions</h2>
+                  <p className="text-slate-400 text-xs font-bold uppercase tracking-widest mt-1">Manage Data Sync & Configuration</p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button 
+                    onClick={() => setView('admin')}
+                    className="flex items-center gap-2 px-4 py-2 bg-white/10 hover:bg-white/20 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all"
+                  >
+                    <Settings className="w-4 h-4" />
+                    Google Sheets Config
+                  </button>
+                  <button 
+                    onClick={syncEverything}
+                    disabled={isSyncingGlobal || !appConfig.google_spreadsheet_id}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isSyncingGlobal ? 'bg-emerald-500/50 cursor-not-allowed' : 'bg-emerald-500 hover:bg-emerald-600 shadow-lg shadow-emerald-500/20'}`}
+                  >
+                    <Cloud className={`w-4 h-4 ${isSyncingGlobal ? 'animate-spin' : ''}`} />
+                    {isSyncingGlobal ? 'Syncing...' : 'Master Sync Now'}
+                  </button>
+                </div>
+              </div>
+              
+              <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                  <div className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Spreadsheet ID</div>
+                  <div className="text-[10px] font-mono text-slate-300 truncate">{appConfig.google_spreadsheet_id || 'Not Configured'}</div>
+                </div>
+                <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                  <div className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Service Account</div>
+                  <div className="text-[10px] font-mono text-slate-300 truncate">{appConfig.google_service_account_email || 'Not Configured'}</div>
+                </div>
+                <div className="p-4 bg-white/5 rounded-2xl border border-white/10">
+                  <div className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Last Master Sync</div>
+                  <div className="text-[10px] font-mono text-emerald-400">{appConfig.last_sync_at || 'Never'}</div>
+                </div>
+              </div>
+            </div>
+          )}
+
           </>
           )}
         </main>
@@ -3355,6 +3541,7 @@ export default function App() {
             categories={CATEGORIES} 
             skus={SKUS}
             isSyncing={isSyncingGlobal}
+            userRole={userRole}
           />
         )}
       </div>
@@ -3371,35 +3558,6 @@ export default function App() {
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Admin...</p>
               <button onClick={fetchAdminData} className="text-[10px] font-bold text-seablue underline">Retry</button>
-            </div>
-          </div>
-        </div>
-      );
-    }
-
-    if (!adminAuthenticated) {
-      return (
-        <div className="min-h-screen bg-slate-50">
-          <MainNavWithRole />
-          <div className="flex items-center justify-center p-4 pt-20">
-            <div className="card-clean p-8 max-w-sm w-full space-y-6 text-center">
-              <Lock className="w-12 h-12 text-seablue mx-auto" />
-              <h2 className="text-xl font-bold text-seablue">Admin Login</h2>
-              <form onSubmit={(e) => { 
-                e.preventDefault(); 
-                const pass = adminPassInput.trim().toLowerCase();
-                if (pass === ADMIN_PASSWORD) {
-                  setAdminAuthenticated(true);
-                  setMessage({ text: 'Welcome Admin', type: 'success' });
-                } else {
-                  setMessage({ text: 'Incorrect Password. Hint: admin', type: 'error' });
-                }
-                setTimeout(() => setMessage(null), 3000);
-              }} className="space-y-4">
-                <input type="password" placeholder="Enter Password" value={adminPassInput} onChange={(e) => setAdminPassInput(e.target.value)} className="input-clean w-full text-center" autoFocus />
-                <button type="submit" className="btn-seablue w-full">Login to Admin</button>
-                <button type="button" onClick={() => setView('entry')} className="text-xs text-slate-400 font-bold hover:underline">Cancel</button>
-              </form>
             </div>
           </div>
         </div>
@@ -3429,7 +3587,6 @@ export default function App() {
                   <span className="absolute -top-1 -right-1 w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
                 )}
               </button>
-              <button onClick={() => setAdminAuthenticated(false)} className="text-xs font-bold text-slate-400 hover:underline">Logout</button>
             </div>
           </div>
         </header>
@@ -3526,7 +3683,7 @@ export default function App() {
                     setIsSyncing(true);
                     setMessage({ text: 'Testing connection...', type: 'info' });
                     try {
-                      const res = await fetch('/api/admin/test-google');
+                      const res = await apiFetch('/api/admin/test-google');
                       const data = await res.json();
                       if (res.ok) {
                         setMessage({ text: `Connected successfully! Sheet: ${data.title}`, type: 'success' });
@@ -3675,6 +3832,94 @@ export default function App() {
               )}
             </div>
           </div>
+
+          <section className="card-clean overflow-hidden">
+            <div className="bg-slate-800 text-white px-4 py-2 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <Users className="w-4 h-4" />
+                <h2 className="text-sm font-bold uppercase tracking-widest">User Management (Login Accounts)</h2>
+              </div>
+              <div className="flex items-center gap-2">
+                <button 
+                  onClick={autoGenerateUsersFromTeam}
+                  className="text-[9px] font-black bg-emerald-500/20 px-2 py-1 rounded hover:bg-emerald-500/40 text-emerald-100 uppercase tracking-widest flex items-center gap-1"
+                >
+                  <RefreshCw className="w-3 h-3" /> Auto-Generate from Team
+                </button>
+                <button onClick={fetchUsers} className="p-1 hover:bg-white/10 rounded transition-colors">
+                  <RefreshCw className={`w-3 h-3 ${isLoadingUsers ? 'animate-spin' : ''}`} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 space-y-4">
+              <form onSubmit={handleRegisterUser} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
+                <input type="email" placeholder="Gmail Address" value={newUser.email || ''} onChange={e => setNewUser({...newUser, email: e.target.value})} className="input-clean text-[10px]" required />
+                <input type="text" placeholder="Full Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="input-clean text-[10px]" required />
+                <input type="text" placeholder="Contact/ID" value={newUser.contact} onChange={e => setNewUser({...newUser, contact: e.target.value})} className="input-clean text-[10px]" />
+                  <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="input-clean text-[10px]">
+                    <option value="OB">OB</option>
+                    <option value="TSM">TSM</option>
+                    <option value="RSM">RSM</option>
+                    <option value="NSM">NSM</option>
+                    <option value="Director">Director</option>
+                    <option value="SC">Sales Coordinator</option>
+                    <option value="Admin">Admin</option>
+                    <option value="Super Admin">Super Admin</option>
+                  </select>
+                <input type="text" placeholder="Region" value={newUser.region} onChange={e => setNewUser({...newUser, region: e.target.value})} className="input-clean text-[10px]" />
+                <button type="submit" disabled={isRegisteringUser} className="btn-seablue text-[10px] py-1">
+                  {isRegisteringUser ? '...' : '+ Register'}
+                </button>
+              </form>
+
+              <div className="overflow-x-auto max-h-[400px]">
+                <table className="w-full text-left text-[10px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                      <th className="py-2">Name / Username</th>
+                      <th className="py-2">Role</th>
+                      <th className="py-2">Contact/ID</th>
+                      <th className="py-2">Region / Town</th>
+                      <th className="py-2 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {users.map(u => (
+                      <tr key={u.id} className="hover:bg-slate-50">
+                        <td className="py-2">
+                          <div className="font-bold text-slate-700">{u.name}</div>
+                          <div className="text-[8px] text-slate-400">@{u.username}</div>
+                        </td>
+                        <td className="py-2">
+                          <span className={`px-1.5 py-0.5 rounded-full font-bold text-[8px] uppercase ${
+                            u.role === 'Super Admin' ? 'bg-indigo-100 text-indigo-700' :
+                            u.role === 'Admin' ? 'bg-purple-100 text-purple-700' :
+                            u.role === 'TSM' ? 'bg-orange-100 text-orange-700' :
+                            'bg-slate-100 text-slate-600'
+                          }`}>
+                            {u.role}
+                          </span>
+                        </td>
+                        <td className="py-2 text-slate-500">{u.contact}</td>
+                        <td className="py-2 text-slate-500">
+                          {u.region}{u.town ? ` / ${u.town}` : ''}
+                        </td>
+                        <td className="py-2 text-right space-x-1">
+                          <button 
+                            onClick={() => handleDeleteUser(u.id)}
+                            className="text-red-400 hover:text-red-600 p-1"
+                            disabled={u.username === 'admin' || u.username === 'amjid.admin'} // Protect default admins
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
 
           <section className="card-clean overflow-hidden">
             <div className="bg-seablue text-white px-4 py-2 flex justify-between items-center">
@@ -3842,7 +4087,7 @@ export default function App() {
                 <button 
                   onClick={async () => {
                     if (confirm("Are you sure you want to DELETE ALL distributors? This cannot be undone.")) {
-                      await fetch('/api/admin/distributors/clear', { method: 'POST' });
+                      await apiFetch('/api/admin/distributors/clear', { method: 'POST' });
                       fetchAdminData();
                     }
                   }}
@@ -3857,9 +4102,8 @@ export default function App() {
                   const zone = prompt("Zone (Optional):");
                   const region = prompt("Region (Optional):");
                   if (name && town) { 
-                    await fetch('/api/admin/distributors', { 
+                    await apiFetch('/api/admin/distributors', { 
                       method: 'POST', 
-                      headers: { 'Content-Type': 'application/json' }, 
                       body: JSON.stringify({ name, town, tsm, zone, region }) 
                     }); 
                     fetchAdminData(); 
@@ -3875,17 +4119,17 @@ export default function App() {
                   <div className="grid grid-cols-1 md:grid-cols-5 gap-3 flex-1">
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Distributor Name</label>
-                      <input type="text" defaultValue={dist.name} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, name: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={dist.name} onBlur={async (e) => { await apiFetch('/api/admin/distributors', { method: 'POST', body: JSON.stringify({ ...dist, name: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Town</label>
-                      <input type="text" defaultValue={dist.town} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, town: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={dist.town} onBlur={async (e) => { await apiFetch('/api/admin/distributors', { method: 'POST', body: JSON.stringify({ ...dist, town: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">TSM</label>
                       <select 
                         defaultValue={dist.tsm} 
-                        onChange={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, tsm: e.target.value }) }); fetchAdminData(); }} 
+                        onChange={async (e) => { await apiFetch('/api/admin/distributors', { method: 'POST', body: JSON.stringify({ ...dist, tsm: e.target.value }) }); fetchAdminData(); }} 
                         className="input-clean w-full text-[10px] py-1"
                       >
                         <option value="">Select TSM</option>
@@ -3894,14 +4138,14 @@ export default function App() {
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Zone</label>
-                      <input type="text" defaultValue={dist.zone} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, zone: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={dist.zone} onBlur={async (e) => { await apiFetch('/api/admin/distributors', { method: 'POST', body: JSON.stringify({ ...dist, zone: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Region</label>
-                      <input type="text" defaultValue={dist.region} onBlur={async (e) => { await fetch('/api/admin/distributors', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...dist, region: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={dist.region} onBlur={async (e) => { await apiFetch('/api/admin/distributors', { method: 'POST', body: JSON.stringify({ ...dist, region: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                   </div>
-                  <button onClick={async () => { if (confirm("Delete?")) { await fetch(`/api/admin/distributors/${dist.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
+                  <button onClick={async () => { if (confirm("Delete?")) { await apiFetch(`/api/admin/distributors/${dist.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
                 </div>
               ))}
               {distributors.length === 0 && <div className="p-8 text-center text-slate-400 text-xs italic">No independent distributors added yet. They will appear in the Stocks Report.</div>}
@@ -3932,9 +4176,8 @@ export default function App() {
                 const zone = prompt("Zone (Optional):");
                 const region = prompt("Region (Optional):");
                 if (name && contact) { 
-                  await fetch('/api/admin/obs', { 
+                  await apiFetch('/api/admin/obs', { 
                     method: 'POST', 
-                    headers: { 'Content-Type': 'application/json' }, 
                     body: JSON.stringify({ name, contact, town: '', distributor: '', routes: [], zone, region }) 
                   }); 
                   fetchAdminData(); 
@@ -3949,25 +4192,25 @@ export default function App() {
                   <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Name</label>
-                      <input type="text" defaultValue={ob.name} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, name: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={ob.name} onBlur={async (e) => { await apiFetch('/api/admin/obs', { method: 'POST', body: JSON.stringify({ ...ob, name: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">ID/Contact</label>
-                      <input type="text" defaultValue={ob.contact} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, contact: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={ob.contact} onBlur={async (e) => { await apiFetch('/api/admin/obs', { method: 'POST', body: JSON.stringify({ ...ob, contact: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Town</label>
-                      <input type="text" defaultValue={ob.town} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, town: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={ob.town} onBlur={async (e) => { await apiFetch('/api/admin/obs', { method: 'POST', body: JSON.stringify({ ...ob, town: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Distributor</label>
-                      <input type="text" defaultValue={ob.distributor} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, distributor: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={ob.distributor} onBlur={async (e) => { await apiFetch('/api/admin/obs', { method: 'POST', body: JSON.stringify({ ...ob, distributor: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">TSM</label>
                       <select 
                         defaultValue={ob.tsm} 
-                        onChange={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, tsm: e.target.value }) }); fetchAdminData(); }} 
+                        onChange={async (e) => { await apiFetch('/api/admin/obs', { method: 'POST', body: JSON.stringify({ ...ob, tsm: e.target.value }) }); fetchAdminData(); }} 
                         className="input-clean w-full text-[10px] py-1"
                       >
                         <option value="">Select TSM</option>
@@ -3976,17 +4219,17 @@ export default function App() {
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Zone</label>
-                      <input type="text" defaultValue={ob.zone} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, zone: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={ob.zone} onBlur={async (e) => { await apiFetch('/api/admin/obs', { method: 'POST', body: JSON.stringify({ ...ob, zone: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Region</label>
-                      <input type="text" defaultValue={ob.region} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, region: e.target.value }) }); }} className="input-clean w-full" />
+                      <input type="text" defaultValue={ob.region} onBlur={async (e) => { await apiFetch('/api/admin/obs', { method: 'POST', body: JSON.stringify({ ...ob, region: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold text-slate-400 uppercase">Total Shops in Route</label>
-                      <input type="number" defaultValue={ob.total_shops || 50} onBlur={async (e) => { await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ...ob, total_shops: parseInt(e.target.value) || 50 }) }); }} className="input-clean w-full" />
+                      <input type="number" defaultValue={ob.total_shops || 50} onBlur={async (e) => { await apiFetch('/api/admin/obs', { method: 'POST', body: JSON.stringify({ ...ob, total_shops: parseInt(e.target.value) || 50 }) }); }} className="input-clean w-full" />
                     </div>
                     <div className="space-y-1">
                       <label className="text-[9px] font-bold text-slate-400 uppercase">Routes (comma separated)</label>
@@ -3994,7 +4237,7 @@ export default function App() {
                         const routes = e.target.value.split(",").map(r => r.trim()).filter(r => r); 
                         const updatedOb = { ...ob, routes };
                         setObAssignments(prev => prev.map(a => a.contact === ob.contact ? updatedOb : a));
-                        await fetch('/api/admin/obs', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updatedOb) }); 
+                        await apiFetch('/api/admin/obs', { method: 'POST', body: JSON.stringify(updatedOb) }); 
                       }} className="input-clean w-full" />
                     </div>
                   </div>
@@ -4012,7 +4255,7 @@ export default function App() {
                     >
                       {selectedOBForTargets === ob.contact ? 'Close Targets' : 'Manage Brand Targets'}
                     </button>
-                    <button onClick={async () => { if (confirm("Delete?")) { await fetch(`/api/admin/obs/delete/${ob.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
+                    <button onClick={async () => { if (confirm("Delete?")) { await apiFetch(`/api/admin/obs/delete/${ob.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
                   </div>
 
                   {selectedOBForTargets === ob.contact && (
@@ -4116,9 +4359,8 @@ export default function App() {
       try {
         const promises = Object.entries(stockOrders).map(([distributor, stocks]) => {
           const distInfo = filteredDistributors.find(d => d.distributor === distributor);
-          return fetch('/api/stocks', {
+          return apiFetch('/api/stocks', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               date: new Date().toISOString().split('T')[0],
               tsm: selectedStockTSM,
@@ -4609,6 +4851,10 @@ export default function App() {
     );
   }
 
+  if (!token || token === 'null') {
+    return <Login onLogin={handleLogin} />;
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 pb-40">
       <MainNavWithRole />
@@ -4625,9 +4871,16 @@ export default function App() {
               </div>
               <div>
                 <h1 className="text-sm font-black text-seablue uppercase tracking-tight leading-none">SalesPulse</h1>
-                <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest leading-none mt-1">
-                  {lastUpdated ? `Updated: ${lastUpdated}` : 'Secondary Sales Intelligence'}
-                </p>
+                <div className="flex flex-col mt-1">
+                  <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                    {lastUpdated ? `Updated: ${lastUpdated}` : 'Secondary Sales Intelligence'}
+                  </p>
+                  {userEmail && (
+                    <p className="text-[7px] font-black text-indigo-600 uppercase tracking-widest leading-none mt-1">
+                      Logged in as: {userEmail}
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
             <div className="flex gap-1.5">
@@ -4669,7 +4922,7 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-3 py-3 space-y-3">
         {/* TSM Filter - Restricted by Role */}
-        {(userRole === 'Admin' || userRole === 'TSM') && tsmList.length > 0 && (
+        {(userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'TSM') && tsmList.length > 0 && (
           <div className="card-clean p-2 flex items-center gap-3 bg-seablue/5 border-seablue/10">
             <label className="text-[9px] font-black text-seablue uppercase tracking-widest">TSM:</label>
             <select 
@@ -4704,7 +4957,7 @@ export default function App() {
               <option value="">Select OB</option>
               {filteredOBs.map(ob => (
                 <option key={ob.contact} value={ob.contact}>
-                  {ob.name}
+                  {ob.name} ({ob.contact})
                 </option>
               ))}
             </select>

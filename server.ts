@@ -3,8 +3,30 @@ import { createServer as createViteServer } from "vite";
 import Database from "better-sqlite3";
 import path from "path";
 import { google } from "googleapis";
+import jwt from "jsonwebtoken";
+import bcrypt from "bcryptjs";
+import cron from "node-cron";
+import fs from "fs";
+import { exec } from "child_process";
 
 const db = new Database("orders.db");
+const JWT_SECRET = process.env.JWT_SECRET || "salespulse-secret-key-2026";
+const ADMIN_EMAIL = "amjid.bisconni@gmail.com";
+
+// Extend Express Request type
+declare global {
+  namespace Express {
+    interface Request {
+      user?: {
+        id: number;
+        email: string;
+        role: string;
+        name: string;
+        contact: string;
+      };
+    }
+  }
+}
 
 const CATEGORIES = [
   "Kite Glow",
@@ -92,6 +114,9 @@ db.exec(`
     route TEXT,
     zone TEXT,
     region TEXT,
+    nsm TEXT,
+    rsm TEXT,
+    director TEXT,
     total_shops INTEGER,
     visited_shops INTEGER,
     productive_shops INTEGER,
@@ -119,6 +144,7 @@ db.exec(`
     director_sales TEXT,
     nsm_name TEXT,
     rsm_name TEXT,
+    sc_name TEXT,
     asm_tsm_name TEXT,
     town_name TEXT,
     distributor_name TEXT,
@@ -138,16 +164,82 @@ db.exec(`
   );
 
   CREATE UNIQUE INDEX IF NOT EXISTS idx_ob_date ON submitted_orders (ob_contact, date);
+
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE,
+    email TEXT UNIQUE,
+    password TEXT,
+    role TEXT,
+    name TEXT,
+    contact TEXT,
+    region TEXT,
+    town TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT,
+    user_name TEXT,
+    role TEXT,
+    action TEXT,
+    details TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
 `);
 
 // Add columns if they don't exist
 try { db.exec("ALTER TABLE national_hierarchy ADD COLUMN target_ctn REAL DEFAULT 0"); } catch (e) {}
+try { db.exec("ALTER TABLE national_hierarchy ADD COLUMN sc_name TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN latitude REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN longitude REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN accuracy REAL"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN visit_type TEXT DEFAULT 'A'"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN zone TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN region TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN nsm TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN rsm TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN director TEXT"); } catch (e) {}
+
+// Auth Middleware
+const authenticateToken = (req: any, res: any, next: any) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+
+  if (!token) return res.status(401).json({ error: "Access denied. No token provided." });
+
+  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
+    if (err) return res.status(403).json({ error: "Invalid or expired token." });
+    req.user = user;
+    next();
+  });
+};
+
+const authorizeRoles = (...roles: string[]) => {
+  return (req: any, res: any, next: any) => {
+    const userRole = req.user.role;
+    
+    // Super Admin can access everything
+    if (userRole === 'Super Admin') return next();
+    
+    // Admin can access everything except maybe some Super Admin specific things (if any)
+    // For now, let's just check if the role is in the list
+    if (roles.includes(userRole)) return next();
+
+    return res.status(403).json({ error: `Unauthorized access for role: ${userRole}` });
+  };
+};
+
+const logAction = (userId: string, userName: string, role: string, action: string, details: any) => {
+  try {
+    db.prepare("INSERT INTO audit_logs (user_id, user_name, role, action, details) VALUES (?, ?, ?, ?, ?)")
+      .run(userId, userName, role, action, JSON.stringify(details));
+  } catch (err) {
+    console.error("Audit Log Error:", err);
+  }
+};
+try { db.exec("ALTER TABLE users ADD COLUMN email TEXT UNIQUE"); } catch (e) {}
 try { db.exec("ALTER TABLE distributors ADD COLUMN zone TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE distributors ADD COLUMN region TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE ob_assignments ADD COLUMN zone TEXT"); } catch (e) {}
@@ -381,35 +473,44 @@ async function startServer() {
     };
   }
 
+  async function getGoogleSheetsClient() {
+    const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+    const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+    
+    let spreadsheetId = config.google_spreadsheet_id;
+    let clientEmail = config.google_service_account_email;
+    let privateKeyRaw = config.google_private_key;
+
+    try {
+      const parsed = JSON.parse(privateKeyRaw);
+      if (parsed.private_key) privateKeyRaw = parsed.private_key;
+      if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+    } catch (e) {}
+
+    const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+
+    if (!spreadsheetId || !clientEmail || !privateKey) {
+      return null;
+    }
+
+    const auth = new google.auth.JWT({
+      email: clientEmail,
+      key: privateKey,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+    const sheets = google.sheets({ version: 'v4', auth });
+    return { sheets, spreadsheetId };
+  }
+
   // Google Sheets Helper
   async function appendToSheet(order: any) {
     try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
-      
-      let spreadsheetId = config.google_spreadsheet_id;
-      let clientEmail = config.google_service_account_email;
-      let privateKeyRaw = config.google_private_key;
-
-      try {
-        const parsed = JSON.parse(privateKeyRaw);
-        if (parsed.private_key) privateKeyRaw = parsed.private_key;
-        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
-      } catch (e) {}
-
-      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
-
-      if (!spreadsheetId || !clientEmail || !privateKey) {
-        console.log("Skipping sync: Google Sheets config incomplete");
+      const client = await getGoogleSheetsClient();
+      if (!client) {
+        console.log("Skipping sync: Google Sheets client could not be initialized");
         return;
       }
-
-      const auth = new google.auth.JWT({
-        email: clientEmail,
-        key: privateKey,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
-      });
-      const sheets = google.sheets({ version: 'v4', auth });
+      const { sheets, spreadsheetId } = client;
 
       await ensureSheetsExist(sheets, spreadsheetId);
 
@@ -468,7 +569,8 @@ async function startServer() {
       "Visit_Type_Analysis": ['Date', 'OB Name', 'Route', 'Visit Type', 'Total Visits', 'Total Productive', 'Productivity %', 'Avg Achievement (Ctn)'],
       "OB_Performance": ['OB Name', 'OB ID', 'TSM', 'Distributor', 'Town', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)', 'Achievement %'],
       "TSM_Performance": ['TSM Name', 'Total OBs', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)'],
-      "Product_Config": ['SKU ID', 'SKU Name', 'Category', 'Units Per Carton', 'Units Per Dozen', 'Weight (Kg)']
+      "Product_Config": ['SKU ID', 'SKU Name', 'Category', 'Units Per Carton', 'Units Per Dozen', 'Weight (Kg)'],
+      "Users": ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town']
     };
 
     try {
@@ -964,8 +1066,129 @@ async function startServer() {
     seedOBs.forEach(ob => insertOB.run(ob.name, ob.contact, ob.town, ob.distributor, ob.tsm, ob.totalShops, ob.routes));
   }
 
+  // Ensure Super Admin User
+  const superAdminCheck = db.prepare("SELECT * FROM users WHERE username = 'amjid.admin' OR email = 'amjid.bisconni@gmail.com'").get();
+  if (!superAdminCheck) {
+    const hashedPass = bcrypt.hashSync("Admin@123", 10);
+    db.prepare("INSERT INTO users (username, email, password, role, name) VALUES (?, ?, ?, ?, ?)")
+      .run("amjid.admin", "amjid.bisconni@gmail.com", hashedPass, "Super Admin", "Muhammad Amjid");
+  }
+
+  // Daily Backup Cron (9:00 AM)
+  cron.schedule('0 9 * * *', async () => {
+    console.log("Starting daily backup...");
+    await performFullBackup();
+  });
+
+  async function performFullBackup() {
+    const date = new Date().toISOString().split('T')[0];
+    const backupDir = path.join(process.cwd(), 'backups', date);
+    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
+
+    const dbPath = path.join(process.cwd(), 'orders.db');
+    const dbBackupPath = path.join(backupDir, `orders_${date}.db`);
+    if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, dbBackupPath);
+
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc: any, row: any) => ({ ...acc, [row.key]: row.value }), {});
+      
+      const spreadsheetId = config.google_spreadsheet_id;
+      const privateKeyRaw = config.google_private_key;
+      const clientEmail = config.google_client_email;
+
+      if (spreadsheetId && privateKeyRaw && clientEmail) {
+        const auth = new google.auth.JWT({
+          email: clientEmail,
+          key: privateKeyRaw.replace(/\\n/g, '\n'),
+          scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/spreadsheets.readonly']
+        });
+        const drive = google.drive({ version: 'v3', auth });
+        
+        const folderResponse = await drive.files.create({
+          requestBody: { name: `SalesPulse_Backups_${date}`, mimeType: 'application/vnd.google-apps.folder' },
+          fields: 'id'
+        });
+        const folderId = folderResponse.data.id;
+
+        await drive.files.create({
+          requestBody: { name: `orders_${date}.db`, parents: [folderId!] },
+          media: { mimeType: 'application/x-sqlite3', body: fs.createReadStream(dbBackupPath) }
+        });
+      }
+    } catch (err) {
+      console.error("Backup Upload Error:", err);
+    }
+  }
+
+  // Auth Routes
+  app.post("/api/auth/login", async (req, res) => {
+    const { email } = req.body;
+    try {
+      if (!email) {
+        return res.status(400).json({ error: "Email is required" });
+      }
+      // Simple login: check if user exists by email
+      let user = db.prepare("SELECT * FROM users WHERE email = ?").get(email) as any;
+      
+      if (!user) {
+        // Check if it's the admin email
+        const role = email === ADMIN_EMAIL ? 'Super Admin' : 'OB';
+        const username = email.split('@')[0];
+        const name = username.charAt(0).toUpperCase() + username.slice(1);
+        const info = db.prepare("INSERT INTO users (username, email, role, name, password) VALUES (?, ?, ?, ?, ?)")
+          .run(username, email, role, name, 'nopassword');
+        user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid) as any;
+      }
+
+      const token = jwt.sign({ 
+        id: user.id, 
+        username: user.username, 
+        email: user.email,
+        role: user.role, 
+        name: user.name, 
+        contact: user.contact, 
+        region: user.region 
+      }, JWT_SECRET, { expiresIn: '8h' });
+      
+      logAction(user.id.toString(), user.name, user.role, "LOGIN_SIMPLE", { email });
+      
+      res.json({ 
+        token, 
+        user: { 
+          id: user.id, 
+          username: user.username, 
+          email: user.email,
+          role: user.role, 
+          name: user.name, 
+          contact: user.contact, 
+          region: user.region 
+        } 
+      });
+    } catch (err) {
+      console.error("Login error:", err);
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
+  app.post("/api/auth/register", authenticateToken, authorizeRoles('Admin'), async (req, res) => {
+    const { email, role, name, contact, region, town } = req.body;
+    try {
+      const username = email.split('@')[0];
+      db.prepare("INSERT INTO users (username, email, password, role, name, contact, region, town) VALUES (?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(username, email, 'nopassword', role, name, contact, region, town);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Registration failed. Email might already exist." });
+    }
+  });
+
+  app.get("/api/auth/me", authenticateToken, (req: any, res) => {
+    res.json(req.user);
+  });
+
   // API Routes for Admin
-  app.get("/api/admin/config", (req, res) => {
+  app.get("/api/admin/config", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'), (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM app_config").all();
       const config = rows.reduce((acc: any, row: any) => ({ ...acc, [row.key]: row.value }), {});
@@ -975,16 +1198,51 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/config", (req, res) => {
+  app.get("/api/admin/users", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    try {
+      const rows = db.prepare("SELECT id, username, role, name, contact, region, town, created_at FROM users").all();
+      res.json(rows);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch users" });
+    }
+  });
+
+  app.delete("/api/admin/users/:id", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    try {
+      const { id } = req.params;
+      // Prevent deleting the last admin if needed, but let's keep it simple for now
+      db.prepare("DELETE FROM users WHERE id = ?").run(id);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete user" });
+    }
+  });
+
+  app.post("/api/admin/config", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const { key, value } = req.body;
     db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run(key, value.toString());
+    logAction(req.user.id.toString(), req.user.name, req.user.role, "UPDATE_CONFIG", { key, value });
     res.json({ success: true });
   });
 
-  app.get("/api/admin/obs", (req, res) => {
+  app.get("/api/admin/obs", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'), (req: any, res) => {
     try {
       const currentMonth = new Date().toISOString().slice(0, 7);
-      const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+      const { role, name } = req.user;
+      let obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+      
+      // Filter based on role
+      if (role === 'TSM') {
+        obs = obs.filter((ob: any) => ob.tsm === name);
+      } else if (role === 'RSM' || role === 'SC') {
+        const userRegion = db.prepare("SELECT territory_region FROM national_hierarchy WHERE rsm_name = ? OR sc_name = ? LIMIT 1").get(name, name) as any;
+        if (userRegion) {
+          obs = obs.filter((ob: any) => ob.region === userRegion.territory_region);
+        } else {
+          obs = [];
+        }
+      }
+
       const targets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(currentMonth) as any[];
       
       const obsWithTargets = obs.map((ob: any) => {
@@ -1020,7 +1278,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/obs", (req, res) => {
+  app.post("/api/admin/obs", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const { id, name, contact, town, distributor, tsm, zone, region, total_shops, routes } = req.body;
     const shops = total_shops !== undefined ? total_shops : req.body.totalShops;
     try {
@@ -1043,7 +1301,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/targets", (req, res) => {
+  app.post("/api/admin/targets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const { obContact, brandName, targetCtn, month } = req.body;
     const contact = obContact || req.body.ob_contact;
     const brand = brandName || req.body.brand_name;
@@ -1059,7 +1317,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/targets/bulk", (req, res) => {
+  app.post("/api/admin/targets/bulk", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const { targets, month } = req.body;
     const targetMonth = month || new Date().toISOString().slice(0, 7);
     
@@ -1077,21 +1335,36 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admin/obs/delete/:id", (req, res) => {
+  app.delete("/api/admin/obs/delete/:id", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     db.prepare("DELETE FROM ob_assignments WHERE id = ?").run(req.params.id);
     res.json({ success: true });
   });
 
-  app.get("/api/admin/distributors", (req, res) => {
+  app.get("/api/admin/distributors", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'), (req: any, res) => {
     try {
-      const dists = db.prepare("SELECT * FROM distributors").all();
+      const { role, name } = req.user;
+      let dists;
+      if (role === 'Super Admin' || role === 'Admin' || role === 'NSM' || role === 'Director') {
+        dists = db.prepare("SELECT * FROM distributors").all();
+      } else if (role === 'RSM' || role === 'SC') {
+        const userRegion = db.prepare("SELECT territory_region FROM national_hierarchy WHERE rsm_name = ? OR sc_name = ? LIMIT 1").get(name, name) as any;
+        if (userRegion) {
+          dists = db.prepare("SELECT * FROM distributors WHERE region = ?").all(userRegion.territory_region);
+        } else {
+          dists = [];
+        }
+      } else if (role === 'TSM') {
+        dists = db.prepare("SELECT * FROM distributors WHERE tsm = ?").all(name);
+      } else {
+        dists = [];
+      }
       res.json(dists);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch distributors" });
     }
   });
 
-  app.post("/api/admin/distributors", (req, res) => {
+  app.post("/api/admin/distributors", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const { id, town, name, tsm, zone, region } = req.body;
     try {
       if (id) {
@@ -1109,12 +1382,12 @@ async function startServer() {
     }
   });
 
-  app.delete("/api/admin/distributors/:id", (req, res) => {
+  app.delete("/api/admin/distributors/:id", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     db.prepare("DELETE FROM distributors WHERE id = ?").run(req.params.id);
     res.json({ success: true });
   });
 
-  app.post("/api/admin/distributors/clear", (req, res) => {
+  app.post("/api/admin/distributors/clear", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     try {
       db.prepare("DELETE FROM distributors").run();
       res.json({ success: true });
@@ -1123,7 +1396,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/targets/:ob_contact", (req, res) => {
+  app.get("/api/admin/targets/:ob_contact", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     try {
       const targets = db.prepare("SELECT * FROM brand_targets WHERE ob_contact = ? AND month = ?").all(req.params.ob_contact, month);
@@ -1171,7 +1444,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/test-google", async (req, res) => {
+  app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -1240,7 +1513,7 @@ async function startServer() {
 
       res.json({ 
         success: true, 
-        message: `Master Sync Complete! Pulled ${result.pulledTeam} team members & ${result.pulledSales} sales records. Pushed ${result.pushedSales} records to Cloud.`,
+        message: `Master Sync Complete! Pulled ${result.pulledTeam} team, ${result.pulledUsers} users & ${result.pulledSales} sales records.`,
         last_sync_at: result.lastSync
       });
     } catch (err: any) {
@@ -1249,7 +1522,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/reseed", (req, res) => {
+  app.post("/api/admin/reseed", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const transaction = db.transaction(() => {
       db.prepare("DELETE FROM ob_assignments").run();
       db.prepare("DELETE FROM brand_targets").run();
@@ -1316,7 +1589,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/reset", (req, res) => {
+  app.post("/api/admin/reset", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const transaction = db.transaction(() => {
       db.prepare("DELETE FROM submitted_orders").run();
       db.prepare("DELETE FROM drafts").run();
@@ -1329,11 +1602,25 @@ async function startServer() {
     }
   });
 
-  app.get("/api/orders", (req, res) => {
+  app.get("/api/orders", authenticateToken, (req: any, res) => {
     try {
       const { ob, tsm, from, to, ob_contact } = req.query;
+      const { role, name, contact, region } = req.user;
+
       let query = "SELECT * FROM submitted_orders WHERE 1=1";
       const params: any[] = [];
+
+      // RBAC Filtering
+      if (role === 'TSM') {
+        query += " AND tsm = ?";
+        params.push(name);
+      } else if (role === 'RSM') {
+        query += " AND region = ?";
+        params.push(region);
+      } else if (role === 'OB') {
+        query += " AND ob_contact = ?";
+        params.push(contact);
+      }
 
       if (ob) {
         query += " AND order_booker = ?";
@@ -1376,7 +1663,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/stocks", (req, res) => {
+  app.post("/api/stocks", authenticateToken, (req: any, res) => {
     try {
       const { date, tsm, town, distributor, stocks } = req.body;
       if (!stocks) return res.status(400).json({ error: "Missing stock data" });
@@ -1393,6 +1680,8 @@ async function startServer() {
         getPSTTimestamp()
       );
 
+      logAction(req.user.id.toString(), req.user.name, req.user.role, "SUBMIT_STOCKS", { tsm, date });
+
       // Async sync to Google Sheets
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -1407,16 +1696,29 @@ async function startServer() {
     }
   });
 
-  app.get("/api/stocks", (req, res) => {
+  app.get("/api/stocks", authenticateToken, (req: any, res) => {
     try {
-      const rows = db.prepare("SELECT * FROM stock_reports ORDER BY submitted_at DESC").all();
+      const { role, name, region } = req.user;
+      let query = "SELECT * FROM stock_reports WHERE 1=1";
+      const params: any[] = [];
+
+      if (role === 'TSM') {
+        query += " AND tsm = ?";
+        params.push(name);
+      } else if (role === 'RSM') {
+        // Assuming region is stored or we can filter by town
+        // For now, just filter by TSM if we have a mapping, but let's keep it simple
+      }
+
+      query += " ORDER BY submitted_at DESC";
+      const rows = db.prepare(query).all(...params);
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch stock reports" });
     }
   });
 
-  app.get("/api/check-duplicate", (req, res) => {
+  app.get("/api/check-duplicate", authenticateToken, (req, res) => {
     const { date, ob_contact } = req.query;
     try {
       const row = db.prepare("SELECT id FROM submitted_orders WHERE date = ? AND ob_contact = ?").get(date, ob_contact);
@@ -1426,11 +1728,19 @@ async function startServer() {
     }
   });
 
-  app.get("/api/daily-status", (req, res) => {
+  app.get("/api/daily-status", authenticateToken, (req: any, res) => {
     const { date } = req.query;
     try {
-      const allOBs = db.prepare("SELECT * FROM ob_assignments").all();
-      const submissions = db.prepare("SELECT order_booker, ob_contact, visit_type, submitted_at FROM submitted_orders WHERE date = ?").all(date);
+      let allOBs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+      
+      // RBAC Filtering
+      if (req.user.role === 'TSM') {
+        allOBs = allOBs.filter(ob => ob.tsm === req.user.name);
+      } else if (req.user.role === 'RSM') {
+        allOBs = allOBs.filter(ob => ob.region === req.user.region);
+      }
+
+      const submissions = db.prepare("SELECT order_booker, ob_contact, visit_type, submitted_at FROM submitted_orders WHERE date = ?").all(date) as any[];
       
       const status = allOBs.map(ob => {
         const submission = submissions.find(s => s.ob_contact === ob.contact);
@@ -1448,7 +1758,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/submit", (req, res) => {
+  app.post("/api/submit", authenticateToken, async (req: any, res) => {
     try {
       const { data } = req.body;
       if (!data) return res.status(400).json({ error: "Missing data" });
@@ -1461,12 +1771,18 @@ async function startServer() {
         latitude, longitude, accuracy, visitType
       } = data;
 
+      // RBAC check: TSM can only submit for their assigned OBs
+      if (req.user.role === 'TSM' && tsm !== req.user.name) {
+        return res.status(403).json({ error: "You can only submit orders for your assigned OBs." });
+      }
+
       // Duplicate check
       const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, date);
       if (existing) {
         return res.status(400).json({ error: "An entry already exists for this Order Booker on this date." });
       }
       
+      const submittedAt = getPSTTimestamp();
       const info = db.prepare(`
         INSERT INTO submitted_orders (
           date, tsm, town, distributor, order_booker, ob_contact, route, 
@@ -1499,8 +1815,10 @@ async function startServer() {
         longitude || null, 
         accuracy || null,
         visitType || 'A',
-        getPSTTimestamp()
+        submittedAt
       );
+
+      logAction(req.user.id.toString(), req.user.name, req.user.role, "SUBMIT_ORDER", { obContact, date, route });
 
       // Async sync to Google Sheets
       const newOrder = db.prepare("SELECT * FROM submitted_orders WHERE id = ?").get(info.lastInsertRowid);
@@ -1513,7 +1831,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/distributors/bulk-upload", (req, res) => {
+  app.post("/api/admin/distributors/bulk-upload", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const { distributors, clearExisting } = req.body;
     if (!Array.isArray(distributors)) return res.status(400).json({ error: "Invalid data" });
 
@@ -1545,7 +1863,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/bulk-upload", (req, res) => {
+  app.post("/api/admin/bulk-upload", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const { team, clearExisting } = req.body;
     if (!Array.isArray(team)) return res.status(400).json({ error: "Invalid data" });
 
@@ -1647,56 +1965,59 @@ async function startServer() {
   });
 
   // National Hierarchy APIs
-  app.get("/api/admin/hierarchy", (req, res) => {
+  app.get("/api/admin/hierarchy", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'), (req: any, res) => {
     try {
-      const rows = db.prepare("SELECT * FROM national_hierarchy").all();
+      const { role, name } = req.user;
+      let rows;
+      if (role === 'Super Admin' || role === 'Admin' || role === 'NSM' || role === 'Director') {
+        rows = db.prepare("SELECT * FROM national_hierarchy").all();
+      } else if (role === 'RSM' || role === 'SC') {
+        // RSM/SC should see their region. We need to find their region first.
+        // For now, let's assume their region is stored in their user record or we can find it in hierarchy
+        const userRegion = db.prepare("SELECT territory_region FROM national_hierarchy WHERE rsm_name = ? OR sc_name = ? LIMIT 1").get(name, name) as any;
+        if (userRegion) {
+          rows = db.prepare("SELECT * FROM national_hierarchy WHERE territory_region = ?").all(userRegion.territory_region);
+        } else {
+          rows = [];
+        }
+      } else if (role === 'TSM') {
+        rows = db.prepare("SELECT * FROM national_hierarchy WHERE asm_tsm_name = ?").all(name);
+      } else {
+        rows = [];
+      }
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.get("/api/national/stats", (req, res) => {
+  app.get("/api/national/stats", authenticateToken, (req: any, res) => {
     try {
-      const requesterId = req.query.requesterId as string;
+      const { role, name, contact, region } = req.user;
       const currentMonth = getPSTDate().slice(0, 7);
       
       // 1. Get hierarchy to determine visibility
       const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
-      const requester = hierarchy.find(h => h.ob_id === requesterId);
       
       let visibleOBIds: string[] = [];
       
-      if (!requesterId || requesterId === 'ADMIN') {
+      if (role === 'Admin' || role === 'Super Admin' || role === 'Director' || role === 'NSM') {
         visibleOBIds = hierarchy.map(h => h.ob_id);
-      } else if (requester) {
-        // Determine role and filter
-        // If requester is NSM
-        const isNSM = hierarchy.some(h => h.nsm_name === requester.ob_name);
-        const isRSM = hierarchy.some(h => h.rsm_name === requester.ob_name);
-        const isTSM = hierarchy.some(h => h.asm_tsm_name === requester.ob_name);
-        
-        if (isNSM) {
-          visibleOBIds = hierarchy.filter(h => h.nsm_name === requester.ob_name).map(h => h.ob_id);
-        } else if (isRSM) {
-          visibleOBIds = hierarchy.filter(h => h.rsm_name === requester.ob_name).map(h => h.ob_id);
-        } else if (isTSM) {
-          visibleOBIds = hierarchy.filter(h => h.asm_tsm_name === requester.ob_name).map(h => h.ob_id);
-        } else {
-          // Just an OB, see only self
-          visibleOBIds = [requesterId];
-        }
+      } else if (role === 'RSM') {
+        visibleOBIds = hierarchy.filter(h => h.rsm_name === name || h.territory_region === region).map(h => h.ob_id);
+      } else if (role === 'TSM') {
+        visibleOBIds = hierarchy.filter(h => h.asm_tsm_name === name).map(h => h.ob_id);
+      } else if (role === 'OB') {
+        visibleOBIds = [contact];
       } else {
-        // Check if requester is a TSM in ob_assignments (fallback)
-        const tsmCheck = db.prepare("SELECT DISTINCT tsm FROM ob_assignments WHERE tsm = ?").get(requesterId);
-        if (tsmCheck) {
-          visibleOBIds = db.prepare("SELECT contact FROM ob_assignments WHERE tsm = ?").all(requesterId).map((r: any) => r.contact);
-        } else {
-          visibleOBIds = [requesterId];
-        }
+        visibleOBIds = [contact];
       }
 
-      // 2. Fetch stats for visible OBs (all history for trend analysis)
+      if (visibleOBIds.length === 0) {
+        return res.json({ stats: [], hierarchy: [], timeInfo: calculateTimeGone() });
+      }
+
+      // 2. Fetch stats for visible OBs
       const placeholders = visibleOBIds.map(() => '?').join(',');
       const stats = db.prepare(`
         SELECT * FROM submitted_orders 
@@ -1716,7 +2037,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/hierarchy/bulk-upload", (req, res) => {
+  app.post("/api/admin/hierarchy/bulk-upload", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const { hierarchy, clearExisting } = req.body;
     if (!Array.isArray(hierarchy)) return res.status(400).json({ error: "Invalid data" });
 
@@ -1727,13 +2048,14 @@ async function startServer() {
 
       const insert = db.prepare(`
         INSERT INTO national_hierarchy (
-          director_sales, nsm_name, rsm_name, asm_tsm_name, town_name, 
+          director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, town_name, 
           distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(ob_id) DO UPDATE SET
           director_sales=excluded.director_sales,
           nsm_name=excluded.nsm_name,
           rsm_name=excluded.rsm_name,
+          sc_name=excluded.sc_name,
           asm_tsm_name=excluded.asm_tsm_name,
           town_name=excluded.town_name,
           distributor_name=excluded.distributor_name,
@@ -1745,7 +2067,7 @@ async function startServer() {
 
       for (const item of hierarchy) {
         insert.run(
-          item.director_sales, item.nsm_name, item.rsm_name, item.asm_tsm_name, item.town_name,
+          item.director_sales, item.nsm_name, item.rsm_name, item.sc_name, item.asm_tsm_name, item.town_name,
           item.distributor_name, item.distributor_code, item.ob_name, item.ob_id, item.territory_region,
           item.target_ctn || 0
         );
@@ -1760,7 +2082,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/clear-history", (req, res) => {
+  app.post("/api/admin/clear-history", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     try {
       db.prepare("DELETE FROM submitted_orders").run();
       res.json({ success: true, message: "All sales history has been cleared." });
@@ -1869,6 +2191,79 @@ async function startServer() {
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [headers, ...rows] },
     });
+  }
+
+  async function pullUsersData(sheets: any, spreadsheetId: string) {
+    try {
+      console.log(`Pulling Users Data from ${spreadsheetId}...`);
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "Users!A1:ZZ1000",
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length < 2) {
+        console.log("No data found in Users sheet.");
+        return { success: false, count: 0 };
+      }
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      const users = dataRows.map(row => {
+        const getVal = (headerNames: string[]) => {
+          for (const name of headerNames) {
+            const idx = headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+            if (idx > -1 && row[idx] !== undefined) return row[idx];
+          }
+          return null;
+        };
+
+        return {
+          username: getVal(['Username', 'username']),
+          email: getVal(['Email', 'email']),
+          role: getVal(['Role', 'role']),
+          name: getVal(['Name', 'name']),
+          contact: getVal(['Contact', 'contact']),
+          region: getVal(['Region', 'region']),
+          town: getVal(['Town', 'town'])
+        };
+      }).filter(u => u.email);
+
+      const transaction = db.transaction(() => {
+        for (const user of users) {
+          db.prepare(`
+            INSERT INTO users (username, email, role, name, contact, region, town, password)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(email) DO UPDATE SET
+              username=excluded.username, role=excluded.role, name=excluded.name, 
+              contact=excluded.contact, region=excluded.region, town=excluded.town
+          `).run(user.username, user.email, user.role, user.name, user.contact, user.region, user.town, 'nopassword');
+        }
+      });
+      transaction();
+      return { success: true, count: users.length };
+    } catch (e) {
+      console.error("pullUsersData Error:", e);
+      return { success: false, count: 0 };
+    }
+  }
+
+  async function pushUsersData(sheets: any, spreadsheetId: string) {
+    try {
+      const users = db.prepare("SELECT username, email, role, name, contact, region, town FROM users").all() as any[];
+      const headers = ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town'];
+      const rows = users.map(u => [u.username, u.email, u.role, u.name, u.contact, u.region, u.town]);
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "Users!A1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [headers, ...rows] },
+      });
+    } catch (e) {
+      console.error("pushUsersData Error:", e);
+    }
   }
 
   async function pullSalesHistory(sheets: any, spreadsheetId: string) {
@@ -2030,7 +2425,7 @@ async function startServer() {
 
   async function performFullSync(sheets: any, spreadsheetId: string) {
     // 1. Ensure all sheets exist
-    const requiredSheets = ["Sales_Data", "Team_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report", "Current_Stocks", "Last_Entry_Date", "Visit_Type_Analysis", "OB_Performance", "TSM_Performance", "Product_Config"];
+    const requiredSheets = ["Sales_Data", "Team_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report", "Current_Stocks", "Last_Entry_Date", "Visit_Type_Analysis", "OB_Performance", "TSM_Performance", "Product_Config", "Users"];
     await ensureSheetsExist(sheets, spreadsheetId);
 
     // 2. Pull Product Config (Weights etc)
@@ -2039,10 +2434,13 @@ async function startServer() {
     // 3. Pull Team Data (Hierarchy & Targets)
     const pullTeamResult = await pullTeamData(sheets, spreadsheetId);
 
-    // 4. Pull Sales History
+    // 4. Pull Users Data
+    const pullUsersResult = await pullUsersData(sheets, spreadsheetId);
+
+    // 5. Pull Sales History
     const pullSalesResult = await pullSalesHistory(sheets, spreadsheetId);
 
-    // 5. Push Local Sales Data
+    // 6. Push Local Sales Data
     const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all() as any[];
     const salesHeaders = getSalesDataHeaders();
     const salesRows = orders.map(order => getSalesDataRow(order));
@@ -2054,13 +2452,16 @@ async function startServer() {
       requestBody: { values: [salesHeaders, ...salesRows] },
     });
 
-    // 6. Push Product Config (to ensure format is there)
+    // 7. Push Product Config (to ensure format is there)
     await pushProductConfig(sheets, spreadsheetId);
 
-    // 7. Push Team Data back
+    // 8. Push Team Data back
     await pushTeamData(sheets, spreadsheetId);
 
-    // 8. Refresh summary sheets
+    // 9. Push Users Data back
+    await pushUsersData(sheets, spreadsheetId);
+
+    // 10. Refresh summary sheets
     await refreshSummarySheets(sheets, spreadsheetId);
 
     // Update Last Sync
@@ -2069,13 +2470,14 @@ async function startServer() {
 
     return {
       pulledTeam: pullTeamResult.count,
+      pulledUsers: pullUsersResult.count,
       pulledSales: pullSalesResult.count,
       pushedSales: orders.length,
       lastSync: now
     };
   }
 
-  app.post("/api/admin/master-sync", async (req, res) => {
+  app.post("/api/admin/master-sync", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -2117,7 +2519,7 @@ async function startServer() {
 
       res.json({ 
         success: true, 
-        message: `Master Sync Complete! Pulled ${result.pulledTeam} team members & ${result.pulledSales} sales records. Pushed ${result.pushedSales} records to Cloud.`,
+        message: `Master Sync Complete! Pulled ${result.pulledTeam} team, ${result.pulledUsers} users & ${result.pulledSales} sales records.`,
         last_sync_at: result.lastSync
       });
     } catch (err: any) {
@@ -2126,7 +2528,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-team-to-sheets", async (req, res) => {
+  app.post("/api/admin/sync-team-to-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -2196,7 +2598,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-team-from-sheets", async (req, res) => {
+  app.post("/api/admin/sync-team-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -2295,7 +2697,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/import-from-sheets", async (req, res) => {
+  app.post("/api/admin/import-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -2378,7 +2780,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-sales-from-sheets", async (req, res) => {
+  app.post("/api/admin/sync-sales-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -2416,27 +2818,27 @@ async function startServer() {
         return res.status(400).json({ error: "No data found in 'Sales_Data' sheet." });
       }
 
-      // Headers are: Date, TSM, Town, Distributor, OB Name, OB Contact, Route, Total Shops, Visited Shops, Productive Shops, Visit Type, ...CATEGORIES_PROD, ...SKUS, Submitted At, Lat, Lng, Acc
+      // Headers are: Date, Director, NSM, RSM, TSM, Town, Distributor, OB Name, OB Contact, Route, Zone, Region, Total Shops, Visited Shops, Productive Shops, Visit Type, ...SKUS, ...CATEGORIES_PROD, Total Tonnage, Submitted At, Lat, Lng, Acc
       const skuCount = SKUS.length;
       const catCount = CATEGORIES.length;
-      const baseColCount = 11; // Date to Visit Type
+      const baseColCount = 16; // Date to Visit Type
 
       const transaction = db.transaction(() => {
         // Optional: Clear existing history? User might want to append. 
         // Let's append but avoid exact duplicates (same OB, Date, and Submitted At)
         const insertOrder = db.prepare(`
           INSERT INTO submitted_orders (
-            date, tsm, town, distributor, order_booker, ob_contact, route, 
+            date, director, nsm, rsm, tsm, town, distributor, order_booker, ob_contact, route, 
             zone, region,
             total_shops, visited_shops, productive_shops, 
             category_productive_data, order_data, targets_data,
             submitted_at, latitude, longitude, accuracy, visit_type
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const row of rows) {
-          const [date, tsm, town, distributor, obName, obContact, route, tShops, vShops, pShops, visitTypeLabel] = row;
+          const [date, director, nsm, rsm, tsm, town, distributor, obName, obContact, route, zone, region, tShops, vShops, pShops, visitTypeLabel] = row;
           if (!date || !obContact) continue;
 
           let visitType = 'A';
@@ -2454,28 +2856,25 @@ async function startServer() {
             }
           }
 
-          const submittedAt = row[baseColCount + skuCount] || new Date().toISOString();
-          const lat = row[baseColCount + skuCount + 1] || null;
-          const lng = row[baseColCount + skuCount + 2] || null;
-          const acc = row[baseColCount + skuCount + 3] || null;
-
           // Reconstruct category_productive_data
           const catProdData: Record<string, number> = {};
           for (let i = 0; i < catCount; i++) {
             const cat = CATEGORIES[i];
-            catProdData[cat] = parseInt(row[baseColCount + skuCount + 4 + i]) || 0;
+            catProdData[cat] = parseInt(row[baseColCount + skuCount + i]) || 0;
           }
 
-          const zone = row[baseColCount + skuCount + 4 + catCount] || '';
-          const region = row[baseColCount + skuCount + 4 + catCount + 1] || '';
+          const submittedAt = row[baseColCount + skuCount + catCount + 1] || new Date().toISOString();
+          const lat = row[baseColCount + skuCount + catCount + 2] || null;
+          const lng = row[baseColCount + skuCount + catCount + 3] || null;
+          const acc = row[baseColCount + skuCount + catCount + 4] || null;
 
           // Check for duplicate - use ob_contact, date, and route for better matching
           const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, date, route);
           if (existing) continue;
 
           insertOrder.run(
-            date, tsm, town, distributor, obName, obContact, route,
-            zone, region,
+            date, director || '', nsm || '', rsm || '', tsm, town, distributor, obName, obContact, route,
+            zone || '', region || '',
             parseInt(tShops) || 0, parseInt(vShops) || 0, parseInt(pShops) || 0,
             JSON.stringify(catProdData), 
             JSON.stringify(orderData),
@@ -2495,7 +2894,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-sheets", async (req, res) => {
+  app.post("/api/admin/sync-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     // Redirect to master sync for simplicity
     return res.redirect(307, "/api/admin/master-sync");
   });
