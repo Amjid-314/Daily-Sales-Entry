@@ -75,7 +75,7 @@ const WhatsAppIcon = () => (
   </svg>
 );
 
-const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any }) => {
+const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null }) => {
   const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>('National');
   const [filterValue, setFilterValue] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
@@ -101,7 +101,26 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   const brands = ["Kite Glow", "Vero", "Burq Action"];
 
   const processedStats = useMemo(() => {
-    return stats.map(s => {
+    let baseStats = stats;
+    
+    // Role-based data filtering
+    if (userRole === 'RSM' && userRegion) {
+      baseStats = stats.filter(s => {
+        const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+        const region = h?.territory_region || s.region;
+        return region === userRegion;
+      });
+    } else if (userRole === 'TSM' && userName) {
+      baseStats = stats.filter(s => {
+        const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+        const tsm = h?.asm_tsm_name || s.tsm;
+        return tsm === userName;
+      });
+    } else if (userRole === 'OB' && userContact) {
+      baseStats = stats.filter(s => s.ob_contact === userContact);
+    }
+
+    return baseStats.map(s => {
       const h = hierarchy.find(h => h.ob_id === s.ob_contact);
       const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
       
@@ -138,7 +157,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         isFakeVisit
       };
     });
-  }, [stats, hierarchy, skus]);
+  }, [stats, hierarchy, skus, userRole, userRegion, userName, userContact]);
 
   const filteredStats = useMemo(() => {
     let result = processedStats;
@@ -392,7 +411,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           </div>
           <div className="flex flex-wrap gap-2">
             <button 
-              onClick={() => (window as any).handleMasterSync?.()}
+              onClick={onRefresh}
               disabled={isSyncing}
               className="flex items-center gap-2 bg-seablue text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/90 transition-all shadow-lg shadow-seablue/20 disabled:opacity-50"
             >
@@ -799,10 +818,11 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v: any) => void, role: string | null, onLogout: () => void }) => {
   const tabs = [
     { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'SC'] },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'stats', label: 'Stats', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'dashboard', label: 'Stats & Reports', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'national', label: 'National', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director'] },
     { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
   ];
 
@@ -833,14 +853,42 @@ const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v:
   );
 };
 
-const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName }: any) => {
+const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact }: any) => {
   const currentMonth = getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
-  const [selectedAnalysisRoute, setSelectedAnalysisRoute] = useState('');
-  const [selectedAnalysisOB, setSelectedAnalysisOB] = useState('');
-  
-  // Calculate working days till date
+
+  const filteredOBs = useMemo(() => {
+    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM' || userRole === 'SC') {
+      return obAssignments;
+    }
+    if (userRole === 'RSM') {
+      return obAssignments.filter((ob: any) => ob.region === userRegion);
+    }
+    if (userRole === 'TSM') {
+      return obAssignments.filter((ob: any) => ob.tsm === userName);
+    }
+    if (userRole === 'OB') {
+      return obAssignments.filter((ob: any) => ob.contact === userContact);
+    }
+    return [];
+  }, [obAssignments, userRole, userRegion, userName, userContact]);
+
+  const filteredTSMList = useMemo(() => {
+    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM' || userRole === 'SC') {
+      return tsmList;
+    }
+    if (userRole === 'RSM') {
+      // This is tricky, we might need to know which TSMs are in which region
+      // For now, let's filter by checking if any of their OBs are in the region
+      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => ob.tsm === tsm && ob.region === userRegion));
+    }
+    if (userRole === 'TSM') {
+      return tsmList.filter((tsm: string) => tsm === userName);
+    }
+    return [];
+  }, [tsmList, obAssignments, userRole, userRegion, userName]);
+
   const calculateWorkingDaysTillDate = () => {
     const now = new Date(today);
     const year = now.getFullYear();
@@ -862,6 +910,144 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
   const workingDaysTillDate = calculateWorkingDaysTillDate();
   const totalWorkingDays = parseInt(appConfig.total_working_days || '25');
 
+  return (
+    <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">Operational Statistics</h1>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Submission Status & Activity Tracking</p>
+      </div>
+
+      {/* OB Submission Status Report */}
+      <section className="card-clean bg-white overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">OB Wise Submission Status</h3>
+          <div className="flex gap-4">
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Working Days (MTD): {workingDaysTillDate}</span>
+            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Target: {totalWorkingDays}</span>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                <th className="px-6 py-3">OB Name</th>
+                <th className="px-6 py-3">TSM</th>
+                <th className="px-6 py-3 text-center">Till Date Entries</th>
+                <th className="px-6 py-3 text-center">Missing Days</th>
+                <th className="px-6 py-3">Last Entry</th>
+                <th className="px-6 py-3 text-right">Efficiency</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {filteredOBs.map((ob: any) => {
+                const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
+                const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
+                const missing = Math.max(0, workingDaysTillDate - uniqueEntryDays);
+                const lastEntry = obStats.sort((a: any, b: any) => b.date.localeCompare(a.date))[0];
+                const efficiency = workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0;
+                
+                return (
+                  <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="text-xs font-black text-slate-700">{ob.name}</p>
+                      <p className="text-[9px] text-slate-400 font-bold">{ob.town}</p>
+                    </td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.tsm}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-emerald-600">{uniqueEntryDays}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-rose-600">{missing}</td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{lastEntry?.date || 'Never'}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex flex-col items-end gap-1">
+                        <span className={`text-[8px] font-black px-2 py-1 rounded uppercase tracking-widest ${efficiency < 80 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                          {efficiency.toFixed(0)}%
+                        </span>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* TSM Activity Report */}
+      <section className="card-clean bg-white overflow-hidden">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">TSM Activity Report</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                <th className="px-6 py-3">TSM Name</th>
+                <th className="px-6 py-3 text-center">Active OBs</th>
+                <th className="px-6 py-3 text-center">Total Sales</th>
+                <th className="px-6 py-3 text-center">Avg Productivity</th>
+                <th className="px-6 py-3 text-right">Activity Score</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {filteredTSMList.map((tsm: string) => {
+                const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm);
+                const tsmOrders = history.filter((h: any) => h.tsm === tsm && h.date.startsWith(currentMonth));
+                const activeOBs = new Set(tsmOrders.map((h: any) => h.ob_contact)).size;
+                const totalSales = tsmOrders.reduce((sum: number, h: any) => {
+                  const data = h.order_data || {};
+                  return sum + SKUS.reduce((s: number, sku: any) => {
+                    const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                    const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                    return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                  }, 0);
+                }, 0);
+                const avgProd = tsmOrders.length > 0 ? tsmOrders.reduce((sum: number, h: any) => sum + (h.visited_shops > 0 ? (h.productive_shops / h.visited_shops) * 100 : 0), 0) / tsmOrders.length : 0;
+                const score = (activeOBs / Math.max(1, tsmOBs.length) * 40) + (avgProd * 0.6);
+                
+                return (
+                  <tr key={tsm} className="hover:bg-slate-50/50">
+                    <td className="px-6 py-4 text-xs font-bold text-slate-700">{tsm}</td>
+                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500">{activeOBs}/{tsmOBs.length}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-seablue">{totalSales.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-center text-xs font-bold text-emerald-600">{avgProd.toFixed(0)}%</td>
+                    <td className="px-6 py-4 text-right">
+                      <span className={`text-[10px] font-black ${score > 70 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                        {score.toFixed(1)}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  );
+};
+
+const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact }: any) => {
+  const currentMonth = getPSTDate().slice(0, 7);
+  const today = getPSTDate();
+  const dayOfMonth = parseInt(today.split('-')[2]);
+  const [selectedAnalysisRoute, setSelectedAnalysisRoute] = useState('');
+  const [selectedAnalysisOB, setSelectedAnalysisOB] = useState('');
+
+  const filteredOBs = useMemo(() => {
+    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM' || userRole === 'SC') {
+      return obAssignments;
+    }
+    if (userRole === 'RSM') {
+      return obAssignments.filter((ob: any) => ob.region === userRegion);
+    }
+    if (userRole === 'TSM') {
+      return obAssignments.filter((ob: any) => ob.tsm === userName);
+    }
+    if (userRole === 'OB') {
+      return obAssignments.filter((ob: any) => ob.contact === userContact);
+    }
+    return [];
+  }, [obAssignments, userRole, userRegion, userName, userContact]);
+  
   const routeAnalysisData = useMemo(() => {
     if (!selectedAnalysisOB || !selectedAnalysisRoute) return null;
     const obOrders = history.filter((h: any) => h.ob_contact === selectedAnalysisOB && h.route === selectedAnalysisRoute);
@@ -887,53 +1073,54 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
   }, [history, selectedAnalysisOB, selectedAnalysisRoute, CATEGORIES, SKUS]);
 
   return (
-    <div className="space-y-6">
-      {/* OB Submission Status Report */}
+    <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">Performance Reports</h1>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Detailed Analysis & Sales Matrix</p>
+      </div>
+
+      {/* OB Date-wise Sales Matrix (MTD) */}
       <section className="card-clean bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">OB Wise Submission Status</h3>
-          <div className="flex gap-4">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Working Days (MTD): {workingDaysTillDate}</span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Target: {totalWorkingDays}</span>
-          </div>
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left min-w-[1200px]">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="px-6 py-3">OB Name</th>
-                <th className="px-6 py-3">TSM</th>
-                <th className="px-6 py-3 text-center">Till Date Entries</th>
-                <th className="px-6 py-3 text-center">Missing Days</th>
-                <th className="px-6 py-3">Last Entry</th>
-                <th className="px-6 py-3 text-right">Efficiency</th>
+              <tr className="bg-slate-50 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                <th className="px-4 py-2 sticky left-0 bg-slate-50 z-10">OB Name</th>
+                {Array.from({ length: dayOfMonth }, (_, i) => i + 1).map(day => (
+                  <th key={day} className="px-2 py-2 text-center">{day}</th>
+                ))}
+                <th className="px-4 py-2 text-right">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {obAssignments.map((ob: any) => {
+              {filteredOBs.map((ob: any) => {
                 const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
-                const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
-                const missing = Math.max(0, workingDaysTillDate - uniqueEntryDays);
-                const lastEntry = obStats.sort((a: any, b: any) => b.date.localeCompare(a.date))[0];
-                const efficiency = workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0;
-                
+                let total = 0;
                 return (
-                  <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
-                    <td className="px-6 py-4">
-                      <p className="text-xs font-black text-slate-700">{ob.name}</p>
-                      <p className="text-[9px] text-slate-400 font-bold">{ob.town}</p>
-                    </td>
-                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.tsm}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-emerald-600">{uniqueEntryDays}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-rose-600">{missing}</td>
-                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{lastEntry?.date || 'Never'}</td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex flex-col items-end gap-1">
-                        <span className={`text-[8px] font-black px-2 py-1 rounded uppercase tracking-widest ${efficiency < 80 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
-                          {efficiency.toFixed(0)}%
-                        </span>
-                      </div>
-                    </td>
+                  <tr key={ob.contact} className="hover:bg-slate-50/50">
+                    <td className="px-4 py-2 sticky left-0 bg-white z-10 text-[10px] font-bold text-slate-700 border-r border-slate-100">{ob.name}</td>
+                    {Array.from({ length: dayOfMonth }, (_, i) => i + 1).map(day => {
+                      const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
+                      const dayOrders = obStats.filter((h: any) => h.date === dateStr);
+                      const daySales = dayOrders.reduce((sum, h) => {
+                        const data = h.order_data || {};
+                        return sum + SKUS.reduce((s, sku) => {
+                          const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                          const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                          return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                        }, 0);
+                      }, 0);
+                      total += daySales;
+                      return (
+                        <td key={day} className={`px-2 py-2 text-center text-[9px] ${daySales > 0 ? 'font-bold text-seablue' : 'text-slate-300'}`}>
+                          {daySales > 0 ? daySales.toFixed(1) : '-'}
+                        </td>
+                      );
+                    })}
+                    <td className="px-4 py-2 text-right text-[10px] font-black text-emerald-600">{total.toFixed(1)}</td>
                   </tr>
                 );
               })}
@@ -987,57 +1174,6 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
         </div>
       </section>
 
-      {/* TSM Activity Report */}
-      <section className="card-clean bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">TSM Activity Report</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="px-6 py-3">TSM Name</th>
-                <th className="px-6 py-3 text-center">Active OBs</th>
-                <th className="px-6 py-3 text-center">Total Sales</th>
-                <th className="px-6 py-3 text-center">Avg Productivity</th>
-                <th className="px-6 py-3 text-right">Activity Score</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {tsmList.map((tsm: string) => {
-                const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm);
-                const tsmOrders = history.filter((h: any) => h.tsm === tsm && h.date.startsWith(currentMonth));
-                const activeOBs = new Set(tsmOrders.map((h: any) => h.ob_contact)).size;
-                const totalSales = tsmOrders.reduce((sum: number, h: any) => {
-                  const data = h.order_data || {};
-                  return sum + SKUS.reduce((s: number, sku: any) => {
-                    const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                    const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                    return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                  }, 0);
-                }, 0);
-                const avgProd = tsmOrders.length > 0 ? tsmOrders.reduce((sum: number, h: any) => sum + (h.visited_shops > 0 ? (h.productive_shops / h.visited_shops) * 100 : 0), 0) / tsmOrders.length : 0;
-                const score = (activeOBs / Math.max(1, tsmOBs.length) * 40) + (avgProd * 0.6);
-                
-                return (
-                  <tr key={tsm} className="hover:bg-slate-50/50">
-                    <td className="px-6 py-4 text-xs font-bold text-slate-700">{tsm}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500">{activeOBs}/{tsmOBs.length}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-seablue">{totalSales.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-emerald-600">{avgProd.toFixed(0)}%</td>
-                    <td className="px-6 py-4 text-right">
-                      <span className={`text-[10px] font-black ${score > 70 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                        {score.toFixed(1)}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
       {/* Route Analysis Section */}
       <section className="card-clean bg-white overflow-hidden">
         <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1052,7 +1188,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               className="input-clean py-1 text-[10px] min-w-[120px]"
             >
               <option value="">Select OB</option>
-              {obAssignments.map((ob: any) => <option key={ob.contact} value={ob.contact}>{ob.name}</option>)}
+              {filteredOBs.map((ob: any) => <option key={ob.contact} value={ob.contact}>{ob.name}</option>)}
             </select>
             <select 
               value={selectedAnalysisRoute} 
@@ -1095,10 +1231,20 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
         )}
       </section>
 
-      {/* Route-to-Route Analysis */}
+      {/* Route-to-Route Analysis (MTD) */}
       <section className="card-clean bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
+        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <h3 className="text-sm font-black text-seablue uppercase tracking-widest">Route-to-Route Analysis (MTD)</h3>
+          <div className="flex gap-2">
+            <select 
+              value={selectedAnalysisOB} 
+              onChange={e => setSelectedAnalysisOB(e.target.value)}
+              className="input-clean py-1 text-[10px] min-w-[150px]"
+            >
+              <option value="">All OBs</option>
+              {filteredOBs.map((ob: any) => <option key={ob.contact} value={ob.contact}>{ob.name}</option>)}
+            </select>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -1112,7 +1258,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {obAssignments.flatMap((ob: any) => {
+              {filteredOBs.filter((ob: any) => !selectedAnalysisOB || ob.contact === selectedAnalysisOB).flatMap((ob: any) => {
                 const obOrders = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
                 const routes = Array.from(new Set([...(ob.routes || []), ...obOrders.map((h: any) => h.route)])).filter(Boolean);
                 
@@ -1156,6 +1302,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
     </div>
   );
 };
+
 
 const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => {
   const [email, setEmail] = useState('');
@@ -1267,6 +1414,7 @@ export default function App() {
   const [userName, setUserName] = useState<string | null>(() => user?.name || null);
   const [userContact, setUserContact] = useState<string | null>(() => user?.contact || null);
   const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
+  const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
 
   const handleLogin = (token: string, userData: any) => {
     setToken(token);
@@ -1275,6 +1423,7 @@ export default function App() {
     setUserName(userData.name);
     setUserContact(userData.contact);
     setUserEmail(userData.email);
+    setUserRegion(userData.region);
     localStorage.setItem('auth_token', token);
     localStorage.setItem('user_data', JSON.stringify(userData));
     
@@ -1295,6 +1444,7 @@ export default function App() {
     setUserName(null);
     setUserContact(null);
     setUserEmail(null);
+    setUserRegion(null);
     localStorage.clear();
   };
 
@@ -1337,9 +1487,14 @@ export default function App() {
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [stockHistory, setStockHistory] = useState<any[]>([]);
   const [selectedTSM, setSelectedTSM] = useState<string>(() => {
-    const role = localStorage.getItem('user_role');
-    const name = localStorage.getItem('user_name');
-    return role === 'TSM' ? name || '' : '';
+    try {
+      const savedUser = localStorage.getItem('user_data');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        return parsed.role === 'TSM' ? parsed.name || '' : '';
+      }
+    } catch (e) {}
+    return '';
   });
   const [selectedAdminTSM, setSelectedAdminTSM] = useState<string>('');
   const [targetMonth, setTargetMonth] = useState<string>(new Date().toISOString().slice(0, 7));
@@ -1420,7 +1575,16 @@ export default function App() {
   const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [stockOrders, setStockOrders] = useState<Record<string, Record<string, { ctn: number }>>>({});
-  const [selectedStockTSM, setSelectedStockTSM] = useState<string>('');
+  const [selectedStockTSM, setSelectedStockTSM] = useState<string>(() => {
+    try {
+      const savedUser = localStorage.getItem('user_data');
+      if (savedUser) {
+        const parsed = JSON.parse(savedUser);
+        return parsed.role === 'TSM' ? parsed.name || '' : '';
+      }
+    } catch (e) {}
+    return '';
+  });
   const [selectedStockRegion, setSelectedStockRegion] = useState<string>('');
   const [selectedStockTown, setSelectedStockTown] = useState<string>('');
   const [isSubmittingStocks, setIsSubmittingStocks] = useState(false);
@@ -1860,6 +2024,15 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    if (userRole === 'OB' && userContact && obAssignments.length > 0) {
+      const assignment = obAssignments.find(a => a.contact === userContact);
+      if (assignment && !order.obContact) {
+        handleMetaChange('obContact', userContact);
+      }
+    }
+  }, [userRole, userContact, obAssignments, order.obContact]);
+
   const syncEverything = async () => {
     setIsSyncingGlobal(true);
     try {
@@ -1882,11 +2055,24 @@ export default function App() {
 
   useEffect(() => {
     if (!token || token === 'null') return;
-    // Auto-sync on mount if config is available - ONLY FOR ADMINS to prevent 403 logout
-    if ((userRole === 'Admin' || userRole === 'Super Admin') && appConfig.google_spreadsheet_id && !isSyncingGlobal) {
+    // Auto-sync on mount if config is available - FOR ALL USERS as requested
+    if (appConfig.google_spreadsheet_id && !isSyncingGlobal) {
       syncEverything();
     }
-  }, [appConfig.google_spreadsheet_id, token, userRole]);
+  }, [appConfig.google_spreadsheet_id, token]);
+
+  // Periodic refresh for NSM/RSM/SC/Director every 30 minutes
+  useEffect(() => {
+    if (!token || token === 'null') return;
+    if (!['NSM', 'RSM', 'SC', 'Director', 'Admin', 'Super Admin'].includes(userRole || '')) return;
+
+    const interval = setInterval(() => {
+      console.log("Periodic refresh triggered...");
+      syncEverything();
+    }, 30 * 60 * 1000); // 30 minutes
+
+    return () => clearInterval(interval);
+  }, [token, userRole, appConfig.google_spreadsheet_id]);
 
   // Expose to window for NationalDashboard
   useEffect(() => {
@@ -2700,7 +2886,7 @@ export default function App() {
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-4">
                 <Loader2 className="w-10 h-10 text-seablue animate-spin" />
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Stats...</p>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Dashboard...</p>
                 <button onClick={() => { fetchHistory(true); fetchAdminData(); }} className="text-[10px] font-bold text-seablue underline">Retry</button>
               </div>
             </div>
@@ -2708,19 +2894,47 @@ export default function App() {
         );
       }
 
+      // If management role, show NationalDashboard (Management Dashboard)
+      if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'].includes(userRole || '')) {
+        return (
+          <div className="min-h-screen bg-slate-50 pb-40">
+            <MainNavWithRole />
+            {isLoadingNational ? (
+              <div className="flex-1 flex items-center justify-center min-h-[80vh]">
+                <div className="flex flex-col items-center gap-4">
+                  <Loader2 className="w-10 h-10 text-seablue animate-spin" />
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Dashboard...</p>
+                </div>
+              </div>
+            ) : (
+              <NationalDashboard 
+                stats={nationalStats} 
+                hierarchy={hierarchy} 
+                categories={CATEGORIES} 
+                skus={SKUS}
+                isSyncing={isSyncingGlobal}
+                onRefresh={syncEverything}
+                userRole={userRole}
+                userRegion={userRegion}
+                userName={userName}
+                userContact={userContact}
+              />
+            )}
+          </div>
+        );
+      }
+
       const today = new Date().toISOString().split('T')[0];
       const currentMonth = today.slice(0, 7);
       
-      // Role-based data filtering
+      // Role-based data filtering for TSM/OB
       const filteredHistory = history.filter(h => {
-        if (userRole === 'Admin') return true;
         if (userRole === 'TSM') return h.tsm === userName;
         if (userRole === 'OB') return h.ob_contact === userContact;
         return false;
       });
 
       const filteredOBAssignments = obAssignments.filter(ob => {
-        if (userRole === 'Admin') return true;
         if (userRole === 'TSM') return ob.tsm === userName;
         if (userRole === 'OB') return ob.contact === userContact;
         return false;
@@ -2925,7 +3139,7 @@ export default function App() {
                 <h1 className="text-lg font-bold text-seablue leading-tight">Dashboard</h1>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[8px] font-black bg-seablue/10 text-seablue px-1.5 py-0.5 rounded uppercase tracking-widest">{userRole}</span>
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{userName}</span>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{userEmail}</span>
                 </div>
               </div>
             </div>
@@ -3452,6 +3666,8 @@ export default function App() {
                 CATEGORIES={CATEGORIES} 
                 userRole={userRole} 
                 userName={userName} 
+                userRegion={userRegion}
+                userContact={userContact}
               />
             </div>
           )}
@@ -3523,7 +3739,7 @@ export default function App() {
     }
   }
 
-  if (view === 'national') {
+  if (view === 'stats') {
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
         <MainNavWithRole />
@@ -3531,17 +3747,52 @@ export default function App() {
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading National Stats...</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Stats...</p>
             </div>
           </div>
         ) : (
-          <NationalDashboard 
-            stats={nationalStats} 
-            hierarchy={hierarchy} 
-            categories={CATEGORIES} 
-            skus={SKUS}
-            isSyncing={isSyncingGlobal}
+          <StatsView 
+            history={nationalStats} 
+            obAssignments={hierarchy} 
+            tsmList={tsmList} 
+            appConfig={appConfig} 
+            getPSTDate={() => new Date().toISOString().split('T')[0]} 
+            SKUS={SKUS} 
+            CATEGORIES={CATEGORIES} 
             userRole={userRole}
+            userName={userName}
+            userRegion={userRegion}
+            userContact={userContact}
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (view === 'reports') {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-40">
+        <MainNavWithRole />
+        {isLoadingNational ? (
+          <div className="flex-1 flex items-center justify-center min-h-[80vh]">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Reports...</p>
+            </div>
+          </div>
+        ) : (
+          <ReportsView 
+            history={nationalStats} 
+            obAssignments={hierarchy} 
+            tsmList={tsmList} 
+            appConfig={appConfig} 
+            getPSTDate={() => new Date().toISOString().split('T')[0]} 
+            SKUS={SKUS} 
+            CATEGORIES={CATEGORIES} 
+            userRole={userRole} 
+            userName={userName} 
+            userRegion={userRegion}
+            userContact={userContact}
           />
         )}
       </div>

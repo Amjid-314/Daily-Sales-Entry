@@ -128,8 +128,16 @@ db.exec(`
     accuracy REAL,
     visit_type TEXT DEFAULT 'A',
     submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+  `);
 
+  // Add unique index for sync consistency
+  try {
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_submitted_orders_date_ob ON submitted_orders(date, ob_contact)").run();
+  } catch (e) {
+    console.error("Error creating unique index:", e);
+  }
+
+  db.exec(`
   CREATE TABLE IF NOT EXISTS distributors (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     town TEXT,
@@ -2289,7 +2297,7 @@ async function startServer() {
 
       const transaction = db.transaction(() => {
         const insertOrder = db.prepare(`
-          INSERT INTO submitted_orders (
+          INSERT OR REPLACE INTO submitted_orders (
             date, director, nsm, rsm, tsm, town, distributor, order_booker, ob_contact, route, 
             zone, region,
             total_shops, visited_shops, productive_shops, 
@@ -2343,7 +2351,7 @@ async function startServer() {
           const acc = getVal(['Accuracy']) || null;
 
           const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(cleanContact, cleanDate);
-          if (existing) continue;
+          // if (existing) continue; // Removed to allow updates from sheet
 
           insertOrder.run(
             cleanDate, getVal(['Director']) || '', getVal(['NSM']) || '', getVal(['RSM']) || '', getVal(['TSM']) || '', 
@@ -2477,7 +2485,7 @@ async function startServer() {
     };
   }
 
-  app.post("/api/admin/master-sync", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+  app.post("/api/admin/master-sync", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'), async (req, res) => {
     try {
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
