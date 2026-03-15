@@ -2458,22 +2458,10 @@ export default function App() {
   const syncGoogle = async () => {
     setIsSyncing(true);
     try {
-      // Try Service Account sync first if configured
-      if (appConfig.google_spreadsheet_id && appConfig.google_private_key) {
-        const res = await apiFetch('/api/admin/sync-sheets', { method: 'POST' });
-        const data = await res.json();
-        if (res.ok) {
-          setMessage({ text: 'Synced to Google Sheets (Service Account)!', type: 'success' });
-          return;
-        }
-      }
-
-      // Fallback to OAuth2 sync
-      const res = await apiFetch('/api/google/sync', { method: 'POST' });
+      const res = await apiFetch('/api/admin/master-sync', { method: 'POST' });
       const data = await res.json();
       if (res.ok) {
-        setGoogleStatus(prev => ({ ...prev, spreadsheetId: data.spreadsheetId }));
-        setMessage({ text: 'Synced to Google Sheets (OAuth2)!', type: 'success' });
+        setMessage({ text: 'Synced to Google Sheets!', type: 'success' });
       } else {
         throw new Error(data.error || 'Sync failed');
       }

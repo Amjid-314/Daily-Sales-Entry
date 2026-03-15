@@ -219,10 +219,21 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
     if (err) return res.status(403).json({ error: "Invalid or expired token." });
-    // Normalize role to uppercase for consistent RBAC checks
+    
+    // Normalize role to Title Case for consistent RBAC checks
     if (user && user.role) {
-      user.role = user.role.trim().toUpperCase();
+      const r = user.role.trim().toUpperCase();
+      if (r === 'SUPER ADMIN') user.role = 'Super Admin';
+      else if (r === 'ADMIN') user.role = 'Admin';
+      else if (r === 'DIRECTOR') user.role = 'Director';
+      else if (r === 'NSM') user.role = 'NSM';
+      else if (r === 'RSM') user.role = 'RSM';
+      else if (r === 'SC') user.role = 'SC';
+      else if (r === 'TSM') user.role = 'TSM';
+      else if (r === 'OB') user.role = 'OB';
+      else user.role = user.role.trim();
     }
+    
     req.user = user;
     next();
   });
@@ -526,6 +537,30 @@ async function startServer() {
     };
   }
 
+  function formatPrivateKey(key: string): string {
+    if (!key) return '';
+    try {
+      const parsed = JSON.parse(key);
+      if (parsed.private_key) return parsed.private_key;
+    } catch (e) {}
+
+    let formatted = key.trim();
+    formatted = formatted.replace(/^["']|["']$/g, '');
+    formatted = formatted.replace(/\\n/g, '\n');
+    
+    if (!formatted.includes('\n') && formatted.includes('-----BEGIN PRIVATE KEY-----')) {
+      formatted = formatted.replace('-----BEGIN PRIVATE KEY-----', '-----BEGIN PRIVATE KEY-----\n');
+      formatted = formatted.replace('-----END PRIVATE KEY-----', '\n-----END PRIVATE KEY-----');
+      const parts = formatted.split('\n');
+      if (parts.length === 3) {
+        const base64 = parts[1].replace(/\s/g, '');
+        const lines = base64.match(/.{1,64}/g) || [];
+        formatted = `${parts[0]}\n${lines.join('\n')}\n${parts[2]}`;
+      }
+    }
+    return formatted;
+  }
+
   async function getGoogleSheetsClient() {
     const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
     const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -533,26 +568,52 @@ async function startServer() {
     let spreadsheetId = config.google_spreadsheet_id;
     let clientEmail = config.google_service_account_email;
     let privateKeyRaw = config.google_private_key;
+    let tokensRaw = config.google_tokens;
 
-    try {
-      const parsed = JSON.parse(privateKeyRaw);
-      if (parsed.private_key) privateKeyRaw = parsed.private_key;
-      if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
-    } catch (e) {}
+    if (privateKeyRaw) {
+      try {
+        const parsed = JSON.parse(privateKeyRaw);
+        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
+      } catch (e) {}
 
-    const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+      const privateKey = formatPrivateKey(privateKeyRaw);
 
-    if (!spreadsheetId || !clientEmail || !privateKey) {
-      return null;
+      if (!spreadsheetId) {
+        throw new Error("Spreadsheet ID is missing. Please provide the ID of a Google Sheet shared with the Service Account.");
+      }
+      if (!clientEmail) {
+        throw new Error("Service Account Email is missing.");
+      }
+      if (!privateKey) {
+        throw new Error("Private Key is invalid or missing.");
+      }
+
+      const auth = new google.auth.JWT({
+        email: clientEmail,
+        key: privateKey,
+        scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.file']
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+      return { sheets, spreadsheetId, auth };
+    } else if (tokensRaw) {
+      const oauth2Client = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+      );
+      oauth2Client.setCredentials(JSON.parse(tokensRaw));
+      const sheets = google.sheets({ version: "v4", auth: oauth2Client });
+      
+      if (!spreadsheetId) {
+        const resource = { properties: { title: "Sales Reporting Data" } };
+        const spreadsheet = await sheets.spreadsheets.create({ requestBody: resource, fields: "spreadsheetId" });
+        spreadsheetId = spreadsheet.data.spreadsheetId;
+        db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_spreadsheet_id", spreadsheetId);
+      }
+      
+      return { sheets, spreadsheetId, auth: oauth2Client };
     }
-
-    const auth = new google.auth.JWT({
-      email: clientEmail,
-      key: privateKey,
-      scopes: ['https://www.googleapis.com/auth/spreadsheets']
-    });
-    const sheets = google.sheets({ version: 'v4', auth });
-    return { sheets, spreadsheetId };
+    
+    return null;
   }
 
   // Google Sheets Helper
@@ -1031,29 +1092,9 @@ async function startServer() {
 
   async function syncAllToSheets() {
     try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
-      
-      let spreadsheetId = config.google_spreadsheet_id;
-      let clientEmail = config.google_service_account_email;
-      let privateKeyRaw = config.google_private_key;
-
-      try {
-        const parsed = JSON.parse(privateKeyRaw);
-        if (parsed.private_key) privateKeyRaw = parsed.private_key;
-        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
-      } catch (e) {}
-
-      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
-
-      if (!spreadsheetId || !clientEmail || !privateKey) return;
-
-      const auth = new google.auth.JWT({
-        email: clientEmail,
-        key: privateKey,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
-      });
-      const sheets = google.sheets({ version: 'v4', auth });
+      const client = await getGoogleSheetsClient();
+      if (!client) return;
+      const { sheets, spreadsheetId } = client;
 
       await ensureSheetsExist(sheets, spreadsheetId);
 
@@ -1143,20 +1184,9 @@ async function startServer() {
     if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, dbBackupPath);
 
     try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc: any, row: any) => ({ ...acc, [row.key]: row.value }), {});
-      
-      const spreadsheetId = config.google_spreadsheet_id;
-      const privateKeyRaw = config.google_private_key;
-      const clientEmail = config.google_client_email;
-
-      if (spreadsheetId && privateKeyRaw && clientEmail) {
-        const auth = new google.auth.JWT({
-          email: clientEmail,
-          key: privateKeyRaw.replace(/\\n/g, '\n'),
-          scopes: ['https://www.googleapis.com/auth/drive.file', 'https://www.googleapis.com/auth/spreadsheets.readonly']
-        });
-        const drive = google.drive({ version: 'v3', auth });
+      const client = await getGoogleSheetsClient();
+      if (client && client.auth) {
+        const drive = google.drive({ version: 'v3', auth: client.auth });
         
         const folderResponse = await drive.files.create({
           requestBody: { name: `SalesPulse_Backups_${date}`, mimeType: 'application/vnd.google-apps.folder' },
@@ -1273,6 +1303,19 @@ async function startServer() {
 
   app.post("/api/admin/config", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const { key, value } = req.body;
+    
+    // If user pastes the entire JSON file into the private key field, extract the email too
+    if (key === 'google_private_key') {
+      try {
+        const parsed = JSON.parse(value.toString());
+        if (parsed.client_email) {
+          db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run('google_service_account_email', parsed.client_email);
+        }
+      } catch (e) {
+        // Not a JSON string, ignore
+      }
+    }
+
     db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run(key, value.toString());
     logAction(req.user.id.toString(), req.user.name, req.user.role, "UPDATE_CONFIG", { key, value });
     res.json({ success: true });
@@ -1529,29 +1572,12 @@ async function startServer() {
 
   app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'RSM', 'NSM', 'Director', 'SC'), async (req, res) => {
     try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
-      
-      let spreadsheetId = config.google_spreadsheet_id;
-      let clientEmail = config.google_service_account_email;
-      let privateKeyRaw = config.google_private_key;
-
-      if (!spreadsheetId || !clientEmail || !privateKeyRaw) {
-        return res.status(400).json({ error: "Missing Google configuration" });
+      const client = await getGoogleSheetsClient();
+      if (!client) {
+        return res.status(400).json({ error: "Missing Google configuration (Service Account or OAuth2 required)" });
       }
 
-      const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
-
-      if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
-        return res.status(400).json({ error: "Invalid Private Key format. Must be a PEM string." });
-      }
-
-      const auth = new google.auth.JWT({
-        email: clientEmail,
-        key: privateKey,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
-      });
-      const sheets = google.sheets({ version: 'v4', auth });
+      const { sheets, spreadsheetId } = client;
       
       const response = await sheets.spreadsheets.get({ spreadsheetId });
       res.json({ success: true, title: response.data.properties?.title });
@@ -1578,23 +1604,12 @@ async function startServer() {
   });
 
   app.post("/api/google/sync", async (req, res) => {
-    const tokensRow = db.prepare("SELECT value FROM app_config WHERE key = 'google_tokens'").get() as any;
-    if (!tokensRow) return res.status(401).json({ error: "Not connected to Google" });
-
-    const oauth2Client = getOAuth2Client(req);
-    oauth2Client.setCredentials(JSON.parse(tokensRow.value));
-
-    const sheets = google.sheets({ version: "v4", auth: oauth2Client });
-
     try {
-      let spreadsheetId = (db.prepare("SELECT value FROM app_config WHERE key = 'google_spreadsheet_id'").get() as any)?.value;
-
-      if (!spreadsheetId) {
-        const resource = { properties: { title: "Sales Reporting Data" } };
-        const spreadsheet = await sheets.spreadsheets.create({ requestBody: resource, fields: "spreadsheetId" });
-        spreadsheetId = spreadsheet.data.spreadsheetId;
-        db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_spreadsheet_id", spreadsheetId);
+      const client = await getGoogleSheetsClient();
+      if (!client) {
+        return res.status(400).json({ error: "Not connected to Google" });
       }
+      const { sheets, spreadsheetId } = client;
 
       const result = await performFullSync(sheets, spreadsheetId);
 
@@ -2057,7 +2072,7 @@ async function startServer() {
     try {
       const { role, name } = req.user;
       let rows;
-      if (role === 'SUPER ADMIN' || role === 'ADMIN' || role === 'NSM' || role === 'DIRECTOR') {
+      if (role === 'Super Admin' || role === 'Admin' || role === 'NSM' || role === 'Director') {
         rows = db.prepare("SELECT * FROM national_hierarchy").all();
       } else if (role === 'RSM' || role === 'SC') {
         // RSM/SC should see their region. We need to find their region first.
@@ -2434,21 +2449,44 @@ async function startServer() {
           const lng = getVal(['Longitude']) || null;
           const acc = getVal(['Accuracy']) || null;
 
-          const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(cleanContact, cleanDate);
-          // if (existing) continue; // Removed to allow updates from sheet
-
-          insertOrder.run(
-            cleanDate, getVal(['Director']) || '', getVal(['NSM']) || '', getVal(['RSM']) || '', getVal(['TSM']) || '', 
-            getVal(['Town']) || '', getVal(['Distributor']) || '', getVal(['OB Name']) || '', cleanContact, cleanRoute,
-            zone, region,
-            parseInt(getVal(['Total Shops'])) || 0, parseInt(getVal(['Visited Shops'])) || 0, parseInt(getVal(['Productive Shops'])) || 0,
-            JSON.stringify(catProdData), 
-            JSON.stringify(orderData),
-            JSON.stringify({}), 
-            submittedAt,
-            lat, lng, acc,
-            visitType
-          );
+          const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(cleanContact, cleanDate) as any;
+          
+          if (existing) {
+            db.prepare(`
+              UPDATE submitted_orders SET
+                director = ?, nsm = ?, rsm = ?, tsm = ?, town = ?, distributor = ?, order_booker = ?, route = ?,
+                zone = ?, region = ?,
+                total_shops = ?, visited_shops = ?, productive_shops = ?,
+                category_productive_data = ?, order_data = ?, targets_data = ?,
+                submitted_at = ?, latitude = ?, longitude = ?, accuracy = ?, visit_type = ?
+              WHERE id = ?
+            `).run(
+              getVal(['Director']) || '', getVal(['NSM']) || '', getVal(['RSM']) || '', getVal(['TSM']) || '', 
+              getVal(['Town']) || '', getVal(['Distributor']) || '', getVal(['OB Name']) || '', cleanRoute,
+              zone, region,
+              parseInt(getVal(['Total Shops'])) || 0, parseInt(getVal(['Visited Shops'])) || 0, parseInt(getVal(['Productive Shops'])) || 0,
+              JSON.stringify(catProdData), 
+              JSON.stringify(orderData),
+              JSON.stringify({}), 
+              submittedAt,
+              lat, lng, acc,
+              visitType,
+              existing.id
+            );
+          } else {
+            insertOrder.run(
+              cleanDate, getVal(['Director']) || '', getVal(['NSM']) || '', getVal(['RSM']) || '', getVal(['TSM']) || '', 
+              getVal(['Town']) || '', getVal(['Distributor']) || '', getVal(['OB Name']) || '', cleanContact, cleanRoute,
+              zone, region,
+              parseInt(getVal(['Total Shops'])) || 0, parseInt(getVal(['Visited Shops'])) || 0, parseInt(getVal(['Productive Shops'])) || 0,
+              JSON.stringify(catProdData), 
+              JSON.stringify(orderData),
+              JSON.stringify({}), 
+              submittedAt,
+              lat, lng, acc,
+              visitType
+            );
+          }
         }
       });
       transaction();
@@ -2571,39 +2609,11 @@ async function startServer() {
 
   app.post("/api/admin/master-sync", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'), async (req, res) => {
     try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
-      
-      let spreadsheetId = config.google_spreadsheet_id;
-      let clientEmail = config.google_service_account_email;
-      let privateKeyRaw = config.google_private_key;
-
-      if (!privateKeyRaw) {
-        return res.status(400).json({ error: "Google Private Key missing." });
+      const client = await getGoogleSheetsClient();
+      if (!client) {
+        return res.status(400).json({ error: "Google Sheets configuration missing (Service Account or OAuth2 required)." });
       }
-
-      try {
-        const parsed = JSON.parse(privateKeyRaw);
-        if (parsed.private_key) privateKeyRaw = parsed.private_key;
-        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
-      } catch (e) {}
-
-      const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
-
-      if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
-        return res.status(400).json({ error: "Invalid Private Key format. Must be a PEM string." });
-      }
-
-      if (!spreadsheetId || !clientEmail || !privateKey) {
-        return res.status(400).json({ error: "Google Sheets configuration missing." });
-      }
-
-      const auth = new google.auth.JWT({
-        email: clientEmail,
-        key: privateKey,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
-      });
-      const sheets = google.sheets({ version: 'v4', auth });
+      const { sheets, spreadsheetId } = client;
 
       try {
         // Verify spreadsheet access first
@@ -2630,31 +2640,11 @@ async function startServer() {
 
   app.post("/api/admin/sync-team-to-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
-      
-      let spreadsheetId = config.google_spreadsheet_id;
-      let clientEmail = config.google_service_account_email;
-      let privateKeyRaw = config.google_private_key;
-
-      try {
-        const parsed = JSON.parse(privateKeyRaw);
-        if (parsed.private_key) privateKeyRaw = parsed.private_key;
-        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
-      } catch (e) {}
-
-      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
-
-      if (!spreadsheetId || !clientEmail || !privateKey) {
-        return res.status(400).json({ error: "Google Sheets configuration missing" });
+      const client = await getGoogleSheetsClient();
+      if (!client) {
+        return res.status(400).json({ error: "Google Sheets configuration missing (Service Account or OAuth2 required)" });
       }
-
-      const auth = new google.auth.JWT({
-        email: clientEmail,
-        key: privateKey,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
-      });
-      const sheets = google.sheets({ version: 'v4', auth });
+      const { sheets, spreadsheetId } = client;
 
       const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       const currentMonth = new Date().toISOString().slice(0, 7);
@@ -2700,31 +2690,11 @@ async function startServer() {
 
   app.post("/api/admin/sync-team-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
-      
-      let spreadsheetId = config.google_spreadsheet_id;
-      let clientEmail = config.google_service_account_email;
-      let privateKeyRaw = config.google_private_key;
-
-      try {
-        const parsed = JSON.parse(privateKeyRaw);
-        if (parsed.private_key) privateKeyRaw = parsed.private_key;
-        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
-      } catch (e) {}
-
-      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
-
-      if (!spreadsheetId || !clientEmail || !privateKey) {
-        return res.status(400).json({ error: "Google Sheets configuration missing" });
+      const client = await getGoogleSheetsClient();
+      if (!client) {
+        return res.status(400).json({ error: "Google Sheets configuration missing (Service Account or OAuth2 required)" });
       }
-
-      const auth = new google.auth.JWT({
-        email: clientEmail,
-        key: privateKey,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets']
-      });
-      const sheets = google.sheets({ version: 'v4', auth });
+      const { sheets, spreadsheetId } = client;
 
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
@@ -2799,31 +2769,11 @@ async function startServer() {
 
   app.post("/api/admin/import-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
-      
-      let spreadsheetId = config.google_spreadsheet_id;
-      let clientEmail = config.google_service_account_email;
-      let privateKeyRaw = config.google_private_key;
-
-      try {
-        const parsed = JSON.parse(privateKeyRaw);
-        if (parsed.private_key) privateKeyRaw = parsed.private_key;
-        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
-      } catch (e) {}
-
-      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
-
-      if (!spreadsheetId || !clientEmail || !privateKey) {
-        return res.status(400).json({ error: "Google Sheets configuration missing." });
+      const client = await getGoogleSheetsClient();
+      if (!client) {
+        return res.status(400).json({ error: "Google Sheets configuration missing (Service Account or OAuth2 required)" });
       }
-
-      const auth = new google.auth.JWT({
-        email: clientEmail,
-        key: privateKey,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
-      });
-      const sheets = google.sheets({ version: 'v4', auth });
+      const { sheets, spreadsheetId } = client;
 
       // Import OB Assignments and Targets from a sheet named "Team_Data"
       const response = await sheets.spreadsheets.values.get({
@@ -2882,31 +2832,11 @@ async function startServer() {
 
   app.post("/api/admin/sync-sales-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
-      
-      let spreadsheetId = config.google_spreadsheet_id;
-      let clientEmail = config.google_service_account_email;
-      let privateKeyRaw = config.google_private_key;
-
-      try {
-        const parsed = JSON.parse(privateKeyRaw);
-        if (parsed.private_key) privateKeyRaw = parsed.private_key;
-        if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
-      } catch (e) {}
-
-      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
-
-      if (!spreadsheetId || !clientEmail || !privateKey) {
-        return res.status(400).json({ error: "Google Sheets configuration missing." });
+      const client = await getGoogleSheetsClient();
+      if (!client) {
+        return res.status(400).json({ error: "Google Sheets configuration missing (Service Account or OAuth2 required)" });
       }
-
-      const auth = new google.auth.JWT({
-        email: clientEmail,
-        key: privateKey,
-        scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly']
-      });
-      const sheets = google.sheets({ version: 'v4', auth });
+      const { sheets, spreadsheetId } = client;
 
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
