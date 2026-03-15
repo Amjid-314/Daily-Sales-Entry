@@ -219,6 +219,10 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
   jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
     if (err) return res.status(403).json({ error: "Invalid or expired token." });
+    // Normalize role to uppercase for consistent RBAC checks
+    if (user && user.role) {
+      user.role = user.role.trim().toUpperCase();
+    }
     req.user = user;
     next();
   });
@@ -226,15 +230,20 @@ const authenticateToken = (req: any, res: any, next: any) => {
 
 const authorizeRoles = (...roles: string[]) => {
   return (req: any, res: any, next: any) => {
-    const userRole = req.user.role;
+    if (!req.user) {
+      console.error("authorizeRoles: No user found in request");
+      return res.status(401).json({ error: "Unauthorized" });
+    }
+    
+    const userRole = (req.user.role || '').trim().toUpperCase();
+    const normalizedRoles = roles.map(r => r.trim().toUpperCase());
     
     // Super Admin can access everything
-    if (userRole === 'Super Admin') return next();
+    if (userRole === 'SUPER ADMIN') return next();
     
-    // Admin can access everything except maybe some Super Admin specific things (if any)
-    // For now, let's just check if the role is in the list
-    if (roles.includes(userRole)) return next();
+    if (normalizedRoles.includes(userRole)) return next();
 
+    console.warn(`authorizeRoles: Access denied for user ${req.user.name} (${req.user.email}). Role: ${userRole}, Required: ${normalizedRoles.join(', ')}`);
     return res.status(403).json({ error: `Unauthorized access for role: ${userRole}` });
   };
 };
@@ -293,6 +302,7 @@ async function startServer() {
       region TEXT,
       nsm TEXT,
       rsm TEXT,
+      sc TEXT,
       director TEXT,
       total_shops INTEGER DEFAULT 50,
       routes TEXT -- JSON array of routes
@@ -300,7 +310,7 @@ async function startServer() {
   `);
 
   // Migration: Ensure all columns exist in ob_assignments
-  const obCols = ["contact", "tsm", "total_shops", "town", "distributor", "routes", "zone", "region", "nsm", "rsm", "director"];
+  const obCols = ["contact", "tsm", "total_shops", "town", "distributor", "routes", "zone", "region", "nsm", "rsm", "sc", "director"];
   obCols.forEach(col => {
     try { db.exec(`ALTER TABLE ob_assignments ADD COLUMN ${col} ${col === 'total_shops' ? 'INTEGER DEFAULT 50' : 'TEXT'}`); } catch (e) {}
   });
@@ -353,6 +363,16 @@ async function startServer() {
       target_ctn REAL DEFAULT 0,
       month TEXT,
       UNIQUE(ob_contact, brand_name, month)
+    );
+
+    CREATE TABLE IF NOT EXISTS hierarchy_targets (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      role TEXT,
+      name TEXT,
+      brand_name TEXT,
+      target_ctn REAL DEFAULT 0,
+      month TEXT,
+      UNIQUE(role, name, brand_name, month)
     );
 
     CREATE TABLE IF NOT EXISTS app_config (
@@ -446,6 +466,7 @@ async function startServer() {
 
   // Initial Config
   db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("total_working_days", "25");
+  db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("holidays", "");
   db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("google_spreadsheet_id", "1xdVdlzC1lfJfrH2v_LsOJMgCyRaEJbImMNDd_HvysIA");
   db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_service_account_email", "sheets-sync@salesappintegration.iam.gserviceaccount.com");
   db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_private_key", "-----BEGIN PRIVATE KEY-----\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCBKcwggSjAgEAAoIBAQDK7Cr/uJugpYCu\n502wYaYlZM896/0XBbRF9xj1NeYpNKjgPMmXwwclLoH4B0GleDUo+Ymr2Dw7x8Oh\naw0imKghRRU2JlpvUwpDytFqvQ5cj9jS/vQgV8dAGXxHvjttI37y+GMmemB8np1t\nZTvh7sqYe/AHAz/lAaxF8vdpwrDq3QmHW7eB5Ztkz8J27tMiJ5Dm5CIKR4MawH0f\nTxoM1Vd+3nOWme63yOPy2woB6MEpdgbWS5hpTmFGeZv1PhdffIcz3QPTzHLyyU54\nHC5i7AiXc8EKQ7cZ0J8FUXB9yp5It0bp3fsiy3+18Y4U76pR8UDlb/o2TQhIVfM0\nvFSt6isfAgMBAAECggEARwcWX+8izj7QBaih2WC8sq8QGVkOfC37dVfx7PbCSt8L\nU34DhDL4P8wBIyuLD1u9o8uApF1qa/RW5hvd+6Oaihavv4X6NqhG2gbWeXmWWtDg\n8K3cDqwa6rVg+o28KE355BsMPY4tUsGEUiPSq5kVYf1TvWimR0boIY3TizniCjrX\nsSu5MPOZkfGaRFyJsyULq8f3LbOQl7XH1GMQE225wbiwHMIGGsGTDOOv2e80hslm\nN6MHbDrlfXwxIbz52stxXy9/iwNvRWutgmlCXZg45D2eXXxr1+flEZ5k2QCH6q0R\n4Ys6T7+Fp4pOZUnsh1ojnS95khYJsmxA9ymDznzvnQKBgQDr8TpFp2T1SeZriduj\nbYhN78m3ZQcoOqW/KHXx5ZPpy186LxhQ2340ddlq7ctqPPYElWsacpoUksugA/oi\ngM80Fbw52aiTEJGqXcioBOfpSqzCOjU8jLqimcO+/huTcVaQbMJ+wYWZhtipUxbq\n5LYBSdCCPwPNGpEEn0c6gOei5QKBgQDcLFY3IPZSsNdhj88mZt5+uOcPR0iCbw03\nR8wIiaoxzqHzJJRcbXNhv+aq9l+F6vSKDnckmUmnehfT73TUbOCaIEFmoe2F7/d+\nzkqnw7m26s+deGSpfyfi+FcZnA8SwFU9bRBfUIeWNlRH93iyjm4QoIyJ69+8CSYi\njk9PWijhswKBgCrc/hsdWAf/zu6GcvJzual/AIRixDQYw3fA3/x8Gq0El144pBA8\nb+cT6dW1MZkxTfhzNKvvWfKW4ItHba/K+tmZgUJ5OljNT8lFlGiBy6fkOxJmBLnl\nTxqvGJKgE15r3rAKMiNZAO5tQvsv7x/pQO9m+4xN6mDejK3sScJlHK/JAoGBAJ2w\ne4c8am9LDNdpQjoEzzH/iC2fJkWU9+gx2eX7gxPtJHyaJFAWa98ErFah4kRtxPrj\n5V0nFGOIxGwcQpap7Cs3EuBI9W9KMP53DW0ed3KUtmHYCnCDC7Q5nVhQN1N8wRAf\nfuxlJtbkznREwANSk24BLubRMwrfmpqBRjhVIJaVAoGAcS8uL5nP/CIQklr1ccYm\nEth+MgJkLmp8QmX89IvntjkuWfmn8YJ0rqS4jxnqJ8FUyAYpmmu3DdsFCul6uoV9\naF6nJNTwcS8WZHdgcLDOt/bNZ7A15SJrjHm8Bnrk9YgxZBCrkEA02QfzcdiUumVA\nLeowuk+ZPShGOhiSycAe6JQ=\n-----END PRIVATE KEY-----");
@@ -460,17 +481,41 @@ async function startServer() {
   }
 
   function calculateTimeGone() {
-    const now = new Date();
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
+    const year = now.getFullYear();
+    const month = now.getMonth();
     const today = now.getDate();
-    const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
     
-    // Get working days from config
-    const configRow = db.prepare("SELECT value FROM app_config WHERE key = 'total_working_days'").get() as any;
-    const totalWorkingDays = parseInt(configRow?.value || '25');
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
     
-    // Estimate working days gone (simplified: pro-rated by calendar days)
-    const timeGonePercent = (today / daysInMonth);
-    const workingDaysGone = Math.round(totalWorkingDays * timeGonePercent);
+    const holidaysRow = db.prepare("SELECT value FROM app_config WHERE key = 'holidays'").get() as any;
+    const holidaysStr = holidaysRow?.value || '';
+    const holidays = holidaysStr.split(',').map((h: string) => h.trim()).filter((h: string) => h);
+    
+    let totalWorkingDays = 0;
+    let workingDaysGone = 0;
+    
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date = new Date(year, month, d);
+      // Format to YYYY-MM-DD local time
+      const dateStr = [
+        date.getFullYear(),
+        String(date.getMonth() + 1).padStart(2, '0'),
+        String(date.getDate()).padStart(2, '0')
+      ].join('-');
+      
+      const isSunday = date.getDay() === 0;
+      const isHoliday = holidays.includes(dateStr);
+      
+      if (!isSunday && !isHoliday) {
+        totalWorkingDays++;
+        if (d <= today) {
+          workingDaysGone++;
+        }
+      }
+    }
+    
+    const timeGonePercent = totalWorkingDays > 0 ? (workingDaysGone / totalWorkingDays) : 0;
     
     return {
       today,
@@ -1233,6 +1278,36 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  app.get("/api/admin/hierarchy-targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'), (req, res) => {
+    const month = req.query.month || new Date().toISOString().slice(0, 7);
+    try {
+      const targets = db.prepare("SELECT * FROM hierarchy_targets WHERE month = ?").all(month);
+      res.json(targets);
+    } catch (error) {
+      console.error("Error fetching hierarchy targets:", error);
+      res.status(500).json({ error: "Failed to fetch hierarchy targets" });
+    }
+  });
+
+  app.post("/api/admin/hierarchy-targets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    const { role, name, brand_name, target_ctn, month } = req.body;
+    
+    if (!role || !name || !brand_name || target_ctn === undefined || !month) {
+      return res.status(400).json({ error: "Missing required fields" });
+    }
+
+    try {
+      db.prepare(`
+        INSERT OR REPLACE INTO hierarchy_targets (role, name, brand_name, target_ctn, month) 
+        VALUES (?, ?, ?, ?, ?)
+      `).run(role, name, brand_name, target_ctn, month);
+      res.json({ success: true });
+    } catch (error) {
+      console.error("Error saving hierarchy target:", error);
+      res.status(500).json({ error: "Failed to save hierarchy target" });
+    }
+  });
+
   app.get("/api/admin/obs", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'), (req: any, res) => {
     try {
       const currentMonth = new Date().toISOString().slice(0, 7);
@@ -1452,7 +1527,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+  app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'RSM', 'NSM', 'Director', 'SC'), async (req, res) => {
     try {
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -1466,6 +1541,10 @@ async function startServer() {
       }
 
       const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+
+      if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+        return res.status(400).json({ error: "Invalid Private Key format. Must be a PEM string." });
+      }
 
       const auth = new google.auth.JWT({
         email: clientEmail,
@@ -1620,11 +1699,11 @@ async function startServer() {
 
       // RBAC Filtering
       if (role === 'TSM') {
-        query += " AND tsm = ?";
+        query += " AND (tsm = ? OR ob_contact LIKE 'TSM-%')";
         params.push(name);
-      } else if (role === 'RSM') {
-        query += " AND region = ?";
-        params.push(region);
+      } else if (role === 'RSM' || role === 'SC') {
+        query += " AND (region = ? OR rsm = ? OR sc = ?)";
+        params.push(region, name, name);
       } else if (role === 'OB') {
         query += " AND ob_contact = ?";
         params.push(contact);
@@ -1888,14 +1967,14 @@ async function startServer() {
       for (const item of team) {
         const { 
           name, contact, town, distributor, tsm, zone, region, 
-          nsm, rsm, director,
+          nsm, rsm, sc, director,
           total_shops, routes, targets 
         } = item;
         
         // 1. Update OB Assignments
         db.prepare(`
-          INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, director, total_shops, routes)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON CONFLICT(contact) DO UPDATE SET
             name=excluded.name,
             town=excluded.town,
@@ -1905,12 +1984,13 @@ async function startServer() {
             region=excluded.region,
             nsm=excluded.nsm,
             rsm=excluded.rsm,
+            sc=excluded.sc,
             director=excluded.director,
             total_shops=excluded.total_shops,
             routes=excluded.routes
         `).run(
           name, contact, town, distributor, tsm, zone, region, 
-          nsm || '', rsm || '', director || '',
+          nsm || '', rsm || '', sc || '', director || '',
           total_shops || 50, JSON.stringify(routes || [])
         );
 
@@ -1977,7 +2057,7 @@ async function startServer() {
     try {
       const { role, name } = req.user;
       let rows;
-      if (role === 'Super Admin' || role === 'Admin' || role === 'NSM' || role === 'Director') {
+      if (role === 'SUPER ADMIN' || role === 'ADMIN' || role === 'NSM' || role === 'DIRECTOR') {
         rows = db.prepare("SELECT * FROM national_hierarchy").all();
       } else if (role === 'RSM' || role === 'SC') {
         // RSM/SC should see their region. We need to find their region first.
@@ -2009,10 +2089,14 @@ async function startServer() {
       
       let visibleOBIds: string[] = [];
       
-      if (role === 'Admin' || role === 'Super Admin' || role === 'Director' || role === 'NSM') {
+      if (role === 'Admin' || role === 'Super Admin') {
         visibleOBIds = hierarchy.map(h => h.ob_id);
-      } else if (role === 'RSM') {
-        visibleOBIds = hierarchy.filter(h => h.rsm_name === name || h.territory_region === region).map(h => h.ob_id);
+      } else if (role === 'Director') {
+        visibleOBIds = hierarchy.filter(h => h.director_sales === name).map(h => h.ob_id);
+      } else if (role === 'NSM') {
+        visibleOBIds = hierarchy.filter(h => h.nsm_name === name).map(h => h.ob_id);
+      } else if (role === 'RSM' || role === 'SC') {
+        visibleOBIds = hierarchy.filter(h => h.rsm_name === name || h.sc_name === name || h.territory_region === region).map(h => h.ob_id);
       } else if (role === 'TSM') {
         visibleOBIds = hierarchy.filter(h => h.asm_tsm_name === name).map(h => h.ob_id);
       } else if (role === 'OB') {
@@ -2494,13 +2578,21 @@ async function startServer() {
       let clientEmail = config.google_service_account_email;
       let privateKeyRaw = config.google_private_key;
 
+      if (!privateKeyRaw) {
+        return res.status(400).json({ error: "Google Private Key missing." });
+      }
+
       try {
         const parsed = JSON.parse(privateKeyRaw);
         if (parsed.private_key) privateKeyRaw = parsed.private_key;
         if (parsed.client_email && !clientEmail) clientEmail = parsed.client_email;
       } catch (e) {}
 
-      const privateKey = privateKeyRaw?.replace(/\\n/g, '\n');
+      const privateKey = privateKeyRaw.replace(/\\n/g, '\n');
+
+      if (!privateKey.includes('-----BEGIN PRIVATE KEY-----')) {
+        return res.status(400).json({ error: "Invalid Private Key format. Must be a PEM string." });
+      }
 
       if (!spreadsheetId || !clientEmail || !privateKey) {
         return res.status(400).json({ error: "Google Sheets configuration missing." });
@@ -2950,13 +3042,22 @@ async function startServer() {
   app.get("/api/stocks/export", (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM stock_reports ORDER BY date DESC, submitted_at DESC").all() as any[];
+      const obAssignments = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       
-      let csv = "Date,TSM,Town,Distributor," + SKUS.map(s => s.name).join(",") + ",Submitted At\n";
+      let csv = "Date,Month,Director,NSM,RSM,Region,TSM,Town,Distributor," + SKUS.map(s => s.name).join(",") + ",Submitted At\n";
       
       rows.forEach(report => {
         const stockData = JSON.parse(report.stock_data || '{}');
+        const obInfo = obAssignments.find(ob => ob.distributor === report.distributor) || {};
+        const month = report.date ? report.date.slice(0, 7) : '';
+
         const row = [
           report.date,
+          month,
+          obInfo.director || '',
+          obInfo.nsm || '',
+          obInfo.rsm || '',
+          obInfo.region || '',
           report.tsm,
           report.town,
           report.distributor,

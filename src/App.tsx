@@ -75,16 +75,36 @@ const WhatsAppIcon = () => (
   </svg>
 );
 
-const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null }) => {
-  const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>('National');
+const getWorkingDays = (year: number, month: number, holidaysStr: string, dayLimit?: number) => {
+  const totalDays = new Date(year, month + 1, 0).getDate();
+  const limit = dayLimit || totalDays;
+  const holidays = holidaysStr.split(',').map(h => h.trim()).filter(h => h);
+  
+  let workingDays = 0;
+  for (let d = 1; d <= limit; d++) {
+    const date = new Date(year, month, d);
+    const dateStr = [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, '0'),
+      String(date.getDate()).padStart(2, '0')
+    ].join('-');
+    const isSunday = date.getDay() === 0;
+    const isHoliday = holidays.includes(dateStr);
+    if (!isSunday && !isHoliday) workingDays++;
+  }
+  return workingDays;
+};
+
+const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string }) => {
+  const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'RSM' | 'SC' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>('National');
   const [filterValue, setFilterValue] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
 
   const visibleFilterLevels = useMemo(() => {
-    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM' || userRole === 'SC') {
-      return ['National', 'Region', 'TSM', 'Town', 'Distributor', 'OB', 'Route'];
-    } else if (userRole === 'RSM') {
-      return ['Region', 'TSM', 'Town', 'Distributor', 'OB', 'Route'];
+    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') {
+      return ['National', 'Region', 'RSM', 'SC', 'TSM', 'Town', 'Distributor', 'OB', 'Route'];
+    } else if (userRole === 'RSM' || userRole === 'SC') {
+      return ['Region', 'RSM', 'SC', 'TSM', 'Town', 'Distributor', 'OB', 'Route'];
     } else if (userRole === 'TSM') {
       return ['TSM', 'OB', 'Route'];
     } else {
@@ -104,11 +124,21 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     let baseStats = stats;
     
     // Role-based data filtering
-    if (userRole === 'RSM' && userRegion) {
+    if (userRole === 'Director' && userName) {
+      baseStats = stats.filter(s => {
+        const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+        return h?.director_sales === userName;
+      });
+    } else if (userRole === 'NSM' && userName) {
+      baseStats = stats.filter(s => {
+        const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+        return h?.nsm_name === userName;
+      });
+    } else if ((userRole === 'RSM' || userRole === 'SC') && (userName || userRegion)) {
       baseStats = stats.filter(s => {
         const h = hierarchy.find(h => h.ob_id === s.ob_contact);
         const region = h?.territory_region || s.region;
-        return region === userRegion;
+        return h?.rsm_name === userName || h?.sc_name === userName || region === userRegion;
       });
     } else if (userRole === 'TSM' && userName) {
       baseStats = stats.filter(s => {
@@ -146,6 +176,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         ...s,
         region: h?.territory_region || s.region || 'Unassigned',
         tsm: h?.asm_tsm_name || s.tsm || 'Unassigned',
+        rsm: h?.rsm_name || 'Unassigned',
+        sc: h?.sc_name || 'Unassigned',
         town: h?.town_name || s.town || 'Unassigned',
         distributor: h?.distributor_name || s.distributor || 'Unassigned',
         ob_name: h?.ob_name || s.order_booker || 'Unassigned',
@@ -164,6 +196,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     if (filterLevel !== 'National') {
       result = result.filter(s => {
         if (filterLevel === 'Region') return s.region === filterValue;
+        if (filterLevel === 'RSM') return s.rsm === filterValue;
+        if (filterLevel === 'SC') return s.sc === filterValue;
         if (filterLevel === 'TSM') return s.tsm === filterValue;
         if (filterLevel === 'Town') return s.town === filterValue;
         if (filterLevel === 'Distributor') return s.distributor === filterValue;
@@ -182,6 +216,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   const filterOptions = useMemo(() => {
     const options: Record<string, string[]> = {
       Region: Array.from(new Set(processedStats.map(s => s.region))).filter(Boolean).sort() as string[],
+      RSM: Array.from(new Set(processedStats.map(s => s.rsm))).filter(Boolean).sort() as string[],
+      SC: Array.from(new Set(processedStats.map(s => s.sc))).filter(Boolean).sort() as string[],
       TSM: Array.from(new Set(processedStats.map(s => s.tsm))).filter(Boolean).sort() as string[],
       Town: Array.from(new Set(processedStats.map(s => s.town))).filter(Boolean).sort() as string[],
       Distributor: Array.from(new Set(processedStats.map(s => s.distributor))).filter(Boolean).sort() as string[],
@@ -408,8 +444,44 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           <div>
             <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">National Sales Dashboard</h1>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Hierarchical Performance & Cost Analysis</p>
+            <div className="mt-2 flex items-center gap-3">
+              <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                <div 
+                  className="h-full bg-seablue transition-all duration-1000" 
+                  style={{ width: `${timeGone || 0}%` }}
+                />
+              </div>
+              <span className="text-[9px] font-black text-seablue uppercase tracking-widest">
+                Time Gone: {Math.round(timeGone || 0)}%
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
+            <button 
+              onClick={() => {
+                const headers = ['Date', 'Month', 'Director', 'NSM', 'RSM', 'SC', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Route', 'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type', ...CATEGORIES, 'Total Bags'];
+                const rows = monthStats.map(s => {
+                  const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+                  return [
+                    s.date, s.month, h?.director_sales || '', h?.nsm_name || '', h?.rsm_name || '', h?.sc_name || '', s.tsm, s.town, s.distributor, s.ob_name, s.ob_contact, s.route,
+                    s.total_shops, s.visited_shops, s.productive_shops, s.visit_type,
+                    ...CATEGORIES.map(cat => s.brandSales[cat] || 0),
+                    s.totalBags.toFixed(2)
+                  ];
+                });
+                const csv = Papa.unparse([headers, ...rows]);
+                const blob = new Blob([csv], { type: 'text/csv' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `Sales_Report_${selectedMonth}.csv`;
+                a.click();
+              }}
+              className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
+            >
+              <Download className="w-3 h-3" />
+              Export Stats
+            </button>
             <button 
               onClick={onRefresh}
               disabled={isSyncing}
@@ -817,7 +889,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
 const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v: any) => void, role: string | null, onLogout: () => void }) => {
   const tabs = [
-    { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'SC'] },
+    { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'stats', label: 'Stats', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
@@ -859,52 +931,49 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
   const dayOfMonth = parseInt(today.split('-')[2]);
 
   const filteredOBs = useMemo(() => {
-    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM' || userRole === 'SC') {
+    if (userRole === 'Admin' || userRole === 'Super Admin') {
       return obAssignments;
     }
-    if (userRole === 'RSM') {
-      return obAssignments.filter((ob: any) => ob.region === userRegion);
+    if (userRole === 'Director') {
+      return obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    }
+    if (userRole === 'NSM') {
+      return obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    }
+    if (userRole === 'RSM' || userRole === 'SC') {
+      return obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     }
     if (userRole === 'TSM') {
-      return obAssignments.filter((ob: any) => ob.tsm === userName);
+      return obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     }
     if (userRole === 'OB') {
-      return obAssignments.filter((ob: any) => ob.contact === userContact);
+      return obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
     }
     return [];
   }, [obAssignments, userRole, userRegion, userName, userContact]);
 
   const filteredTSMList = useMemo(() => {
-    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM' || userRole === 'SC') {
+    if (userRole === 'Admin' || userRole === 'Super Admin') {
       return tsmList;
     }
-    if (userRole === 'RSM') {
-      // This is tricky, we might need to know which TSMs are in which region
-      // For now, let's filter by checking if any of their OBs are in the region
-      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => ob.tsm === tsm && ob.region === userRegion));
+    if (userRole === 'Director') {
+      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
+    }
+    if (userRole === 'NSM') {
+      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
+    }
+    if (userRole === 'RSM' || userRole === 'SC') {
+      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
     }
     if (userRole === 'TSM') {
-      return tsmList.filter((tsm: string) => tsm === userName);
+      return tsmList.filter((tsm: string) => tsm.toLowerCase() === (userName || '').trim().toLowerCase());
     }
     return [];
   }, [tsmList, obAssignments, userRole, userRegion, userName]);
 
   const calculateWorkingDaysTillDate = () => {
     const now = new Date(today);
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const holidaysStr = appConfig.holidays || '';
-    const holidays = holidaysStr.split(',').map(h => h.trim()).filter(h => h);
-    
-    let workingDays = 0;
-    for (let d = 1; d <= dayOfMonth; d++) {
-      const date = new Date(year, month, d);
-      const dateStr = date.toISOString().split('T')[0];
-      const isSunday = date.getDay() === 0;
-      const isHoliday = holidays.includes(dateStr);
-      if (!isSunday && !isHoliday) workingDays++;
-    }
-    return workingDays;
+    return getWorkingDays(now.getFullYear(), now.getMonth(), appConfig.holidays || '', dayOfMonth);
   };
 
   const workingDaysTillDate = calculateWorkingDaysTillDate();
@@ -1033,17 +1102,23 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
   const [selectedAnalysisOB, setSelectedAnalysisOB] = useState('');
 
   const filteredOBs = useMemo(() => {
-    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM' || userRole === 'SC') {
+    if (userRole === 'Admin' || userRole === 'Super Admin') {
       return obAssignments;
     }
-    if (userRole === 'RSM') {
-      return obAssignments.filter((ob: any) => ob.region === userRegion);
+    if (userRole === 'Director') {
+      return obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    }
+    if (userRole === 'NSM') {
+      return obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    }
+    if (userRole === 'RSM' || userRole === 'SC') {
+      return obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     }
     if (userRole === 'TSM') {
-      return obAssignments.filter((ob: any) => ob.tsm === userName);
+      return obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     }
     if (userRole === 'OB') {
-      return obAssignments.filter((ob: any) => ob.contact === userContact);
+      return obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
     }
     return [];
   }, [obAssignments, userRole, userRegion, userName, userContact]);
@@ -1410,16 +1485,30 @@ export default function App() {
     const saved = localStorage.getItem('user_data');
     try { return saved ? JSON.parse(saved) : null; } catch(e) { return null; }
   });
-  const [userRole, setUserRole] = useState<'Super Admin' | 'Admin' | 'TSM' | 'OB' | 'Director' | 'NSM' | 'RSM' | 'SC' | null>(() => user?.role || null);
+  const normalizeRole = (role: string): any => {
+    const r = (role || '').trim().toUpperCase();
+    if (r === 'SUPER ADMIN') return 'Super Admin';
+    if (r === 'ADMIN') return 'Admin';
+    if (r === 'DIRECTOR') return 'Director';
+    if (r === 'NSM') return 'NSM';
+    if (r === 'RSM') return 'RSM';
+    if (r === 'SC') return 'SC';
+    if (r === 'TSM') return 'TSM';
+    if (r === 'OB') return 'OB';
+    return role;
+  };
+
+  const [userRole, setUserRole] = useState<'Super Admin' | 'Admin' | 'TSM' | 'OB' | 'Director' | 'NSM' | 'RSM' | 'SC' | null>(() => normalizeRole(user?.role));
   const [userName, setUserName] = useState<string | null>(() => user?.name || null);
   const [userContact, setUserContact] = useState<string | null>(() => user?.contact || null);
   const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
   const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
 
   const handleLogin = (token: string, userData: any) => {
+    const role = normalizeRole(userData.role);
     setToken(token);
     setUser(userData);
-    setUserRole(userData.role);
+    setUserRole(role);
     setUserName(userData.name);
     setUserContact(userData.contact);
     setUserEmail(userData.email);
@@ -1427,12 +1516,12 @@ export default function App() {
     localStorage.setItem('auth_token', token);
     localStorage.setItem('user_data', JSON.stringify(userData));
     
-    if (userData.role === 'TSM') {
+    if (role === 'TSM') {
       setSelectedTSM(userData.name);
       setSelectedStockTSM(userData.name);
     }
 
-    if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'].includes(userData.role)) {
+    if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM'].includes(role)) {
       setView('dashboard');
     }
   };
@@ -1459,6 +1548,7 @@ export default function App() {
     };
     const response = await fetch(url, { ...options, headers });
     if (response.status === 401 || response.status === 403) {
+      console.warn(`apiFetch: ${response.status} on ${url}. Logging out.`);
       const errorMsg = response.status === 401 ? "Session expired. Please login again." : "Access denied. You don't have permission for this action.";
       setMessage({ text: errorMsg, type: 'error' });
       handleLogout();
@@ -1992,25 +2082,24 @@ export default function App() {
     finally { setIsLoadingHistory(false); }
   };
 
-  const getTimeGone = () => {
-    const now = new Date();
+
+  const calculateTimeGone = () => {
+    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
     const year = now.getFullYear();
     const month = now.getMonth();
-    const totalDays = new Date(year, month + 1, 0).getDate();
-    let workingDays = 0;
-    for (let d = 1; d <= totalDays; d++) {
-      const day = new Date(year, month, d).getDay();
-      if (day !== 0) workingDays++; // Not Sunday
-    }
+    const today = now.getDate();
     
-    let daysGone = 0;
-    for (let d = 1; d <= now.getDate(); d++) {
-      const day = new Date(year, month, d).getDay();
-      if (day !== 0) daysGone++;
-    }
+    const totalWorkingDays = getWorkingDays(year, month, appConfig.holidays || '');
+    const workingDaysPassed = getWorkingDays(year, month, appConfig.holidays || '', today);
     
-    return workingDays > 0 ? (daysGone / workingDays) * 100 : 0;
+    return {
+      percentage: totalWorkingDays > 0 ? (workingDaysPassed / totalWorkingDays) * 100 : 0,
+      passed: workingDaysPassed,
+      total: totalWorkingDays
+    };
   };
+
+  const getTimeGone = () => calculateTimeGone().percentage;
 
   const updateConfig = async (key: string, value: string) => {
     setAppConfig(prev => ({ ...prev, [key]: value }));
@@ -2064,7 +2153,8 @@ export default function App() {
   // Periodic refresh for NSM/RSM/SC/Director every 30 minutes
   useEffect(() => {
     if (!token || token === 'null') return;
-    if (!['NSM', 'RSM', 'SC', 'Director', 'Admin', 'Super Admin'].includes(userRole || '')) return;
+    const role = (userRole || '').toUpperCase();
+    if (!['NSM', 'RSM', 'SC', 'DIRECTOR', 'ADMIN', 'SUPER ADMIN'].includes(role)) return;
 
     const interval = setInterval(() => {
       console.log("Periodic refresh triggered...");
@@ -2082,7 +2172,7 @@ export default function App() {
 
   useEffect(() => {
     if (!token || token === 'null') return;
-    if (view === 'national') {
+    if (view === 'national' || view === 'dashboard') {
       fetchNationalData();
     }
   }, [view, token]);
@@ -2189,8 +2279,9 @@ export default function App() {
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
-      const isAdmin = userRole === 'Admin' || userRole === 'Super Admin';
-      const isStaff = ['Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'].includes(userRole || '');
+      const normalizedRole = (userRole || '').toUpperCase();
+      const isAdmin = normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN';
+      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes(normalizedRole);
       
       const requests = [
         apiFetch('/api/admin/obs'),
@@ -2319,9 +2410,10 @@ export default function App() {
 
   useEffect(() => {
     if (!token || token === 'null') return;
-    if (['Admin', 'Super Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'].includes(userRole || '')) {
+    const normalizedRole = (userRole || '').toUpperCase();
+    if (['ADMIN', 'SUPER ADMIN', 'TSM', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes(normalizedRole)) {
       fetchAdminData();
-      if (userRole === 'Admin' || userRole === 'Super Admin') {
+      if (normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN') {
         fetchUsers();
       }
     }
@@ -2707,6 +2799,7 @@ export default function App() {
             region: getVal(['Region', 'region']),
             nsm: getVal(['NSM', 'nsm']),
             rsm: getVal(['RSM', 'rsm']),
+            sc: getVal(['SC', 'sc']),
             director: getVal(['Director', 'director']),
             total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops']) || '50') || 50,
             routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
@@ -2753,65 +2846,72 @@ export default function App() {
     });
   };
 
-  const calculateTimeGone = () => {
-    const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const today = now.getDate();
-    
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
-    const holidaysStr = appConfig.holidays || '';
-    const holidays = holidaysStr.split(',').map(h => h.trim()).filter(h => h);
-    
-    let totalWorkingDays = 0;
-    let workingDaysPassed = 0;
-    
-    for (let d = 1; d <= daysInMonth; d++) {
-      const date = new Date(year, month, d);
-      const dateStr = date.toISOString().split('T')[0];
-      const isSunday = date.getDay() === 0;
-      const isHoliday = holidays.includes(dateStr);
-      
-      if (!isSunday && !isHoliday) {
-        totalWorkingDays++;
-        if (d <= today) {
-          workingDaysPassed++;
-        }
-      }
-    }
-    
-    return {
-      percentage: totalWorkingDays > 0 ? (workingDaysPassed / totalWorkingDays) * 100 : 0,
-      passed: workingDaysPassed,
-      total: totalWorkingDays
-    };
-  };
 
   const timeGone = calculateTimeGone();
 
   const tsmList = useMemo(() => {
     const tsms = new Set<string>(['Muhammad Shoaib', 'Waheed Jamal', 'Ikramullah', 'Muhammad Zeeshan', 'Noman Paracha', 'Muhammad Yousaf', 'Qaisar Yousaf']);
-    obAssignments.forEach(ob => { if (ob.tsm) tsms.add(ob.tsm); });
-    distributors.forEach(d => { if (d.tsm) tsms.add(d.tsm); });
-    return Array.from(tsms).sort();
-  }, [obAssignments, distributors]);
+    obAssignments.forEach(ob => { if (ob.tsm) tsms.add(ob.tsm.trim()); });
+    distributors.forEach(d => { if (d.tsm) tsms.add(d.tsm.trim()); });
+    
+    const allTsms = Array.from(tsms).sort();
+    
+    if (userRole === 'Admin' || userRole === 'Super Admin') {
+      return allTsms;
+    }
+    if (userRole === 'Director') {
+      return allTsms.filter(tsm => obAssignments.some(ob => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
+    }
+    if (userRole === 'NSM') {
+      return allTsms.filter(tsm => obAssignments.some(ob => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
+    }
+    if (userRole === 'RSM' || userRole === 'SC') {
+      return allTsms.filter(tsm => obAssignments.some(ob => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
+    }
+    if (userRole === 'TSM') {
+      const trimmedName = (userName || '').trim().toLowerCase();
+      return allTsms.filter(tsm => {
+        const tsmLower = tsm.toLowerCase();
+        return tsmLower === trimmedName || tsmLower.includes(trimmedName) || trimmedName.includes(tsmLower);
+      });
+    }
+    return [];
+  }, [obAssignments, distributors, userRole, userRegion, userName]);
 
   const filteredOBs = useMemo(() => {
-    const obs = selectedTSM ? obAssignments.filter(ob => (ob.tsm || '').toLowerCase() === selectedTSM.toLowerCase()) : [...obAssignments];
+    let obs = [...obAssignments];
+    
+    if (userRole === 'Director') {
+      obs = obs.filter(ob => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if (userRole === 'NSM') {
+      obs = obs.filter(ob => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if (userRole === 'RSM' || userRole === 'SC') {
+      obs = obs.filter(ob => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if (userRole === 'TSM') {
+      const trimmedName = (userName || '').trim().toLowerCase();
+      obs = obs.filter(ob => {
+        const tsmName = (ob.tsm || '').trim().toLowerCase();
+        return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
+      });
+    } else if (userRole === 'OB') {
+      obs = obs.filter(ob => (ob.contact || '').trim() === (userContact || '').trim());
+    }
+
     if (selectedTSM) {
+      obs = obs.filter(ob => (ob.tsm || '').trim().toLowerCase() === selectedTSM.trim().toLowerCase());
       // Add TSM themselves as an option
       obs.unshift({
         name: `*TSM - ${selectedTSM}`,
-        contact: `TSM-${selectedTSM}`,
-        town: distributors.find(d => (d.tsm || '').toLowerCase() === selectedTSM.toLowerCase())?.town || '',
-        distributor: distributors.find(d => (d.tsm || '').toLowerCase() === selectedTSM.toLowerCase())?.name || '',
+        contact: `TSM-${selectedTSM.replace(/\s+/g, '-')}`,
+        town: distributors.find(d => (d.tsm || '').trim().toLowerCase() === selectedTSM.trim().toLowerCase())?.town || '',
+        distributor: distributors.find(d => (d.tsm || '').trim().toLowerCase() === selectedTSM.trim().toLowerCase())?.name || '',
         routes: ['TSM Route'],
         tsm: selectedTSM,
         total_shops: 50
       });
     }
     return obs;
-  }, [obAssignments, selectedTSM, distributors]);
+  }, [obAssignments, selectedTSM, distributors, userRole, userRegion, userName, userContact]);
 
   const groupedHistory = useMemo(() => {
     const groups: Record<string, any[]> = {};
@@ -2895,7 +2995,7 @@ export default function App() {
       }
 
       // If management role, show NationalDashboard (Management Dashboard)
-      if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'].includes(userRole || '')) {
+      if (['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM'].includes((userRole || '').toUpperCase())) {
         return (
           <div className="min-h-screen bg-slate-50 pb-40">
             <MainNavWithRole />
@@ -2918,6 +3018,8 @@ export default function App() {
                 userRegion={userRegion}
                 userName={userName}
                 userContact={userContact}
+                timeGone={timeGone.percentage}
+                holidays={appConfig.holidays || ''}
               />
             )}
           </div>
@@ -3977,14 +4079,14 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => {
-                      const headers = ['Director', 'NSM', 'RSM', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+                      const headers = ['Director', 'NSM', 'RSM', 'SC', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
                       const csvContent = headers.join(",") + "\n" + 
-                        "Director Name,NSM Name,RSM Name,Sample TSM,Sample Town,Sample Dist,Sample OB,S-01,North,Region 1,50,\"Route 1, Route 2\",10,5,2,1,0.5";
+                        "Director Name,NSM Name,RSM Name,SC Name,TSM Name,Town Name,Distributor Name,OB Name,03001234567,Zone Name,Region Name,50,\"Route 1, Route 2\",10,10,10,10,10";
                       const blob = new Blob([csvContent], { type: 'text/csv' });
                       const url = URL.createObjectURL(blob);
                       const a = document.createElement('a');
                       a.href = url;
-                      a.download = 'master_bulk_template.csv';
+                      a.download = 'SalesPulse_Bulk_Template.csv';
                       a.click();
                     }}
                     className="text-[9px] font-bold text-seablue hover:underline flex items-center justify-center gap-1 border border-seablue/20 py-1.5 rounded"
@@ -4647,11 +4749,12 @@ export default function App() {
             <div className="flex flex-wrap items-center gap-2">
               <button 
                 onClick={() => {
-                  const headers = ['Distributor', 'Town', 'TSM', 'Region', ...SKUS.map(s => s.name)];
+                  const headers = ['Director', 'NSM', 'RSM', 'Region', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name)];
                   const rows = filteredDistributors.map(d => {
                     const stocks = stockOrders[d.distributor] || {};
+                    const obInfo = obAssignments.find(ob => ob.distributor === d.distributor) || {} as any;
                     return [
-                      d.distributor, d.town, d.tsm, d.region || '',
+                      obInfo.director || '', obInfo.nsm || '', obInfo.rsm || '', d.region || '', d.tsm, d.town, d.distributor,
                       ...SKUS.map(sku => stocks[sku.id]?.ctn || 0)
                     ];
                   });
@@ -4808,7 +4911,7 @@ export default function App() {
                 </button>
                 <button onClick={() => {
                 const headers = [
-                  'Date', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
+                  'Date', 'Month', 'Director', 'NSM', 'RSM', 'Region', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
                   'Total Shops', 'Visited Shops', 'Productive Shops',
                   ...SKUS.map(sku => `${sku.name} (${sku.category})`),
                   'Total Achievement'
@@ -4816,6 +4919,7 @@ export default function App() {
                 
                 const rows = history.map(h => {
                   const items = h.order_data || {};
+                  const obInfo = obAssignments.find(ob => ob.contact === h.ob_contact) || {} as any;
                   
                   const skuValues = SKUS.map(sku => {
                     const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
@@ -4824,9 +4928,10 @@ export default function App() {
                   });
 
                   const totalAch = skuValues.reduce((a, b) => a + parseFloat(b), 0);
+                  const month = h.date ? h.date.slice(0, 7) : '';
 
                   return [
-                    h.date, h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
+                    h.date, month, obInfo.director || '', obInfo.nsm || '', obInfo.rsm || '', obInfo.region || '', h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
                     h.total_shops, h.visited_shops, h.productive_shops,
                     ...skuValues,
                     totalAch.toFixed(3)
@@ -5173,7 +5278,7 @@ export default function App() {
 
       <main className="max-w-6xl mx-auto px-3 py-3 space-y-3">
         {/* TSM Filter - Restricted by Role */}
-        {(userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'TSM') && tsmList.length > 0 && (
+        {userRole !== 'OB' && tsmList.length > 0 && (
           <div className="card-clean p-2 flex items-center gap-3 bg-seablue/5 border-seablue/10">
             <label className="text-[9px] font-black text-seablue uppercase tracking-widest">TSM:</label>
             <select 
