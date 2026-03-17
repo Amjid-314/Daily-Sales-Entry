@@ -18,6 +18,7 @@ import {
   Pie,
   Legend
 } from 'recharts';
+import { AIChatBot } from './components/AIChatBot';
 import { 
   Save, 
   Send, 
@@ -54,7 +55,8 @@ import {
   Filter,
   ArrowDownRight,
   Mail,
-  Key
+  Key,
+  User
 } from 'lucide-react';
 import { SKUS, CATEGORIES, OrderState, OrderItem, SKU, OBAssignment } from './types';
 
@@ -102,11 +104,11 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
   const visibleFilterLevels = useMemo(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') {
-      return ['National', 'Region', 'RSM', 'SC', 'TSM', 'Town', 'Distributor', 'OB', 'Route'];
+      return ['National', 'Region', 'RSM', 'SC', 'TSM', 'ASM', 'Town', 'Distributor', 'OB', 'Route'];
     } else if (userRole === 'RSM' || userRole === 'SC') {
-      return ['Region', 'RSM', 'SC', 'TSM', 'Town', 'Distributor', 'OB', 'Route'];
-    } else if (userRole === 'TSM') {
-      return ['TSM', 'OB', 'Route'];
+      return ['Region', 'RSM', 'SC', 'TSM', 'ASM', 'Town', 'Distributor', 'OB', 'Route'];
+    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+      return ['TSM', 'ASM', 'OB', 'Route'];
     } else {
       return ['OB', 'Route'];
     }
@@ -140,7 +142,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         const region = h?.territory_region || s.region;
         return h?.rsm_name === userName || h?.sc_name === userName || region === userRegion;
       });
-    } else if (userRole === 'TSM' && userName) {
+    } else if ((userRole === 'TSM' || userRole === 'ASM') && userName) {
       baseStats = stats.filter(s => {
         const h = hierarchy.find(h => h.ob_id === s.ob_contact);
         const tsm = h?.asm_tsm_name || s.tsm;
@@ -441,25 +443,19 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-          <div>
-            <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">National Sales Dashboard</h1>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Hierarchical Performance & Cost Analysis</p>
-            <div className="mt-2 flex items-center gap-3">
-              <div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                <div 
-                  className="h-full bg-seablue transition-all duration-1000" 
-                  style={{ width: `${timeGone || 0}%` }}
-                />
-              </div>
-              <span className="text-[9px] font-black text-seablue uppercase tracking-widest">
-                Time Gone: {Math.round(timeGone || 0)}%
-              </span>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-seablue rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+              <LayoutDashboard className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">SalesPulse Intelligence</h1>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">National Performance & Field Analytics</p>
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <button 
               onClick={() => {
-                const headers = ['Date', 'Month', 'Director', 'NSM', 'RSM', 'SC', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Route', 'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type', ...CATEGORIES, 'Total Bags'];
+                const headers = ['Date', 'Month', 'Director', 'NSM', 'RSM', 'SC', 'TSM', 'ASM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Route', 'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type', ...CATEGORIES, 'Total Bags'];
                 const rows = monthStats.map(s => {
                   const h = hierarchy.find(h => h.ob_id === s.ob_contact);
                   return [
@@ -480,7 +476,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               className="flex items-center gap-2 bg-emerald-600 text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
             >
               <Download className="w-3 h-3" />
-              Export Stats
+              Export
             </button>
             <button 
               onClick={onRefresh}
@@ -488,37 +484,185 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               className="flex items-center gap-2 bg-seablue text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/90 transition-all shadow-lg shadow-seablue/20 disabled:opacity-50"
             >
               <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Syncing...' : 'Sync All Data'}
+              {isSyncing ? 'Syncing...' : 'Sync'}
             </button>
             <input 
               type="month" 
               value={selectedMonth} 
               onChange={(e) => setSelectedMonth(e.target.value)}
-              className="input-clean text-xs font-bold py-2 px-3"
+              className="input-clean text-[10px] font-black uppercase py-2 px-3 bg-slate-50"
             />
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-50">
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Level:</span>
             <select 
               value={filterLevel} 
               onChange={(e) => { setFilterLevel(e.target.value as any); setFilterValue(''); }}
-              className="input-clean text-xs font-bold py-2 px-3"
+              className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
             >
-              <option value="National">National View</option>
-              <option value="Region">Filter by Region</option>
-              <option value="TSM">Filter by TSM</option>
-              <option value="Town">Filter by Town</option>
-              <option value="Distributor">Filter by Distributor</option>
-              <option value="OB">Filter by OB</option>
-              <option value="Route">Filter by Route</option>
+              <option value="National">National</option>
+              <option value="Region">Region</option>
+              <option value="TSM">TSM</option>
+                    <option value="ASM">ASM</option>
+              <option value="Town">Town</option>
+              <option value="Distributor">Distributor</option>
+              <option value="OB">OB</option>
+              <option value="Route">Route</option>
             </select>
-            {filterLevel !== 'National' && (
+          </div>
+          {filterLevel !== 'National' && (
+            <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Select:</span>
               <select 
                 value={filterValue} 
                 onChange={(e) => setFilterValue(e.target.value)}
-                className="input-clean text-xs font-bold py-2 px-3"
+                className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none max-w-[150px]"
               >
-                <option value="">Select {filterLevel}</option>
+                <option value="">All {filterLevel}s</option>
                 {(filterOptions[filterLevel as keyof typeof filterOptions] || []).map(opt => <option key={opt} value={opt}>{opt}</option>)}
               </select>
-            )}
+            </div>
+          )}
+          <div className="flex-1" />
+          <div className="flex items-center gap-3">
+            <div className="w-32 h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div 
+                className="h-full bg-seablue transition-all duration-1000" 
+                style={{ width: `${timeGone || 0}%` }}
+              />
+            </div>
+            <span className="text-[9px] font-black text-seablue uppercase tracking-widest">
+              Month Progress: {Math.round(timeGone || 0)}%
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Bento Grid Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="md:col-span-2 grid grid-cols-2 gap-4">
+          <div className="card-clean p-5 bg-seablue text-white shadow-xl shadow-blue-100 relative overflow-hidden group">
+            <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-500">
+              <Package className="w-24 h-24" />
+            </div>
+            <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">MTD Volume</div>
+            <div className="text-4xl font-black">{summary.totalSales.toFixed(0)}</div>
+            <div className="text-[9px] font-bold text-white/80 mt-2 uppercase tracking-tighter">
+              {summary.totalTonnage.toFixed(1)} Tons Distributed
+            </div>
+          </div>
+          <div className="card-clean p-5 bg-emerald-600 text-white shadow-xl shadow-emerald-100 relative overflow-hidden group">
+            <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-500">
+              <TrendingUp className="w-24 h-24" />
+            </div>
+            <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Active OBs</div>
+            <div className="text-4xl font-black">{summary.uniqueOBs}</div>
+            <div className="text-[9px] font-bold text-white/80 mt-2 uppercase tracking-tighter">
+              Across {summary.uniqueTSMs} TSM Teams
+            </div>
+          </div>
+        </div>
+        
+        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+          <div>
+            <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Productivity</div>
+            <div className="text-3xl font-black text-slate-700">
+              {(() => {
+                const visited = monthStats.reduce((sum, s) => sum + s.visited_shops, 0);
+                const productive = monthStats.reduce((sum, s) => sum + s.productive_shops, 0);
+                return visited > 0 ? ((productive / visited) * 100).toFixed(0) : 0;
+              })()}%
+            </div>
+          </div>
+          <div className="mt-4 space-y-1">
+            <div className="flex justify-between text-[8px] font-black uppercase tracking-widest text-slate-400">
+              <span>Efficiency Gap</span>
+              <span>{Math.max(0, 80 - Number((() => {
+                const visited = monthStats.reduce((sum, s) => sum + s.visited_shops, 0);
+                const productive = monthStats.reduce((sum, s) => sum + s.productive_shops, 0);
+                return visited > 0 ? (productive / visited) * 100 : 0;
+              })())).toFixed(0)}%</span>
+            </div>
+            <div className="h-1 bg-slate-100 rounded-full overflow-hidden">
+              <div className="h-full bg-amber-500" style={{ width: `${Math.min(100, (monthStats.reduce((sum, s) => sum + s.productive_shops, 0) / Math.max(1, monthStats.reduce((sum, s) => sum + s.visited_shops, 0))) * 100)}%` }} />
+            </div>
+          </div>
+        </div>
+
+        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+          <div>
+            <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost Factor</div>
+            <div className="text-3xl font-black text-indigo-600">Rs.{summary.costPerBag.toFixed(0)}</div>
+          </div>
+          <div className="text-[9px] font-bold text-slate-400 mt-2 uppercase tracking-widest">
+            Per Bag Distribution Cost
+          </div>
+        </div>
+      </div>
+
+      {/* Charts Section */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div className="card-clean p-6 bg-white border border-slate-100">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Category Contribution</h3>
+            <Package className="w-4 h-4 text-slate-300" />
+          </div>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <PieChart>
+                <Pie
+                  data={Object.entries(summary.brandTotals).map(([name, value]) => ({ name, value }))}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={60}
+                  outerRadius={100}
+                  paddingAngle={5}
+                  dataKey="value"
+                >
+                  {Object.entries(summary.brandTotals).map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'][index % 6]} />
+                  ))}
+                </Pie>
+                <Tooltip 
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  itemStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}
+                />
+                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
+              </PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="card-clean p-6 bg-white border border-slate-100">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Top 10 TSM Performance</h3>
+            <TrendingUp className="w-4 h-4 text-slate-300" />
+          </div>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={categoryWiseSales.filter(g => g.name !== 'National').sort((a, b) => b.totalSales - a.totalSales).slice(0, 10)}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                <XAxis 
+                  dataKey="name" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 8, fontWeight: 'bold', fill: '#94a3b8' }}
+                />
+                <YAxis 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 8, fontWeight: 'bold', fill: '#94a3b8' }}
+                />
+                <Tooltip 
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                />
+                <Bar dataKey="totalSales" fill="#0ea5e9" radius={[4, 4, 0, 0]} barSize={20} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </div>
       </div>
@@ -889,12 +1033,12 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
 const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v: any) => void, role: string | null, onLogout: () => void }) => {
   const tabs = [
-    { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
+    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'stats', label: 'Stats', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
   ];
 
@@ -943,7 +1087,7 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
     if (userRole === 'RSM' || userRole === 'SC') {
       return obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     }
-    if (userRole === 'TSM') {
+    if ((userRole === 'TSM' || userRole === 'ASM')) {
       return obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     }
     if (userRole === 'OB') {
@@ -965,7 +1109,7 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
     if (userRole === 'RSM' || userRole === 'SC') {
       return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
     }
-    if (userRole === 'TSM') {
+    if ((userRole === 'TSM' || userRole === 'ASM')) {
       return tsmList.filter((tsm: string) => tsm.toLowerCase() === (userName || '').trim().toLowerCase());
     }
     return [];
@@ -1114,7 +1258,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
     if (userRole === 'RSM' || userRole === 'SC') {
       return obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     }
-    if (userRole === 'TSM') {
+    if ((userRole === 'TSM' || userRole === 'ASM')) {
       return obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     }
     if (userRole === 'OB') {
@@ -1380,7 +1524,8 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
 
 
 const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => {
-  const [email, setEmail] = useState('');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1392,7 +1537,7 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email })
+        body: JSON.stringify({ username, password })
       });
       const data = await res.json();
       if (res.ok) {
@@ -1419,20 +1564,35 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
             <Waves className="text-white w-8 h-8" />
           </div>
           <h1 className="text-2xl font-bold text-slate-900">SalesPulse</h1>
-          <p className="text-slate-500 text-sm mt-1">Enter your Gmail to continue</p>
+          <p className="text-slate-500 text-sm mt-1">Sign in to continue</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Gmail Address</label>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Username or ID</label>
             <div className="relative">
-              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
               <input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
+                type="text"
+                value={username}
+                onChange={(e) => setUsername(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                placeholder="example@gmail.com"
+                placeholder="Enter your username or ID"
+                required
+              />
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                placeholder="Enter your password"
                 required
               />
             </div>
@@ -1458,7 +1618,7 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
               <Loader2 className="w-5 h-5 animate-spin" />
             ) : (
               <>
-                Continue to App
+                Sign In
                 <ChevronRight className="w-5 h-5" />
               </>
             )}
@@ -1494,11 +1654,12 @@ export default function App() {
     if (r === 'RSM') return 'RSM';
     if (r === 'SC') return 'SC';
     if (r === 'TSM') return 'TSM';
+    if (r === 'ASM') return 'ASM';
     if (r === 'OB') return 'OB';
     return role;
   };
 
-  const [userRole, setUserRole] = useState<'Super Admin' | 'Admin' | 'TSM' | 'OB' | 'Director' | 'NSM' | 'RSM' | 'SC' | null>(() => normalizeRole(user?.role));
+  const [userRole, setUserRole] = useState<'Super Admin' | 'Admin' | 'TSM' | 'ASM' | 'OB' | 'Director' | 'NSM' | 'RSM' | 'SC' | null>(() => normalizeRole(user?.role));
   const [userName, setUserName] = useState<string | null>(() => user?.name || null);
   const [userContact, setUserContact] = useState<string | null>(() => user?.contact || null);
   const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
@@ -1516,17 +1677,19 @@ export default function App() {
     localStorage.setItem('auth_token', token);
     localStorage.setItem('user_data', JSON.stringify(userData));
     
-    if (role === 'TSM') {
+    if ((role === 'TSM' || role === 'ASM')) {
       setSelectedTSM(userData.name);
       setSelectedStockTSM(userData.name);
     }
 
-    if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM'].includes(role)) {
+    if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'].includes(role)) {
       setView('dashboard');
     }
   };
 
   const handleLogout = () => {
+    localStorage.removeItem('auth_token');
+    localStorage.removeItem('user_data');
     setToken(null);
     setUser(null);
     setUserRole(null);
@@ -1534,16 +1697,17 @@ export default function App() {
     setUserContact(null);
     setUserEmail(null);
     setUserRegion(null);
-    localStorage.clear();
+    window.location.href = '/';
   };
 
   const apiFetch = async (url: string, options: any = {}) => {
-    if (!token || token === 'null') {
+    const currentToken = token || localStorage.getItem('auth_token');
+    if (!currentToken || currentToken === 'null') {
       throw new Error("No authentication token found");
     }
     const headers = {
       ...options.headers,
-      'Authorization': `Bearer ${token}`,
+      'Authorization': `Bearer ${currentToken}`,
       'Content-Type': 'application/json'
     };
     const response = await fetch(url, { ...options, headers });
@@ -1576,12 +1740,13 @@ export default function App() {
   const [appConfig, setAppConfig] = useState<Record<string, string>>({ total_working_days: '25' });
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [stockHistory, setStockHistory] = useState<any[]>([]);
+  const [selectedEntryRegion, setSelectedEntryRegion] = useState<string>('');
   const [selectedTSM, setSelectedTSM] = useState<string>(() => {
     try {
       const savedUser = localStorage.getItem('user_data');
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
-        return parsed.role === 'TSM' ? parsed.name || '' : '';
+        return (parsed.role === 'TSM' || parsed.role === 'ASM') ? parsed.name || '' : '';
       }
     } catch (e) {}
     return '';
@@ -1670,7 +1835,7 @@ export default function App() {
       const savedUser = localStorage.getItem('user_data');
       if (savedUser) {
         const parsed = JSON.parse(savedUser);
-        return parsed.role === 'TSM' ? parsed.name || '' : '';
+        return (parsed.role === 'TSM' || parsed.role === 'ASM') ? parsed.name || '' : '';
       }
     } catch (e) {}
     return '';
@@ -2102,11 +2267,15 @@ export default function App() {
   const getTimeGone = () => calculateTimeGone().percentage;
 
   const updateConfig = async (key: string, value: string) => {
-    setAppConfig(prev => ({ ...prev, [key]: value }));
+    let sanitizedValue = value;
+    if (key === 'google_spreadsheet_id') {
+      sanitizedValue = value.trim().replace(/^\/+|\/+$/g, '');
+    }
+    setAppConfig(prev => ({ ...prev, [key]: sanitizedValue }));
     try {
       await apiFetch('/api/admin/config', {
         method: 'POST',
-        body: JSON.stringify({ key, value })
+        body: JSON.stringify({ key, value: sanitizedValue })
       });
     } catch (err) {
       console.error(err);
@@ -2281,7 +2450,7 @@ export default function App() {
     try {
       const normalizedRole = (userRole || '').toUpperCase();
       const isAdmin = normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN';
-      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes(normalizedRole);
+      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes(normalizedRole);
       
       const requests = [
         apiFetch('/api/admin/obs'),
@@ -2411,7 +2580,7 @@ export default function App() {
   useEffect(() => {
     if (!token || token === 'null') return;
     const normalizedRole = (userRole || '').toUpperCase();
-    if (['ADMIN', 'SUPER ADMIN', 'TSM', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes(normalizedRole)) {
+    if (['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes(normalizedRole)) {
       fetchAdminData();
       if (normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN') {
         fetchUsers();
@@ -2799,7 +2968,7 @@ export default function App() {
               "Match": parseFloat(getVal(['Match Target', 'match_target', 'match', 'match target'])) || 0
             }
           };
-        }).filter((item: any) => item.name && item.contact);
+        }).filter((item: any) => (item.name && item.contact) || item.distributor);
 
         if (team.length === 0) {
           setMessage({ text: 'No valid records found in CSV', type: 'error' });
@@ -2856,7 +3025,7 @@ export default function App() {
     if (userRole === 'RSM' || userRole === 'SC') {
       return allTsms.filter(tsm => obAssignments.some(ob => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
     }
-    if (userRole === 'TSM') {
+    if ((userRole === 'TSM' || userRole === 'ASM')) {
       const trimmedName = (userName || '').trim().toLowerCase();
       return allTsms.filter(tsm => {
         const tsmLower = tsm.toLowerCase();
@@ -2865,6 +3034,21 @@ export default function App() {
     }
     return [];
   }, [obAssignments, distributors, userRole, userRegion, userName]);
+
+  const entryRegions = useMemo(() => {
+    const regions = new Set<string>();
+    obAssignments.forEach(ob => { if (ob.region) regions.add(ob.region.trim()); });
+    distributors.forEach(d => { if (d.region) regions.add(d.region.trim()); });
+    return Array.from(regions).sort();
+  }, [obAssignments, distributors]);
+
+  const filteredEntryTSMList = useMemo(() => {
+    if (!selectedEntryRegion) return tsmList;
+    const tsmsInRegion = new Set<string>();
+    obAssignments.forEach(ob => { if (ob.region === selectedEntryRegion && ob.tsm) tsmsInRegion.add(ob.tsm.trim()); });
+    distributors.forEach(d => { if (d.region === selectedEntryRegion && d.tsm) tsmsInRegion.add(d.tsm.trim()); });
+    return tsmList.filter(tsm => tsmsInRegion.has(tsm));
+  }, [tsmList, selectedEntryRegion, obAssignments, distributors]);
 
   const filteredOBs = useMemo(() => {
     let obs = [...obAssignments];
@@ -2875,7 +3059,7 @@ export default function App() {
       obs = obs.filter(ob => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'RSM' || userRole === 'SC') {
       obs = obs.filter(ob => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    } else if (userRole === 'TSM') {
+    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
       const trimmedName = (userName || '').trim().toLowerCase();
       obs = obs.filter(ob => {
         const tsmName = (ob.tsm || '').trim().toLowerCase();
@@ -2886,7 +3070,11 @@ export default function App() {
     }
 
     if (selectedTSM) {
-      obs = obs.filter(ob => (ob.tsm || '').trim().toLowerCase() === selectedTSM.trim().toLowerCase());
+      const trimmedSelected = selectedTSM.trim().toLowerCase();
+      obs = obs.filter(ob => {
+        const tsmName = (ob.tsm || '').trim().toLowerCase();
+        return tsmName === trimmedSelected || tsmName.includes(trimmedSelected) || trimmedSelected.includes(tsmName);
+      });
       // Add TSM themselves as an option
       obs.unshift({
         name: `*TSM - ${selectedTSM}`,
@@ -2959,7 +3147,7 @@ export default function App() {
     }
   };
 
-  const MainNavWithRole = () => <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />;
+  
 
   if (!token || token === 'null') {
     return <Login onLogin={handleLogin} />;
@@ -2970,7 +3158,7 @@ export default function App() {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
           <div className="min-h-screen bg-slate-50 flex flex-col">
-            <MainNavWithRole />
+            <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-4">
                 <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -2983,10 +3171,10 @@ export default function App() {
       }
 
       // If management role, show NationalDashboard (Management Dashboard)
-      if (['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM'].includes((userRole || '').toUpperCase())) {
+      if (['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM', 'ASM', 'ASM'].includes((userRole || '').toUpperCase())) {
         return (
           <div className="min-h-screen bg-slate-50 pb-40">
-            <MainNavWithRole />
+            <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
             {isLoadingNational ? (
               <div className="flex-1 flex items-center justify-center min-h-[80vh]">
                 <div className="flex flex-col items-center gap-4">
@@ -3019,13 +3207,13 @@ export default function App() {
       
       // Role-based data filtering for TSM/OB
       const filteredHistory = history.filter(h => {
-        if (userRole === 'TSM') return h.tsm === userName;
+        if ((userRole === 'TSM' || userRole === 'ASM')) return h.tsm === userName;
         if (userRole === 'OB') return h.ob_contact === userContact;
         return false;
       });
 
       const filteredOBAssignments = obAssignments.filter(ob => {
-        if (userRole === 'TSM') return ob.tsm === userName;
+        if ((userRole === 'TSM' || userRole === 'ASM')) return ob.tsm === userName;
         if (userRole === 'OB') return ob.contact === userContact;
         return false;
       });
@@ -3145,7 +3333,7 @@ export default function App() {
 
       // Route Sales Analysis
       const routeAnalysis = mtdOrders.reduce((acc: any[], h) => {
-        if (userRole === 'TSM' && h.tsm !== userName) return acc;
+        if ((userRole === 'TSM' || userRole === 'ASM') && h.tsm !== userName) return acc;
         if (userRole === 'OB' && h.ob_contact !== userContact) return acc;
         const route = h.route || 'Unknown';
         let routeData = acc.find(r => r.name === route);
@@ -3218,7 +3406,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNavWithRole />
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -3229,7 +3417,7 @@ export default function App() {
                 <h1 className="text-lg font-bold text-seablue leading-tight">Dashboard</h1>
                 <div className="flex items-center gap-1.5">
                   <span className="text-[8px] font-black bg-seablue/10 text-seablue px-1.5 py-0.5 rounded uppercase tracking-widest">{userRole}</span>
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{userEmail}</span>
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{userName}</span>
                 </div>
               </div>
             </div>
@@ -3815,7 +4003,7 @@ export default function App() {
       console.error("Dashboard Error:", err);
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNavWithRole />
+          <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
           <div className="flex-1 flex items-center justify-center p-10">
             <div className="card-clean p-8 max-w-md text-center space-y-4">
               <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto" />
@@ -3832,7 +4020,7 @@ export default function App() {
   if (view === 'stats') {
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
-        <MainNavWithRole />
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
         {isLoadingNational ? (
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
             <div className="flex flex-col items-center gap-4">
@@ -3862,7 +4050,7 @@ export default function App() {
   if (view === 'reports') {
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
-        <MainNavWithRole />
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
         {isLoadingNational ? (
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
             <div className="flex flex-col items-center gap-4">
@@ -3893,7 +4081,7 @@ export default function App() {
     if (isLoadingAdmin) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNavWithRole />
+          <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -3907,7 +4095,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNavWithRole />
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -4007,12 +4195,35 @@ export default function App() {
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[8px] font-bold text-slate-400 uppercase">Private Key (JSON)</label>
+                  <label className="text-[8px] font-bold text-slate-400 uppercase flex justify-between items-center">
+                    <span>Private Key (JSON)</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[7px] lowercase italic">Paste the entire private_key from your JSON file</span>
+                      {appConfig.google_private_key && (
+                        <button 
+                          onClick={() => {
+                            const blob = new Blob([JSON.stringify({
+                              client_email: appConfig.google_service_account_email || '',
+                              private_key: appConfig.google_private_key
+                            }, null, 2)], { type: 'application/json' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url;
+                            a.download = 'salespulse-service-account.json';
+                            a.click();
+                          }}
+                          className="text-[9px] font-bold text-seablue hover:underline flex items-center gap-1"
+                        >
+                          <Download className="w-3 h-3" /> Download
+                        </button>
+                      )}
+                    </div>
+                  </label>
                   <textarea 
                     placeholder="-----BEGIN PRIVATE KEY-----..."
                     value={appConfig.google_private_key || ''} 
                     onChange={(e) => updateConfig('google_private_key', e.target.value)}
-                    className="input-clean w-full text-[10px] h-12 resize-none"
+                    className="input-clean w-full text-[10px] h-32 resize-none font-mono"
                     disabled={isGoogleConfigLocked}
                   />
                 </div>
@@ -4028,6 +4239,7 @@ export default function App() {
                       const data = await res.json();
                       if (res.ok) {
                         setMessage({ text: `Connected successfully! Sheet: ${data.title}`, type: 'success' });
+                        fetchAdminData(); // Refresh status to enable sync buttons
                       } else {
                         throw new Error(data.error || 'Connection failed');
                       }
@@ -4067,7 +4279,7 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => {
-                      const headers = ['Director', 'NSM', 'RSM', 'SC', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+                      const headers = ['Director', 'NSM', 'RSM', 'SC', 'TSM', 'ASM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
                       const csvContent = headers.join(",") + "\n" + 
                         "Director Name,NSM Name,RSM Name,SC Name,TSM Name,Town Name,Distributor Name,OB Name,03001234567,Zone Name,Region Name,50,\"Route 1, Route 2\",10,10,10,10,10";
                       const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -4194,12 +4406,14 @@ export default function App() {
             </div>
             <div className="p-4 space-y-4">
               <form onSubmit={handleRegisterUser} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <input type="email" placeholder="Gmail Address" value={newUser.email || ''} onChange={e => setNewUser({...newUser, email: e.target.value})} className="input-clean text-[10px]" required />
+                <input type="text" placeholder="Username" value={newUser.username || ''} onChange={e => setNewUser({...newUser, username: e.target.value})} className="input-clean text-[10px]" required />
+                <input type="password" placeholder="Password" value={newUser.password || ''} onChange={e => setNewUser({...newUser, password: e.target.value})} className="input-clean text-[10px]" required />
                 <input type="text" placeholder="Full Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="input-clean text-[10px]" required />
                 <input type="text" placeholder="Contact/ID" value={newUser.contact} onChange={e => setNewUser({...newUser, contact: e.target.value})} className="input-clean text-[10px]" />
                   <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="input-clean text-[10px]">
                     <option value="OB">OB</option>
                     <option value="TSM">TSM</option>
+                    <option value="ASM">ASM</option>
                     <option value="RSM">RSM</option>
                     <option value="NSM">NSM</option>
                     <option value="Director">Director</option>
@@ -4235,7 +4449,7 @@ export default function App() {
                           <span className={`px-1.5 py-0.5 rounded-full font-bold text-[8px] uppercase ${
                             u.role === 'Super Admin' ? 'bg-indigo-100 text-indigo-700' :
                             u.role === 'Admin' ? 'bg-purple-100 text-purple-700' :
-                            u.role === 'TSM' ? 'bg-orange-100 text-orange-700' :
+                            (u.role === 'TSM' || u.role === 'ASM') ? 'bg-orange-100 text-orange-700' :
                             'bg-slate-100 text-slate-600'
                           }`}>
                             {u.role}
@@ -4725,7 +4939,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-20">
-        <MainNavWithRole />
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -4859,7 +5073,7 @@ export default function App() {
     if (isLoadingHistory) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNavWithRole />
+          <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -4876,9 +5090,9 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNavWithRole />
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
         <header className="bg-white border-b border-slate-200 p-4 sticky top-12 z-20 shadow-sm">
-          <div className="max-w-4xl mx-auto flex flex-col gap-4">
+          <div className="max-w-7xl mx-auto flex flex-col gap-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
@@ -5015,7 +5229,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
           {history.length === 0 ? (
             <div className="card-clean p-12 text-center space-y-4">
               <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
@@ -5201,7 +5415,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-40">
-      <MainNavWithRole />
+      <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-3 py-2">
           <div className="flex justify-between items-center">
@@ -5219,9 +5433,9 @@ export default function App() {
                   <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest leading-none">
                     {lastUpdated ? `Updated: ${lastUpdated}` : 'Secondary Sales Intelligence'}
                   </p>
-                  {userEmail && (
+                  {userName && (
                     <p className="text-[7px] font-black text-indigo-600 uppercase tracking-widest leading-none mt-1">
-                      Logged in as: {userEmail}
+                      Logged in as: {userName}
                     </p>
                   )}
                 </div>
@@ -5267,11 +5481,28 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-3 py-3 space-y-3">
         {/* TSM Filter - Restricted by Role */}
         {userRole !== 'OB' && tsmList.length > 0 && (
-          <div className="card-clean p-2 flex items-center gap-3 bg-seablue/5 border-seablue/10">
+          <div className="card-clean p-2 flex flex-wrap items-center gap-3 bg-seablue/5 border-seablue/10">
+            {['Super Admin', 'Admin', 'Director', 'NSM', 'RSM', 'SC'].includes(userRole || '') && (
+              <>
+                <label className="text-[9px] font-black text-seablue uppercase tracking-widest">Region:</label>
+                <select 
+                  value={selectedEntryRegion} 
+                  onChange={(e) => {
+                    setSelectedEntryRegion(e.target.value);
+                    setSelectedTSM('');
+                    setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50 }));
+                  }} 
+                  className="input-clean flex-1 max-w-[150px] text-[10px] py-1"
+                >
+                  <option value="">All Regions</option>
+                  {entryRegions.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </>
+            )}
             <label className="text-[9px] font-black text-seablue uppercase tracking-widest">TSM:</label>
             <select 
               value={selectedTSM} 
-              disabled={userRole === 'TSM'}
+              disabled={(userRole === 'TSM' || userRole === 'ASM')}
               onChange={(e) => {
                 setSelectedTSM(e.target.value);
                 setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50 }));
@@ -5279,7 +5510,7 @@ export default function App() {
               className="input-clean flex-1 max-w-[150px] text-[10px] py-1"
             >
               <option value="">All TSMs</option>
-              {tsmList.map(tsm => <option key={tsm} value={tsm}>{tsm}</option>)}
+              {filteredEntryTSMList.map(tsm => <option key={tsm} value={tsm}>{tsm}</option>)}
             </select>
           </div>
         )}
@@ -5624,6 +5855,8 @@ export default function App() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      <AIChatBot />
     </div>
   );
 }
