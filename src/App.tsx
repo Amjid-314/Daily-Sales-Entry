@@ -48,6 +48,7 @@ import {
   Cloud,
   Share2,
   TrendingUp,
+  Target,
   Users,
   DollarSign,
   Package,
@@ -1387,25 +1388,32 @@ const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v:
   const visibleTabs = tabs.filter(tab => !role || tab.roles.includes(role));
 
   return (
-    <nav className="bg-white border-b border-slate-200 px-2 h-12 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar">
+    <nav className="bg-white border-b border-slate-100 px-4 h-14 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar gap-2">
       {visibleTabs.map((tab) => (
         <button
           key={tab.id}
           onClick={() => setView(tab.id as any)}
-          className={`p-1 flex flex-col items-center gap-0.5 transition-colors min-w-[60px] ${
+          className={`relative py-2 px-1 flex flex-col items-center gap-1 transition-all min-w-[56px] ${
             view === tab.id ? 'text-seablue' : 'text-slate-400 hover:text-slate-600'
           }`}
         >
-          <tab.icon className="w-4 h-4" />
-          <span className="text-[8px] font-black uppercase tracking-tighter">{tab.label}</span>
+          <tab.icon className={`w-5 h-5 transition-transform ${view === tab.id ? 'scale-110' : ''}`} />
+          <span className={`text-[9px] font-black uppercase tracking-tight ${view === tab.id ? 'opacity-100' : 'opacity-60'}`}>{tab.label}</span>
           {view === tab.id && (
-            <motion.div layoutId="nav-indicator" className="h-0.5 w-4 bg-seablue rounded-full" />
+            <motion.div 
+              layoutId="nav-indicator" 
+              className="absolute -bottom-[1px] h-0.5 w-full bg-seablue rounded-full" 
+              transition={{ type: "spring", stiffness: 380, damping: 30 }}
+            />
           )}
         </button>
       ))}
-      <button onClick={onLogout} className="p-1 flex flex-col items-center gap-0.5 text-slate-400 hover:text-red-500 transition-colors min-w-[60px]">
-        <EyeOff className="w-4 h-4" />
-        <span className="text-[8px] font-black uppercase tracking-tighter">Logout</span>
+      <button 
+        onClick={onLogout} 
+        className="py-2 px-1 flex flex-col items-center gap-1 text-slate-400 hover:text-rose-500 transition-all min-w-[56px]"
+      >
+        <EyeOff className="w-5 h-5" />
+        <span className="text-[9px] font-black uppercase tracking-tight opacity-60">Logout</span>
       </button>
     </nav>
   );
@@ -1467,30 +1475,45 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">Operational Statistics</h1>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Submission Status & Activity Tracking</p>
-      </div>
+      <motion.div 
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50"
+      >
+        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Operational Stats</h1>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Submission Status & Activity Tracking</p>
+      </motion.div>
 
       {/* OB Submission Status Report */}
-      <section className="card-clean bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">OB Wise Submission Status</h3>
+      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+        <div className="px-6 py-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+              <ClipboardList className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">OB Submission Status</h3>
+          </div>
           <div className="flex gap-4">
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Working Days (MTD): {workingDaysTillDate}</span>
-            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Target: {totalWorkingDays}</span>
+            <div className="flex flex-col items-end">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Working Days</span>
+              <span className="text-xs font-black text-seablue">{workingDaysTillDate}</span>
+            </div>
+            <div className="flex flex-col items-end">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Target</span>
+              <span className="text-xs font-black text-slate-600">{totalWorkingDays}</span>
+            </div>
           </div>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="px-6 py-3">OB Name</th>
-                <th className="px-6 py-3">TSM</th>
-                <th className="px-6 py-3 text-center">Till Date Entries</th>
-                <th className="px-6 py-3 text-center">Missing Days</th>
-                <th className="px-6 py-3">Last Entry</th>
-                <th className="px-6 py-3 text-right">Efficiency</th>
+              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                <th className="px-6 py-4">OB Name</th>
+                <th className="px-6 py-4">TSM</th>
+                <th className="px-6 py-4 text-center">Entries</th>
+                <th className="px-6 py-4 text-center">Missing</th>
+                <th className="px-6 py-4">Last Entry</th>
+                <th className="px-6 py-4 text-right">Efficiency</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -1502,18 +1525,24 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                 const efficiency = workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0;
                 
                 return (
-                  <tr key={ob.contact || `ob-${idx}`} className="hover:bg-slate-50/50 transition-colors">
+                  <tr key={ob.contact || `ob-${idx}`} className="group hover:bg-slate-50/80 transition-all duration-200">
                     <td className="px-6 py-4">
-                      <p className="text-xs font-black text-slate-700">{ob.name}</p>
-                      <p className="text-[9px] text-slate-400 font-bold">{ob.town}</p>
+                      <p className="text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{ob.name}</p>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{ob.town}</p>
                     </td>
                     <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.tsm}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-emerald-600">{uniqueEntryDays}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-rose-600">{missing}</td>
-                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{lastEntry?.date || 'Never'}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{uniqueEntryDays}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`text-xs font-black px-2 py-1 rounded-lg ${missing > 0 ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}>
+                        {missing}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500 font-mono">{lastEntry?.date || 'Never'}</td>
                     <td className="px-6 py-4 text-right">
                       <div className="flex flex-col items-end gap-1">
-                        <span className={`text-[8px] font-black px-2 py-1 rounded uppercase tracking-widest ${efficiency < 80 ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        <span className={`text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest shadow-sm ${efficiency < 80 ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}>
                           {efficiency.toFixed(0)}%
                         </span>
                       </div>
@@ -1527,19 +1556,22 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
       </section>
 
       {/* TSM Activity Report */}
-      <section className="card-clean bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">TSM Activity Report</h3>
+      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-3">
+          <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+            <Waves className="w-4 h-4" />
+          </div>
+          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">TSM Activity Report</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="px-6 py-3">TSM Name</th>
-                <th className="px-6 py-3 text-center">Active OBs</th>
-                <th className="px-6 py-3 text-center">Total Sales</th>
-                <th className="px-6 py-3 text-center">Avg Productivity</th>
-                <th className="px-6 py-3 text-right">Activity Score</th>
+              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                <th className="px-6 py-4">TSM Name</th>
+                <th className="px-6 py-4 text-center">Active OBs</th>
+                <th className="px-6 py-4 text-center">Total Sales</th>
+                <th className="px-6 py-4 text-center">Avg Productivity</th>
+                <th className="px-6 py-4 text-right">Activity Score</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -1559,13 +1591,15 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                 const score = (activeOBs / Math.max(1, tsmOBs.length) * 40) + (avgProd * 0.6);
                 
                 return (
-                  <tr key={tsm || `tsm-${idx}`} className="hover:bg-slate-50/50">
-                    <td className="px-6 py-4 text-xs font-bold text-slate-700">{tsm}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500">{activeOBs}/{tsmOBs.length}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-seablue">{totalSales.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-emerald-600">{avgProd.toFixed(0)}%</td>
+                  <tr key={tsm || `tsm-${idx}`} className="group hover:bg-slate-50/80 transition-all duration-200">
+                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{tsm}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">{activeOBs}/{tsmOBs.length}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono">{totalSales.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-emerald-600 bg-emerald-50/50">{avgProd.toFixed(0)}%</td>
                     <td className="px-6 py-4 text-right">
-                      <span className={`text-[10px] font-black ${score > 70 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      <span className={`text-xs font-black px-3 py-1 rounded-full ${score > 70 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                         {score.toFixed(1)}
                       </span>
                     </td>
@@ -1586,6 +1620,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
   const dayOfMonth = parseInt(today.split('-')[2]);
   const [selectedAnalysisRoute, setSelectedAnalysisRoute] = useState('');
   const [selectedAnalysisOB, setSelectedAnalysisOB] = useState('');
+  const [matrixView, setMatrixView] = useState('Total');
 
   const filteredOBs = useMemo(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin') {
@@ -1635,25 +1670,45 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">Performance Reports</h1>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Detailed Analysis & Sales Matrix</p>
-      </div>
+      <motion.div 
+        initial={{ opacity: 0, y: -10 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50"
+      >
+        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Performance Reports</h1>
+        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Detailed Analysis & Sales Matrix</p>
+      </motion.div>
 
       {/* OB Date-wise Sales Matrix (MTD) */}
-      <section className="card-clean bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
+      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+              <LayoutDashboard className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
+            <select 
+              className="input-clean text-[10px] py-1 px-2 rounded-lg"
+              value={matrixView}
+              onChange={(e) => setMatrixView(e.target.value)}
+            >
+              <option value="Total">Total Bags/Ctns</option>
+              {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+            </select>
+          </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left min-w-[1200px]">
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className="w-full text-left min-w-[1200px] border-collapse">
             <thead>
-              <tr className="bg-slate-50 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="px-4 py-2 sticky left-0 bg-slate-50 z-10">OB Name</th>
+              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                <th className="px-4 py-3 sticky left-0 bg-slate-50/90 backdrop-blur-sm z-10 border-r border-slate-100">OB Name</th>
                 {Array.from({ length: dayOfMonth }, (_, i) => i + 1).map(day => (
-                  <th key={day} className="px-2 py-2 text-center">{day}</th>
+                  <th key={day} className="px-2 py-3 text-center border-r border-slate-100/50">{day}</th>
                 ))}
-                <th className="px-4 py-2 text-right">Total</th>
+                <th className="px-4 py-3 text-right bg-slate-50/90 backdrop-blur-sm sticky right-0 z-10 border-l border-slate-100">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -1661,48 +1716,64 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                 const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
                 let total = 0;
                 return (
-                  <tr key={ob.contact || `ob-matrix-${idx}`} className="hover:bg-slate-50/50">
-                    <td className="px-4 py-2 sticky left-0 bg-white z-10 text-[10px] font-bold text-slate-700 border-r border-slate-100">{ob.name}</td>
+                  <tr key={ob.contact || `ob-matrix-${idx}`} className="group hover:bg-slate-50/80 transition-all">
+                    <td className="px-4 py-3 sticky left-0 bg-white group-hover:bg-slate-50 z-10 text-[10px] font-black text-slate-700 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">{ob.name}</td>
                     {Array.from({ length: dayOfMonth }, (_, i) => i + 1).map((day, dIdx) => {
                       const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
                       const dayOrders = obStats.filter((h: any) => h.date === dateStr);
                       const daySales = dayOrders.reduce((sum, h) => {
                         const data = h.order_data || {};
-                        return sum + SKUS.reduce((s, sku) => {
-                          const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                          const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                          return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                        }, 0);
+                        if (matrixView === 'Total') {
+                          return sum + SKUS.reduce((s, sku) => {
+                            const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                            return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                          }, 0);
+                        } else {
+                          return sum + SKUS.filter(s => s.category === matrixView).reduce((s, sku) => {
+                            const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                            return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                          }, 0);
+                        }
                       }, 0);
                       total += daySales;
                       return (
-                        <td key={`${ob.contact}-${day}-${dIdx}`} className={`px-2 py-2 text-center text-[9px] ${daySales > 0 ? 'font-bold text-seablue' : 'text-slate-300'}`}>
+                        <td key={`${ob.contact}-${day}-${dIdx}`} className={`px-2 py-3 text-center text-[10px] border-r border-slate-100/30 font-mono ${daySales > 0 ? 'font-black text-seablue' : 'text-slate-200'}`}>
                           {daySales > 0 ? daySales.toFixed(1) : '-'}
                         </td>
                       );
                     })}
-                    <td className="px-4 py-2 text-right text-[10px] font-black text-emerald-600">{total.toFixed(1)}</td>
+                    <td className="px-4 py-3 text-right text-[10px] font-black text-emerald-600 sticky right-0 bg-white group-hover:bg-slate-50 z-10 border-l border-slate-100 shadow-[-2px_0_5px_rgba(0,0,0,0.02)]">{total.toFixed(1)}</td>
                   </tr>
                 );
               })}
             </tbody>
           </table>
         </div>
+        <div className="px-6 py-3 bg-slate-50/30 border-t border-slate-50">
+          <p className="text-[8px] text-slate-400 italic font-medium uppercase tracking-wider">
+            * Matrix shows {matrixView === 'Total' ? 'total bags/cartons' : matrixView + ' sales'} per day for the current month. Scroll horizontally to see all dates.
+          </p>
+        </div>
       </section>
 
       {/* Brand Target vs Achievement (MTD) */}
-      <section className="card-clean bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50">
-          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">Brand Target vs Achievement (MTD)</h3>
+      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-3">
+          <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+            <Target className="w-4 h-4" />
+          </div>
+          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand Target vs Achievement (MTD)</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left">
+          <table className="w-full text-left border-collapse">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="px-6 py-3">Brand Name</th>
-                <th className="px-6 py-3 text-center">Target</th>
-                <th className="px-6 py-3 text-center">Achievement</th>
-                <th className="px-6 py-3 text-right">Ach %</th>
+              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                <th className="px-6 py-4">Brand Name</th>
+                <th className="px-6 py-4 text-center">Target</th>
+                <th className="px-6 py-4 text-center">Achievement</th>
+                <th className="px-6 py-4 text-right">Ach %</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -1718,12 +1789,12 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                 }, 0);
                 const percent = catTarget > 0 ? (catAch / catTarget) * 100 : 0;
                 return (
-                  <tr key={cat} className="hover:bg-slate-50/50">
-                    <td className="px-6 py-4 text-xs font-bold text-slate-700">{cat}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500">{catTarget.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-seablue">{catAch.toFixed(1)}</td>
+                  <tr key={cat} className="group hover:bg-slate-50/80 transition-all">
+                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{cat}</td>
+                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500 font-mono">{catTarget.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono">{catAch.toFixed(1)}</td>
                     <td className="px-6 py-4 text-right">
-                      <span className={`text-[10px] font-black ${percent > 80 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                      <span className={`text-[10px] font-black px-3 py-1 rounded-full shadow-sm ${percent > 80 ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
                         {percent.toFixed(1)}%
                       </span>
                     </td>
@@ -1736,9 +1807,14 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
       </section>
 
       {/* Route Analysis Section */}
-      <section className="card-clean bg-white overflow-hidden">
-        <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <h3 className="text-sm font-black text-seablue uppercase tracking-widest">Route Analysis (Last 6 Visits)</h3>
+      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+              <History className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Route Analysis (Last 6 Visits)</h3>
+          </div>
           <div className="flex gap-2">
             <select 
               value={selectedAnalysisOB} 
@@ -1746,7 +1822,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                 setSelectedAnalysisOB(e.target.value);
                 setSelectedAnalysisRoute('');
               }}
-              className="input-clean py-1 text-[10px] min-w-[120px]"
+              className="input-clean py-1.5 text-[10px] min-w-[140px] rounded-xl"
             >
               <option value="">Select OB</option>
               {filteredOBs.map((ob: any) => <option key={ob.contact} value={ob.contact}>{ob.name}</option>)}
@@ -1755,7 +1831,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               value={selectedAnalysisRoute} 
               onChange={e => setSelectedAnalysisRoute(e.target.value)}
               disabled={!selectedAnalysisOB}
-              className="input-clean py-1 text-[10px] min-w-[120px]"
+              className="input-clean py-1.5 text-[10px] min-w-[140px] rounded-xl"
             >
               <option value="">Select Route</option>
               {selectedAnalysisOB && Array.from(new Set(history.filter((h: any) => h.ob_contact === selectedAnalysisOB).map((h: any) => h.route))).map(r => <option key={r as string} value={r as string}>{r as string}</option>)}
@@ -1764,23 +1840,25 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
         </div>
         {routeAnalysisData ? (
           <div className="overflow-x-auto">
-            <table className="w-full text-left">
+            <table className="w-full text-left border-collapse">
               <thead>
-                <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                  <th className="px-6 py-3">Date</th>
-                  <th className="px-6 py-3 text-center">Visited</th>
-                  <th className="px-6 py-3 text-center">Productive</th>
-                  {CATEGORIES.map(cat => <th key={cat} className="px-6 py-3 text-center">{cat}</th>)}
+                <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                  <th className="px-6 py-4">Date</th>
+                  <th className="px-6 py-4 text-center">Visited</th>
+                  <th className="px-6 py-4 text-center">Productive</th>
+                  {CATEGORIES.map(cat => <th key={cat} className="px-6 py-4 text-center">{cat}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {routeAnalysisData.map((h: any) => (
-                  <tr key={h.date} className="hover:bg-slate-50/50">
-                    <td className="px-6 py-4 text-xs font-bold text-slate-700">{h.date}</td>
-                    <td className="px-6 py-4 text-center text-xs text-slate-500">{h.visited}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-emerald-600">{h.productive}</td>
+                  <tr key={h.date} className="group hover:bg-slate-50/80 transition-all">
+                    <td className="px-6 py-4 text-xs font-black text-slate-700 font-mono">{h.date}</td>
+                    <td className="px-6 py-4 text-center text-xs text-slate-500 font-bold">{h.visited}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{h.productive}</span>
+                    </td>
                     {CATEGORIES.map(cat => (
-                      <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-seablue">{h.brandSales[cat].toFixed(1)}</td>
+                      <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-seablue font-black">{h.brandSales[cat].toFixed(1)}</td>
                     ))}
                   </tr>
                 ))}
@@ -1788,7 +1866,12 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
             </table>
           </div>
         ) : (
-          <div className="p-10 text-center text-slate-400 text-xs italic">Select an OB and Route to see analysis.</div>
+          <div className="p-16 text-center">
+            <div className="w-16 h-16 bg-slate-50 rounded-full flex items-center justify-center mx-auto mb-4">
+              <Search className="w-8 h-8 text-slate-200" />
+            </div>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Select an OB and Route to see analysis</p>
+          </div>
         )}
       </section>
 
@@ -1894,30 +1977,30 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-white rounded-2xl shadow-xl p-8 border border-slate-200"
+        className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 border border-slate-100"
       >
-        <div className="flex flex-col items-center mb-8">
-          <div className="w-16 h-16 bg-indigo-600 rounded-2xl flex items-center justify-center mb-4 shadow-lg shadow-indigo-200">
-            <Waves className="text-white w-8 h-8" />
+        <div className="flex flex-col items-center mb-10">
+          <div className="w-20 h-20 bg-seablue rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-seablue/20 rotate-3">
+            <Waves className="text-white w-10 h-10" />
           </div>
-          <h1 className="text-2xl font-bold text-slate-900">SalesPulse</h1>
-          <p className="text-slate-500 text-sm mt-1">Sign in to continue</p>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">SalesPulse</h1>
+          <p className="text-slate-400 text-sm mt-2 font-medium">Enterprise Sales Management</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Username or ID</label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+          <div className="space-y-2">
+            <label className="block text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Username or ID</label>
+            <div className="relative group">
+              <User className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-300 w-5 h-5 group-focus-within:text-seablue transition-colors" />
               <input
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all text-sm font-bold"
                 placeholder="Enter your username or ID"
                 required
               />
@@ -1928,9 +2011,9 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
             <motion.div 
               initial={{ opacity: 0, x: -10 }}
               animate={{ opacity: 1, x: 0 }}
-              className="p-3 bg-red-50 border border-red-100 rounded-xl flex items-center gap-2 text-red-600 text-sm"
+              className="p-4 bg-rose-50 border border-rose-100 rounded-2xl flex items-center gap-3 text-rose-600 text-xs font-bold"
             >
-              <AlertCircle className="w-4 h-4" />
+              <AlertCircle className="w-4 h-4 shrink-0" />
               {error}
             </motion.div>
           )}
@@ -1938,7 +2021,7 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
           <button
             type="submit"
             disabled={isLoading}
-            className="w-full bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white font-semibold py-3 rounded-xl shadow-lg shadow-indigo-100 transition-all flex items-center justify-center gap-2"
+            className="w-full bg-seablue hover:bg-seablue-light disabled:bg-slate-300 text-white font-black py-4 rounded-2xl shadow-lg shadow-seablue/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98]"
           >
             {isLoading ? (
               <Loader2 className="w-5 h-5 animate-spin" />
@@ -1951,9 +2034,9 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
           </button>
         </form>
 
-        <div className="mt-8 pt-6 border-t border-slate-100 text-center">
-          <p className="text-xs text-slate-400">
-            Authorized Personnel Only • SalesPulse v2.0
+        <div className="mt-10 pt-8 border-t border-slate-50 text-center">
+          <p className="text-[10px] font-black text-slate-300 uppercase tracking-[0.2em]">
+            Authorized Personnel Only • v2.5.0
           </p>
         </div>
       </motion.div>
@@ -1991,6 +2074,7 @@ export default function App() {
   const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
   const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [matrixView, setMatrixView] = useState<string>('Total Bags/Ctns');
 
   const handleLogin = (token: string, userData: any) => {
     const role = normalizeRole(userData.role);
@@ -5361,16 +5445,20 @@ export default function App() {
     };
 
     return (
-      <div className="min-h-screen bg-slate-50 pb-20">
+      <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
-        <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
-          <div className="max-w-6xl mx-auto flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
-                <Store className="w-5 h-5" />
-              </div>
-              <h1 className="text-lg font-bold text-seablue">Distributor Stocks</h1>
+        
+        <div className="p-4 space-y-6">
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50 flex flex-col md:flex-row md:items-center justify-between gap-4"
+          >
+            <div>
+              <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Distributor Stocks</h1>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Inventory Management & Reporting</p>
             </div>
+            
             <div className="flex flex-wrap items-center gap-2">
               <button 
                 onClick={() => {
@@ -5393,102 +5481,112 @@ export default function App() {
                   link.click();
                   document.body.removeChild(link);
                 }}
-                className="btn-seablue px-3 py-1.5 text-xs flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700"
+                className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200/50"
               >
-                <Download className="w-3 h-3" />
+                <Download className="w-3.5 h-3.5" />
                 Export CSV
               </button>
-              <select 
-                value={selectedStockRegion} 
-                onChange={e => setSelectedStockRegion(e.target.value)}
-                className="input-clean py-1.5 text-xs min-w-[100px]"
-              >
-                <option value="">All Regions</option>
-                {stockRegions.map(r => <option key={r} value={r}>{r}</option>)}
-              </select>
-              <select 
-                value={selectedStockTSM} 
-                onChange={e => setSelectedStockTSM(e.target.value)}
-                className="input-clean py-1.5 text-xs min-w-[100px]"
-              >
-                <option value="">All TSMs</option>
-                {stockTsms.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <select 
-                value={selectedStockTown} 
-                onChange={e => setSelectedStockTown(e.target.value)}
-                className="input-clean py-1.5 text-xs min-w-[100px]"
-              >
-                <option value="">All Towns</option>
-                {stockTowns.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
               <button 
                 onClick={handleSubmitAllStocks}
                 disabled={isSubmittingStocks || Object.keys(stockOrders).length === 0}
-                className="btn-seablue px-4 py-1.5 text-xs flex items-center gap-2"
+                className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 shadow-lg shadow-seablue/20"
               >
-                {isSubmittingStocks ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                {isSubmittingStocks ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 Submit All
               </button>
             </div>
-          </div>
-        </header>
+          </motion.div>
+          <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+            <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-wrap items-center gap-4">
+              <div className="flex items-center gap-3 mr-auto">
+                <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+                  <Store className="w-4 h-4" />
+                </div>
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Inventory Matrix</h3>
+              </div>
+              
+              <div className="flex flex-wrap gap-2">
+                <select 
+                  value={selectedStockRegion} 
+                  onChange={e => setSelectedStockRegion(e.target.value)}
+                  className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl"
+                >
+                  <option value="">All Regions</option>
+                  {stockRegions.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+                <select 
+                  value={selectedStockTSM} 
+                  onChange={e => setSelectedStockTSM(e.target.value)}
+                  className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl"
+                >
+                  <option value="">All TSMs</option>
+                  {stockTsms.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+                <select 
+                  value={selectedStockTown} 
+                  onChange={e => setSelectedStockTown(e.target.value)}
+                  className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl"
+                >
+                  <option value="">All Towns</option>
+                  {stockTowns.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
 
-        <main className="max-w-6xl mx-auto px-4 py-6">
-          <div className="card-clean overflow-hidden">
-            <div className="overflow-x-auto max-h-[70vh]">
+            <div className="overflow-x-auto scrollbar-thin max-h-[70vh]">
               <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 z-20">
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-wider sticky left-0 bg-slate-50 z-30 border-r border-slate-200 min-w-[120px]">SKU Name</th>
-                    {filteredDistributors.map(d => (
-                      <th key={d.distributor} className="px-4 py-3 text-[10px] font-black text-slate-600 uppercase tracking-wider text-center border-r border-slate-200 min-w-[100px]">
-                        <div className="truncate w-24 mx-auto">{d.distributor}</div>
-                        <div className="text-[8px] text-slate-400 font-bold">{d.town}</div>
-                      </th>
+                  <tr className="bg-slate-50/90 backdrop-blur-sm text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <th className="px-6 py-4 sticky left-0 bg-slate-50/90 z-10 border-r border-slate-100">Distributor</th>
+                    <th className="px-6 py-4 border-r border-slate-100/50">Town</th>
+                    {SKUS.map(sku => (
+                      <th key={sku.id} className="px-4 py-4 text-center min-w-[100px] border-r border-slate-100/50">{sku.name}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {SKUS.map(sku => (
-                    <tr key={sku.id} className="hover:bg-slate-50/50">
-                      <td className="px-4 py-2 text-[10px] font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">
-                        <div className="truncate w-28">{sku.name}</div>
-                        <div className="text-[7px] text-slate-400 font-mono">{sku.category}</div>
+                <tbody className="divide-y divide-slate-50">
+                  {filteredDistributors.map((dist, idx) => (
+                    <tr key={`${dist.distributor}-${idx}`} className="group hover:bg-slate-50/80 transition-all">
+                      <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                        <p className="text-xs font-black text-slate-700">{dist.distributor}</p>
+                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{dist.tsm}</p>
                       </td>
-                      {filteredDistributors.map(d => (
-                        <td key={d.distributor} className="px-2 py-2 border-r border-slate-100">
+                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500 border-r border-slate-100/30">{dist.town}</td>
+                      {SKUS.map(sku => (
+                        <td key={sku.id} className="px-4 py-3 border-r border-slate-100/30">
                           <input 
                             type="number" 
-                            inputMode="numeric"
+                            min="0"
+                            value={stockOrders[dist.distributor]?.[sku.id]?.ctn || ''}
+                            onChange={(e) => handleStockChange(dist.distributor, sku.id, parseInt(e.target.value) || 0)}
+                            className="w-full bg-slate-50/50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-black text-seablue text-center focus:bg-white focus:ring-2 focus:ring-seablue/20 outline-none transition-all"
                             placeholder="0"
-                            value={stockOrders[d.distributor]?.[sku.id]?.ctn || ''}
-                            onChange={e => handleStockChange(d.distributor, sku.id, parseInt(e.target.value) || 0)}
-                            className="w-full text-center py-1 bg-transparent text-[10px] font-bold text-seablue focus:bg-white focus:ring-1 focus:ring-seablue/20 outline-none rounded transition-all"
                           />
                         </td>
                       ))}
                     </tr>
                   ))}
-                  <tr className="bg-slate-50/80 font-black border-t-2 border-slate-200 sticky bottom-0 z-10">
-                    <td className="px-4 py-3 text-[9px] uppercase text-slate-500 sticky left-0 bg-slate-50 z-10 border-r border-slate-200">Total Stock (Ctns)</td>
-                    {filteredDistributors.map(d => {
-                      const total = Object.values(stockOrders[d.distributor] || {}).reduce((sum: number, s: any) => sum + (Number(s.ctn) || 0), 0) as number;
+                </tbody>
+                <tfoot className="sticky bottom-0 z-20">
+                  <tr className="bg-slate-100 font-black text-seablue border-t-2 border-seablue/20">
+                    <td className="px-6 py-3 sticky left-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] text-[10px] uppercase tracking-widest">Total Stock (Ctns)</td>
+                    <td className="px-6 py-3 border-r border-slate-200/30"></td>
+                    {SKUS.map(sku => {
+                      const total = filteredDistributors.reduce((sum, dist) => {
+                        return sum + (stockOrders[dist.distributor]?.[sku.id]?.ctn || 0);
+                      }, 0);
                       return (
-                        <td key={d.distributor} className="px-4 py-3 text-center text-[10px] text-seablue border-r border-slate-200">
-                          {total > 0 ? total.toFixed(1) : '-'}
+                        <td key={sku.id} className="px-4 py-3 text-center text-xs border-r border-slate-200/30">
+                          {total > 0 ? total : '-'}
                         </td>
                       );
                     })}
                   </tr>
-                </tbody>
+                </tfoot>
               </table>
             </div>
-          </div>
-          <div className="mt-4 text-[10px] text-slate-400 italic">
-            * Enter stock in Cartons/Bags only. Scroll right to see all distributors. SKU column is frozen.
-          </div>
-        </main>
+          </section>
+        </div>
       </div>
     );
   }
@@ -5515,7 +5613,7 @@ export default function App() {
       <div className="min-h-screen bg-slate-50 pb-10">
         <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
         <header className="bg-white border-b border-slate-200 p-4 sticky top-12 z-20 shadow-sm">
-          <div className="max-w-7xl mx-auto flex flex-col gap-4">
+          <div className="max-w-full mx-auto px-4 flex flex-col gap-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white">
@@ -5652,7 +5750,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+        <main className="max-w-[98%] mx-auto px-4 py-6 space-y-6">
           {history.length === 0 ? (
             <div className="card-clean p-12 text-center space-y-4">
               <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
@@ -5667,50 +5765,78 @@ export default function App() {
           ) : (
             <>
               <div className="card-clean p-4">
-                <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse text-[9px]">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200">
-                        <th className="px-2 py-2 font-black text-slate-400 uppercase sticky left-0 bg-slate-50 z-10 border-r border-slate-200 min-w-[100px]">OB Name</th>
-                        {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                          <th key={day} className="px-1 py-2 font-black text-slate-600 text-center border-r border-slate-100 min-w-[30px]">{day}</th>
-                        ))}
-                        <th className="px-2 py-2 font-black text-seablue text-right sticky right-0 bg-slate-50 z-10 border-l border-slate-200">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {obAssignments.filter(ob => !historyFilters.tsm || ob.tsm === historyFilters.tsm).map(ob => {
-                        const obOrders = history.filter(h => h.ob_contact === ob.contact && h.date.startsWith(new Date().toISOString().slice(0, 7)));
-                        let obTotal = 0;
-                        return (
-                          <tr key={ob.contact} className="hover:bg-slate-50/50">
-                            <td className="px-2 py-2 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)]">{ob.name}</td>
-                            {Array.from({ length: 31 }, (_, i) => {
-                              const day = (i + 1).toString().padStart(2, '0');
-                              const dateStr = `${new Date().toISOString().slice(0, 7)}-${day}`;
-                              const dayOrder = obOrders.find(o => o.date === dateStr);
-                              const daySales = dayOrder ? SKUS.reduce((sum, sku) => {
-                                const items = dayOrder.order_data || {};
-                                const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                                return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                              }, 0) : 0;
-                              obTotal += daySales;
-                              return (
-                                <td key={day} className={`px-1 py-2 text-center border-r border-slate-100 ${daySales > 0 ? 'bg-emerald-50 font-bold text-emerald-700' : 'text-slate-300'}`}>
-                                  {daySales > 0 ? daySales.toFixed(0) : '-'}
-                                </td>
-                              );
-                            })}
-                            <td className="px-2 py-2 font-black text-seablue text-right sticky right-0 bg-white z-10 border-l border-slate-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)]">{obTotal.toFixed(0)}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
+                  <h3 className="text-sm font-black text-seablue uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
+                    <select 
+                      className="input-clean text-[10px] py-1 px-2"
+                      value={matrixView}
+                      onChange={(e) => setMatrixView(e.target.value as any)}
+                    >
+                      <option value="Total">Total Bags/Ctns</option>
+                      {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                    </select>
+                  </div>
                 </div>
-                <div className="mt-2 text-[8px] text-slate-400 italic">* Matrix shows total bags/cartons per day for the current month.</div>
+                <div className="overflow-x-auto -mx-4 sm:mx-0">
+                  <div className="min-w-[600px] px-4 sm:px-0">
+                    <table className="w-full text-left border-collapse text-[9px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200">
+                          <th className="px-1 py-2 font-black text-slate-400 uppercase sticky left-0 bg-slate-50 z-10 border-r border-slate-200 w-14 sm:w-24 truncate text-[6px] sm:text-[8px]">OB Name</th>
+                          {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                            <th key={day} className="px-0.5 py-2 font-black text-slate-600 text-center border-r border-slate-100 min-w-[14px] sm:min-w-[24px] text-[5px] sm:text-[8px]">{day}</th>
+                          ))}
+                          <th className="px-1 py-2 font-black text-seablue text-right sticky right-0 bg-slate-50 z-10 border-l border-slate-200 w-8 sm:w-16 text-[6px] sm:text-[8px]">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {obAssignments.filter(ob => !historyFilters.tsm || ob.tsm === historyFilters.tsm).map(ob => {
+                          const obOrders = history.filter(h => h.ob_contact === ob.contact && h.date.startsWith(new Date().toISOString().slice(0, 7)));
+                          let obTotal = 0;
+                          return (
+                            <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-1 py-2 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] truncate w-14 sm:w-24 text-[6px] sm:text-[8px]" title={ob.name}>{ob.name}</td>
+                              {Array.from({ length: 31 }, (_, i) => {
+                                const day = (i + 1).toString().padStart(2, '0');
+                                const dateStr = `${new Date().toISOString().slice(0, 7)}-${day}`;
+                                const dayOrder = obOrders.find(o => o.date === dateStr);
+                                
+                                let daySales = 0;
+                                if (dayOrder) {
+                                  const items = dayOrder.order_data || {};
+                                  if (matrixView === 'Total') {
+                                    daySales = SKUS.reduce((sum, sku) => {
+                                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                                      const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                                      return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                                    }, 0);
+                                  } else {
+                                    daySales = SKUS.filter(s => s.category === matrixView).reduce((sum, sku) => {
+                                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                                      const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                                      return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                                    }, 0);
+                                  }
+                                }
+                                
+                                obTotal += daySales;
+                                return (
+                                  <td key={day} className={`px-0.5 py-2 text-center border-r border-slate-100 text-[5px] sm:text-[8px] ${daySales > 0 ? 'bg-emerald-50 font-bold text-emerald-700' : 'text-slate-300'}`}>
+                                    {daySales > 0 ? daySales.toFixed(1) : '-'}
+                                  </td>
+                                );
+                              })}
+                              <td className="px-1 py-2 font-black text-seablue text-right sticky right-0 bg-white z-10 border-l border-slate-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)] w-8 sm:w-16 text-[6px] sm:text-[8px]">{obTotal.toFixed(1)}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="mt-2 text-[8px] text-slate-400 italic">* Matrix shows {matrixView === 'Total' ? 'total bags/cartons' : matrixView + ' sales'} per day for the current month. Scroll horizontally to see all dates.</div>
               </div>
 
               <div className="space-y-4">
@@ -5904,37 +6030,41 @@ export default function App() {
       <main className="max-w-6xl mx-auto px-3 py-3 space-y-3">
         {/* TSM Filter - Restricted by Role */}
         {userRole !== 'OB' && tsmList.length > 0 && (
-          <div className="card-clean p-2 flex flex-wrap items-center gap-3 bg-seablue/5 border-seablue/10">
-            {['Super Admin', 'Admin', 'Director', 'NSM', 'RSM', 'SC'].includes(userRole || '') && (
-              <>
-                <label className="text-[9px] font-black text-seablue uppercase tracking-widest">Region:</label>
+          <div className="card-clean p-1.5 bg-seablue/5 border-seablue/10 overflow-x-auto">
+            <div className="flex items-center gap-2 min-w-max">
+              {['Super Admin', 'Admin', 'Director', 'NSM', 'RSM', 'SC'].includes(userRole || '') && (
+                <div className="flex items-center gap-1 flex-1">
+                  <label className="text-[7px] font-black text-seablue uppercase tracking-widest whitespace-nowrap">Region:</label>
+                  <select 
+                    value={selectedEntryRegion} 
+                    onChange={(e) => {
+                      setSelectedEntryRegion(e.target.value);
+                      setSelectedTSM('');
+                      setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50 }));
+                    }} 
+                    className="input-clean flex-1 min-w-[80px] text-[9px] py-0.5 px-1"
+                  >
+                    <option value="">All Regions</option>
+                    {entryRegions.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                </div>
+              )}
+              <div className="flex items-center gap-1 flex-1">
+                <label className="text-[7px] font-black text-seablue uppercase tracking-widest whitespace-nowrap">TSM:</label>
                 <select 
-                  value={selectedEntryRegion} 
+                  value={selectedTSM} 
+                  disabled={(userRole === 'TSM' || userRole === 'ASM')}
                   onChange={(e) => {
-                    setSelectedEntryRegion(e.target.value);
-                    setSelectedTSM('');
+                    setSelectedTSM(e.target.value);
                     setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50 }));
                   }} 
-                  className="input-clean flex-1 max-w-[150px] text-[10px] py-1"
+                  className="input-clean flex-1 min-w-[80px] text-[9px] py-0.5 px-1"
                 >
-                  <option value="">All Regions</option>
-                  {entryRegions.map(r => <option key={r} value={r}>{r}</option>)}
+                  <option value="">All TSMs</option>
+                  {filteredEntryTSMList.map(tsm => <option key={tsm} value={tsm}>{tsm}</option>)}
                 </select>
-              </>
-            )}
-            <label className="text-[9px] font-black text-seablue uppercase tracking-widest">TSM:</label>
-            <select 
-              value={selectedTSM} 
-              disabled={(userRole === 'TSM' || userRole === 'ASM')}
-              onChange={(e) => {
-                setSelectedTSM(e.target.value);
-                setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50 }));
-              }} 
-              className="input-clean flex-1 max-w-[150px] text-[10px] py-1"
-            >
-              <option value="">All TSMs</option>
-              {filteredEntryTSMList.map(tsm => <option key={tsm} value={tsm}>{tsm}</option>)}
-            </select>
+              </div>
+            </div>
           </div>
         )}
 

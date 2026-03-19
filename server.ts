@@ -578,48 +578,83 @@ async function startServer() {
     
     let formatted = key.trim();
     
-    // Try to parse as JSON first (common if the whole service account JSON was pasted)
-    try {
-      if (formatted.startsWith('{')) {
+    // 1. Handle JSON format if the whole service account was pasted
+    if (formatted.startsWith('{')) {
+      try {
         const parsed = JSON.parse(formatted);
         if (parsed.private_key) {
-          formatted = parsed.private_key;
+          return parsed.private_key;
         }
+      } catch (e) {
+        // Not valid JSON, continue
       }
-    } catch (e) {}
+    }
 
-    // Remove wrapping quotes if they exist
+    // 2. Remove wrapping quotes and handle escaped newlines
     formatted = formatted.replace(/^["']|["']$/g, '');
-    
-    // Handle escaped newlines (both \n and \\n)
     formatted = formatted.replace(/\\n/g, '\n');
     
-    // If it already has the headers and looks like a proper PEM, just return it
-    if (formatted.includes('-----BEGIN') && formatted.includes('-----END')) {
-      // Ensure it has proper newlines between headers and content
-      const parts = formatted.split(/-----BEGIN [^-]+-----|-----END [^-]+-----/).filter(p => p.trim());
-      if (parts.length === 1) {
-        const headerMatch = formatted.match(/-----BEGIN [^-]+-----/);
-        const footerMatch = formatted.match(/-----END [^-]+-----/);
-        if (headerMatch && footerMatch) {
-          const header = headerMatch[0];
-          const footer = footerMatch[0];
-          const content = parts[0].replace(/\s/g, '');
-          const lines = content.match(/.{1,64}/g) || [];
-          return `${header}\n${lines.join('\n')}\n${footer}`;
-        }
-      }
-      return formatted;
+    // 3. If it looks like a PEM but is all on one line, fix it
+    if (formatted.includes('-----BEGIN') && !formatted.includes('\n')) {
+       const headerMatch = formatted.match(/(-----BEGIN [^-]+-----)/);
+       const footerMatch = formatted.match(/(-----END [^-]+-----)/);
+       if (headerMatch && footerMatch) {
+         const header = headerMatch[1];
+         const footer = footerMatch[1];
+         const content = formatted.replace(header, '').replace(footer, '').replace(/\s/g, '');
+         const lines = content.match(/.{1,64}/g) || [];
+         return `${header}\n${lines.join('\n')}\n${footer}`;
+       }
     }
     
-    // If it's just the base64 part, wrap it in PKCS#8 headers
-    const clean = formatted.replace(/\s/g, '');
-    if (/^[A-Za-z0-9+/=]+$/.test(clean)) {
-      const lines = clean.match(/.{1,64}/g) || [];
+    // 4. If it's already a PEM format, ensure it's clean and properly wrapped
+    const pemRegex = /(-----BEGIN [^-]+-----)([\s\S]*?)(-----END [^-]+-----)/;
+    const match = formatted.match(pemRegex);
+    
+    if (match) {
+      const header = match[1].trim();
+      // Remove all whitespace AND literal \n strings from the base64 part
+      const content = match[2].replace(/\\n|\s/g, ''); 
+      const footer = match[3].trim();
+      
+      if (content.length > 0) {
+        const lines = content.match(/.{1,64}/g) || [];
+        return `${header}\n${lines.join('\n')}\n${footer}`;
+      }
+    }
+    
+    // 5. If it's just base64, wrap it as a PRIVATE KEY
+    const cleanBase64 = formatted.replace(/\\n|\s/g, '');
+    if (cleanBase64.length > 500 && /^[A-Za-z0-9+/=]+$/.test(cleanBase64)) {
+      const lines = cleanBase64.match(/.{1,64}/g) || [];
       return `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
     }
     
     return formatted;
+  }
+
+  function getVisibleOBIds(user: any): string[] {
+    const { role, name, contact, region } = user;
+    const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
+    const trimmedName = (name || '').trim().toLowerCase();
+    const trimmedRegion = (region || '').trim().toLowerCase();
+
+    if (role === 'Admin' || role === 'Super Admin' || role === 'Director') {
+      return hierarchy.map(h => h.ob_id);
+    } else if (role === 'NSM') {
+      return hierarchy.filter(h => (h.nsm_name || '').trim().toLowerCase() === trimmedName).map(h => h.ob_id);
+    } else if (role === 'RSM' || role === 'SC') {
+      return hierarchy.filter(h => 
+        (h.rsm_name || '').trim().toLowerCase() === trimmedName || 
+        (h.sc_name || '').trim().toLowerCase() === trimmedName || 
+        (h.territory_region || '').trim().toLowerCase() === trimmedRegion
+      ).map(h => h.ob_id);
+    } else if (role === 'TSM' || role === 'ASM') {
+      return hierarchy.filter(h => (h.asm_tsm_name || '').trim().toLowerCase() === trimmedName).map(h => h.ob_id);
+    } else if (role === 'OB') {
+      return [contact];
+    }
+    return [];
   }
 
   async function getGoogleSheetsClient() {
@@ -641,9 +676,20 @@ async function startServer() {
           clientEmail = parsed.client_email;
           db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("google_service_account_email", clientEmail);
         }
+        if (parsed.private_key) {
+          privateKeyRaw = parsed.private_key;
+        }
       } catch (e) {}
 
       const privateKey = formatPrivateKey(privateKeyRaw);
+
+      console.log("Initializing Google Sheets Client with:", {
+        spreadsheetId,
+        clientEmail,
+        privateKeyLength: privateKey?.length,
+        privateKeyStart: privateKey?.substring(0, 30),
+        privateKeyEnd: privateKey?.substring(privateKey?.length - 30)
+      });
 
       if (!spreadsheetId) {
         throw new Error("Spreadsheet ID is missing. Please provide the ID of a Google Sheet shared with the Service Account.");
@@ -1869,24 +1915,16 @@ async function startServer() {
   app.get("/api/orders", authenticateToken, (req: any, res) => {
     try {
       const { ob, tsm, from, to, ob_contact } = req.query;
-      const { role, name, contact, region } = req.user;
+      const visibleOBIds = getVisibleOBIds(req.user);
 
       let query = "SELECT * FROM submitted_orders WHERE 1=1";
       const params: any[] = [];
 
-      // RBAC Filtering
-      if ((role === 'TSM' || role === 'ASM')) {
-        
-        // We need to fetch all and filter in memory for fuzzy match, or use LIKE in SQL
-        query += " AND (tsm LIKE ? OR tsm LIKE ? OR tsm = ? OR ob_contact LIKE 'TSM-%')";
-        params.push('%' + name + '%', name + '%', name);
-
-      } else if (role === 'RSM' || role === 'SC') {
-        query += " AND (region = ? OR rsm = ? OR sc = ?)";
-        params.push(region, name, name);
-      } else if (role === 'OB') {
-        query += " AND ob_contact = ?";
-        params.push(contact);
+      if (visibleOBIds.length > 0) {
+        query += ` AND ob_contact IN (${visibleOBIds.map(() => '?').join(',')})`;
+        params.push(...visibleOBIds);
+      } else {
+        return res.json([]);
       }
 
       if (ob) {
@@ -1965,24 +2003,30 @@ async function startServer() {
 
   app.get("/api/stocks", authenticateToken, (req: any, res) => {
     try {
-      const { role, name, region } = req.user;
+      const { from, to, tsm } = req.query;
+      const visibleOBIds = getVisibleOBIds(req.user);
+
       let query = "SELECT * FROM stock_reports WHERE 1=1";
       const params: any[] = [];
 
-      if ((role === 'TSM' || role === 'ASM')) {
-        
-        query += " AND (tsm LIKE ? OR tsm LIKE ? OR tsm = ?)";
-        params.push('%' + name + '%', name + '%', name);
+      // For stocks, we filter by distributors associated with visible OBs
+      const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
+      const visibleDists = hierarchy.filter(h => visibleOBIds.includes(h.ob_id)).map(h => h.distributor_name);
+      const uniqueDists = Array.from(new Set(visibleDists));
 
-      } else if (role === 'RSM') {
-        // Assuming region is stored or we can filter by town
-        // For now, just filter by TSM if we have a mapping, but let's keep it simple
+      if (uniqueDists.length > 0) {
+        const placeholders = uniqueDists.map(() => '?').join(',');
+        query += ` AND distributor IN (${placeholders})`;
+        params.push(...uniqueDists);
+      } else if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin' && req.user.role !== 'Director') {
+        return res.json([]);
       }
 
-      query += " ORDER BY submitted_at DESC";
+      query += " ORDER BY date DESC, submitted_at DESC";
       const rows = db.prepare(query).all(...params);
       res.json(rows);
     } catch (err) {
+      console.error("Fetch Stocks Error:", err);
       res.status(500).json({ error: "Failed to fetch stock reports" });
     }
   });
@@ -2000,20 +2044,13 @@ async function startServer() {
   app.get("/api/daily-status", authenticateToken, (req: any, res) => {
     const { date } = req.query;
     try {
+      const visibleOBIds = getVisibleOBIds(req.user);
       let allOBs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       
-      // RBAC Filtering
-      const { role } = req.user;
-      if (role === 'TSM' || role === 'ASM') {
-        
-        const trimmedName = (req.user.name || '').trim().toLowerCase();
-        allOBs = allOBs.filter((ob: any) => {
-          const tsmName = (ob.tsm || '').trim().toLowerCase();
-          return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
-        });
-
-      } else if (req.user.role === 'RSM') {
-        allOBs = allOBs.filter(ob => ob.region === req.user.region);
+      if (visibleOBIds.length > 0) {
+        allOBs = allOBs.filter(ob => visibleOBIds.includes(ob.contact));
+      } else if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin' && req.user.role !== 'Director') {
+        allOBs = [];
       }
 
       const submissions = db.prepare("SELECT order_booker, ob_contact, visit_type, submitted_at FROM submitted_orders WHERE date = ?").all(date) as any[];
@@ -2271,31 +2308,8 @@ async function startServer() {
   // National Hierarchy APIs
   app.get("/api/admin/hierarchy", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req: any, res) => {
     try {
-      const { role, name } = req.user;
-      let rows;
-      if (role === 'Super Admin' || role === 'Admin' || role === 'NSM' || role === 'Director') {
-        rows = db.prepare("SELECT * FROM national_hierarchy").all();
-      } else if (role === 'RSM' || role === 'SC') {
-        // RSM/SC should see their region. We need to find their region first.
-        // For now, let's assume their region is stored in their user record or we can find it in hierarchy
-        const userRegion = db.prepare("SELECT territory_region FROM national_hierarchy WHERE rsm_name = ? OR sc_name = ? LIMIT 1").get(name, name) as any;
-        if (userRegion) {
-          rows = db.prepare("SELECT * FROM national_hierarchy WHERE territory_region = ?").all(userRegion.territory_region);
-        } else {
-          rows = [];
-        }
-      } else if ((role === 'TSM' || role === 'ASM')) {
-        
-        const trimmedName = (name || '').trim().toLowerCase();
-        const allRows = db.prepare("SELECT * FROM national_hierarchy").all();
-        rows = allRows.filter((r: any) => {
-          const tsmName = (r.asm_tsm_name || '').trim().toLowerCase();
-          return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
-        });
-
-      } else {
-        rows = [];
-      }
+      const visibleOBIds = getVisibleOBIds(req.user);
+      const rows = db.prepare(`SELECT * FROM national_hierarchy WHERE ob_id IN (${visibleOBIds.map(() => '?').join(',')})`).all(...visibleOBIds);
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: err.message });
@@ -2306,29 +2320,11 @@ async function startServer() {
     try {
       const { role, name, contact, region } = req.user;
       const currentMonth = getPSTDate().slice(0, 7);
+      const visibleOBIds = getVisibleOBIds(req.user);
       
       // 1. Get hierarchy to determine visibility
       const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
       
-      let visibleOBIds: string[] = [];
-      const trimmedName = (name || '').trim().toLowerCase();
-      
-      if (role === 'Admin' || role === 'Super Admin') {
-        visibleOBIds = hierarchy.map(h => h.ob_id);
-      } else if (role === 'Director') {
-        visibleOBIds = hierarchy.filter(h => (h.director_sales || '').trim().toLowerCase() === trimmedName).map(h => h.ob_id);
-      } else if (role === 'NSM') {
-        visibleOBIds = hierarchy.filter(h => (h.nsm_name || '').trim().toLowerCase() === trimmedName).map(h => h.ob_id);
-      } else if (role === 'RSM' || role === 'SC') {
-        visibleOBIds = hierarchy.filter(h => (h.rsm_name || '').trim().toLowerCase() === trimmedName || (h.sc_name || '').trim().toLowerCase() === trimmedName || (h.territory_region || '').trim().toLowerCase() === (region || '').trim().toLowerCase()).map(h => h.ob_id);
-      } else if ((role === 'TSM' || role === 'ASM')) {
-        visibleOBIds = hierarchy.filter(h => (h.asm_tsm_name || '').trim().toLowerCase() === trimmedName).map(h => h.ob_id);
-      } else if (role === 'OB') {
-        visibleOBIds = [contact];
-      } else {
-        visibleOBIds = [contact];
-      }
-
       if (visibleOBIds.length === 0) {
         return res.json({ stats: [], hierarchy: [], timeInfo: calculateTimeGone() });
       }
@@ -2368,17 +2364,17 @@ async function startServer() {
           distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(ob_id) DO UPDATE SET
-          director_sales=excluded.director_sales,
-          nsm_name=excluded.nsm_name,
-          rsm_name=excluded.rsm_name,
-          sc_name=excluded.sc_name,
-          asm_tsm_name=excluded.asm_tsm_name,
-          town_name=excluded.town_name,
-          distributor_name=excluded.distributor_name,
-          distributor_code=excluded.distributor_code,
-          ob_name=excluded.ob_name,
-          territory_region=excluded.territory_region,
-          target_ctn=excluded.target_ctn
+          director_sales = COALESCE(NULLIF(excluded.director_sales, ''), director_sales),
+          nsm_name = COALESCE(NULLIF(excluded.nsm_name, ''), nsm_name),
+          rsm_name = COALESCE(NULLIF(excluded.rsm_name, ''), rsm_name),
+          sc_name = COALESCE(NULLIF(excluded.sc_name, ''), sc_name),
+          asm_tsm_name = COALESCE(NULLIF(excluded.asm_tsm_name, ''), asm_tsm_name),
+          town_name = COALESCE(NULLIF(excluded.town_name, ''), town_name),
+          distributor_name = COALESCE(NULLIF(excluded.distributor_name, ''), distributor_name),
+          distributor_code = COALESCE(NULLIF(excluded.distributor_code, ''), distributor_code),
+          ob_name = COALESCE(NULLIF(excluded.ob_name, ''), ob_name),
+          territory_region = COALESCE(NULLIF(excluded.territory_region, ''), territory_region),
+          target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn)
       `);
 
       const insertOB = db.prepare(`
@@ -2386,15 +2382,15 @@ async function startServer() {
           name, contact, town, distributor, tsm, region, nsm, rsm, sc, director
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(contact) DO UPDATE SET
-          name=excluded.name,
-          town=excluded.town,
-          distributor=excluded.distributor,
-          tsm=excluded.tsm,
-          region=excluded.region,
-          nsm=excluded.nsm,
-          rsm=excluded.rsm,
-          sc=excluded.sc,
-          director=excluded.director
+          name = COALESCE(NULLIF(excluded.name, ''), name),
+          town = COALESCE(NULLIF(excluded.town, ''), town),
+          distributor = COALESCE(NULLIF(excluded.distributor, ''), distributor),
+          tsm = COALESCE(NULLIF(excluded.tsm, ''), tsm),
+          region = COALESCE(NULLIF(excluded.region, ''), region),
+          nsm = COALESCE(NULLIF(excluded.nsm, ''), nsm),
+          rsm = COALESCE(NULLIF(excluded.rsm, ''), rsm),
+          sc = COALESCE(NULLIF(excluded.sc, ''), sc),
+          director = COALESCE(NULLIF(excluded.director, ''), director)
       `);
 
       for (const item of hierarchy) {
@@ -2460,6 +2456,7 @@ async function startServer() {
           contact: getVal(['ID', 'OB ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id'])?.toString().trim() || '',
           town: getVal(['Town', 'town', 'town name'])?.toString().trim() || '',
           distributor: getVal(['Distributor', 'distributor', 'distributor name'])?.toString().trim() || '',
+          distributor_code: getVal(['Distributor Code', 'distributor_code', 'dist_code'])?.toString().trim() || '',
           tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm'])?.toString().trim() || '',
           zone: getVal(['Zone', 'zone'])?.toString().trim() || '',
           region: getVal(['Region', 'region', 'territory', 'territory/region'])?.toString().trim() || '',
@@ -2468,6 +2465,7 @@ async function startServer() {
           sc: getVal(['SC', 'sc', 'sc name'])?.toString().trim() || '',
           director: getVal(['Director', 'director', 'director sales'])?.toString().trim() || '',
           total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
+          target_ctn: parseFloat(getVal(['Target Ctn', 'target_ctn', 'target'])) || 0,
           routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
           targets: {
             "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite glow', 'kite_glow_target'])) || 0,
@@ -2486,16 +2484,26 @@ async function startServer() {
             INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(contact) DO UPDATE SET
-              name=excluded.name, town=excluded.town, distributor=excluded.distributor, tsm=excluded.tsm, 
-              zone=excluded.zone, region=excluded.region, nsm=excluded.nsm, rsm=excluded.rsm, sc=excluded.sc, director=excluded.director,
-              total_shops=excluded.total_shops, routes=excluded.routes
+              name = COALESCE(NULLIF(excluded.name, ''), name),
+              town = COALESCE(NULLIF(excluded.town, ''), town),
+              distributor = COALESCE(NULLIF(excluded.distributor, ''), distributor),
+              tsm = COALESCE(NULLIF(excluded.tsm, ''), tsm),
+              zone = COALESCE(NULLIF(excluded.zone, ''), zone),
+              region = COALESCE(NULLIF(excluded.region, ''), region),
+              nsm = COALESCE(NULLIF(excluded.nsm, ''), nsm),
+              rsm = COALESCE(NULLIF(excluded.rsm, ''), rsm),
+              sc = COALESCE(NULLIF(excluded.sc, ''), sc),
+              director = COALESCE(NULLIF(excluded.director, ''), director),
+              total_shops = COALESCE(NULLIF(excluded.total_shops, 0), total_shops),
+              routes = COALESCE(NULLIF(excluded.routes, '[]'), routes)
           `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.zone, item.region, item.nsm, item.rsm, item.sc || '', item.director, item.total_shops, JSON.stringify(item.routes));
 
           for (const [brand, target] of Object.entries(item.targets)) {
             db.prepare(`
               INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
               VALUES (?, ?, ?, ?)
-              ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET target_ctn=excluded.target_ctn
+              ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET 
+                target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn)
             `).run(item.contact, brand, target, currentMonth);
           }
 
@@ -2503,22 +2511,24 @@ async function startServer() {
           db.prepare(`
             INSERT INTO national_hierarchy (
               director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, 
-              town_name, distributor_name, ob_name, ob_id, territory_region
+              town_name, distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ob_id) DO UPDATE SET
-              director_sales=excluded.director_sales,
-              nsm_name=excluded.nsm_name,
-              rsm_name=excluded.rsm_name,
-              sc_name=excluded.sc_name,
-              asm_tsm_name=excluded.asm_tsm_name,
-              town_name=excluded.town_name,
-              distributor_name=excluded.distributor_name,
-              ob_name=excluded.ob_name,
-              territory_region=excluded.territory_region
+              director_sales = COALESCE(NULLIF(excluded.director_sales, ''), director_sales),
+              nsm_name = COALESCE(NULLIF(excluded.nsm_name, ''), nsm_name),
+              rsm_name = COALESCE(NULLIF(excluded.rsm_name, ''), rsm_name),
+              sc_name = COALESCE(NULLIF(excluded.sc_name, ''), sc_name),
+              asm_tsm_name = COALESCE(NULLIF(excluded.asm_tsm_name, ''), asm_tsm_name),
+              town_name = COALESCE(NULLIF(excluded.town_name, ''), town_name),
+              distributor_name = COALESCE(NULLIF(excluded.distributor_name, ''), distributor_name),
+              distributor_code = COALESCE(NULLIF(excluded.distributor_code, ''), distributor_code),
+              ob_name = COALESCE(NULLIF(excluded.ob_name, ''), ob_name),
+              territory_region = COALESCE(NULLIF(excluded.territory_region, ''), territory_region),
+              target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn)
           `).run(
             item.director || '', item.nsm || '', item.rsm || '', item.sc || '', item.tsm || '',
-            item.town || '', item.distributor || '', item.name || '', item.contact, item.region || ''
+            item.town || '', item.distributor || '', item.distributor_code || '', item.name || '', item.contact, item.region || '', item.target_ctn || 0
           );
         }
       });
@@ -3096,20 +3106,22 @@ async function startServer() {
       }).filter(t => t.name && t.contact);
 
       const transaction = db.transaction(() => {
-        db.prepare("DELETE FROM ob_assignments").run();
+        // Use INSERT OR REPLACE instead of DELETE to prevent data loss if sync fails partially
         const currentMonth = new Date().toISOString().slice(0, 7);
-        db.prepare("DELETE FROM brand_targets WHERE month = ?").run(currentMonth);
-
+        
         for (const item of team) {
           db.prepare(`
             INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes)
             VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(contact) DO UPDATE SET
+              name=excluded.name, town=excluded.town, distributor=excluded.distributor, tsm=excluded.tsm, total_shops=excluded.total_shops, routes=excluded.routes
           `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.total_shops, JSON.stringify(item.routes));
 
           for (const [brand, target] of Object.entries(item.targets)) {
             db.prepare(`
               INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
               VALUES (?, ?, ?, ?)
+              ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET target_ctn=excluded.target_ctn
             `).run(item.contact, brand, target, currentMonth);
           }
         }

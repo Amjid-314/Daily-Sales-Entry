@@ -1,16 +1,19 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
 @theme {
   --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
   --color-seablue: #006994;
   --color-seablue-light: #0084ba;
   --color-seablue-dark: #004d6d;
+  --color-ink: #1e293b;
+  --color-paper: #f8fafc;
 }
 
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased;
+    @apply bg-slate-50 text-slate-900 antialiased selection:bg-seablue/10 selection:text-seablue;
   }
   
   input[type="number"]::-webkit-inner-spin-button,
@@ -22,18 +25,40 @@
 
 @layer components {
   .card-clean {
-    @apply bg-white border border-slate-200 shadow-sm rounded-2xl transition-all;
+    @apply bg-white border border-slate-200/60 shadow-sm rounded-2xl transition-all duration-300 hover:shadow-md hover:border-slate-300/60;
   }
   
   .input-clean {
-    @apply bg-white border border-slate-200 px-3 py-2 outline-none focus:border-seablue focus:ring-1 focus:ring-seablue transition-all rounded-xl text-sm;
+    @apply bg-white border border-slate-200 px-3 py-2 outline-none focus:border-seablue focus:ring-2 focus:ring-seablue/10 transition-all rounded-xl text-sm font-medium text-slate-700 placeholder:text-slate-400;
   }
 
   .btn-seablue {
-    @apply bg-seablue text-white font-semibold px-4 py-2 rounded-xl hover:bg-seablue-light active:scale-95 transition-all shadow-sm;
+    @apply bg-seablue text-white font-bold px-4 py-2 rounded-xl hover:bg-seablue-light active:scale-95 transition-all shadow-md shadow-seablue/10 flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .glass-card {
+    @apply bg-white/80 backdrop-blur-md border border-white/20 shadow-xl rounded-3xl;
+  }
+
+  .badge-pill {
+    @apply px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-widest;
   }
 }
 
 .markdown-body {
   @apply text-sm leading-relaxed;
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  @apply bg-transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  @apply bg-slate-200 rounded-full hover:bg-slate-300 transition-colors;
 }
