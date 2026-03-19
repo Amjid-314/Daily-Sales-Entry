@@ -300,7 +300,12 @@ const TSMDashboard = ({ stats, hierarchy, isSyncing, onRefresh, userName, holida
 };
 
 const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string }) => {
-  const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'RSM' | 'SC' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>('National');
+  const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'RSM' | 'SC' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>(() => {
+    if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return 'National';
+    if (userRole === 'RSM' || userRole === 'SC') return 'Region';
+    if (userRole === 'TSM' || userRole === 'ASM') return 'ASM/TSM' as any;
+    return 'National';
+  });
   const [filterValue, setFilterValue] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
 
@@ -329,26 +334,33 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     
     // Role-based data filtering
     if (userRole === 'Director' && userName) {
+      const normalizedName = userName.trim().toLowerCase();
       baseStats = stats.filter(s => {
         const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-        return h?.director_sales === userName;
+        return (h?.director_sales || '').trim().toLowerCase() === normalizedName;
       });
     } else if (userRole === 'NSM' && userName) {
+      const normalizedName = userName.trim().toLowerCase();
       baseStats = stats.filter(s => {
         const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-        return h?.nsm_name === userName;
+        return (h?.nsm_name || '').trim().toLowerCase() === normalizedName;
       });
     } else if ((userRole === 'RSM' || userRole === 'SC') && (userName || userRegion)) {
+      const normalizedName = (userName || '').trim().toLowerCase();
+      const normalizedRegion = (userRegion || '').trim().toLowerCase();
       baseStats = stats.filter(s => {
         const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-        const region = h?.territory_region || s.region;
-        return h?.rsm_name === userName || h?.sc_name === userName || region === userRegion;
+        const region = (h?.territory_region || s.region || '').trim().toLowerCase();
+        const rsmName = (h?.rsm_name || '').trim().toLowerCase();
+        const scName = (h?.sc_name || '').trim().toLowerCase();
+        return (normalizedName && (rsmName === normalizedName || scName === normalizedName)) || (normalizedRegion && region === normalizedRegion);
       });
     } else if ((userRole === 'TSM' || userRole === 'ASM') && userName) {
+      const normalizedName = userName.trim().toLowerCase();
       baseStats = stats.filter(s => {
         const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-        const tsm = h?.asm_tsm_name || s.tsm;
-        return tsm === userName;
+        const tsm = (h?.asm_tsm_name || s.tsm || '').trim().toLowerCase();
+        return tsm === normalizedName;
       });
     } else if (userRole === 'OB' && userContact) {
       baseStats = stats.filter(s => s.ob_contact === userContact);
@@ -1233,6 +1245,133 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   );
 };
 
+const UserProfileView = ({ user, onUpdate, apiFetch }: { user: any, onUpdate: (data: any) => void, apiFetch: any }) => {
+  const [formData, setFormData] = useState({
+    name: user?.name || '',
+    contact: user?.contact || '',
+    region: user?.region || '',
+    town: user?.town || '',
+    email: user?.email || '',
+    username: user?.username || ''
+  });
+  const [isUpdating, setIsUpdating] = useState(false);
+  const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsUpdating(true);
+    try {
+      const res = await apiFetch('/api/user/profile', {
+        method: 'PUT',
+        body: JSON.stringify({
+          name: formData.name,
+          contact: formData.contact,
+          region: formData.region,
+          town: formData.town
+        })
+      });
+      if (res.ok) {
+        setMessage({ text: 'Profile updated successfully!', type: 'success' });
+        onUpdate({ ...user, ...formData });
+      } else {
+        throw new Error('Update failed');
+      }
+    } catch (err) {
+      setMessage({ text: 'Failed to update profile', type: 'error' });
+    } finally {
+      setIsUpdating(false);
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  return (
+    <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
+      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">User Profile</h1>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">View and update your personal information</p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="card-clean bg-white p-6 space-y-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Name</label>
+            <input 
+              type="text" 
+              value={formData.name} 
+              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+              className="input-clean w-full"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Contact Number</label>
+            <input 
+              type="text" 
+              value={formData.contact} 
+              onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
+              className="input-clean w-full"
+              required
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Region</label>
+            <input 
+              type="text" 
+              value={formData.region} 
+              onChange={(e) => setFormData({ ...formData, region: e.target.value })}
+              className="input-clean w-full"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Town</label>
+            <input 
+              type="text" 
+              value={formData.town} 
+              onChange={(e) => setFormData({ ...formData, town: e.target.value })}
+              className="input-clean w-full"
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email (Read-only)</label>
+            <input 
+              type="email" 
+              value={formData.email} 
+              className="input-clean w-full bg-slate-50"
+              readOnly
+            />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Username (Read-only)</label>
+            <input 
+              type="text" 
+              value={formData.username} 
+              className="input-clean w-full bg-slate-50"
+              readOnly
+            />
+          </div>
+        </div>
+
+        {message && (
+          <div className={`p-3 rounded-xl text-xs font-bold uppercase tracking-widest ${message.type === 'success' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
+            {message.text}
+          </div>
+        )}
+
+        <div className="pt-4">
+          <button 
+            type="submit" 
+            disabled={isUpdating}
+            className="btn-seablue w-full py-3 flex items-center justify-center gap-2"
+          >
+            {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />}
+            Update Profile
+          </button>
+        </div>
+      </form>
+    </div>
+  );
+};
+
 const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v: any) => void, role: string | null, onLogout: () => void }) => {
   const tabs = [
     { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
@@ -1241,6 +1380,7 @@ const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v:
     { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
     { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'profile', label: 'Profile', icon: User, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
   ];
 
@@ -1822,7 +1962,7 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
 };
 
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports'>('entry');
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'profile'>('entry');
   const [token, setToken] = useState<string | null>(() => {
     const saved = localStorage.getItem('auth_token');
     return (saved === 'null' || !saved) ? null : saved;
@@ -1850,6 +1990,7 @@ export default function App() {
   const [userContact, setUserContact] = useState<string | null>(() => user?.contact || null);
   const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
   const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
+  const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
 
   const handleLogin = (token: string, userData: any) => {
     const role = normalizeRole(userData.role);
@@ -2025,7 +2166,8 @@ export default function App() {
   const [isConfirming, setIsConfirming] = useState(false);
   const [lastSubmittedOrder, setLastSubmittedOrder] = useState<any | null>(null);
   const [location, setLocation] = useState<{ latitude: number; longitude: number; accuracy: number } | null>(null);
-  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
+  const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void; onCancel: () => void } | null>(null);
   const [stockOrders, setStockOrders] = useState<Record<string, Record<string, { ctn: number }>>>({});
   const [selectedStockTSM, setSelectedStockTSM] = useState<string>(() => {
     try {
@@ -2472,9 +2614,23 @@ export default function App() {
     
     // Add confirmation if clearing sensitive fields
     if (['google_spreadsheet_id', 'google_service_account_email', 'google_private_key'].includes(key) && !sanitizedValue && appConfig[key]) {
-      if (!window.confirm(`Are you sure you want to REMOVE the ${key.replace(/_/g, ' ')}? This will break Google Sheets sync.`)) {
-        return;
-      }
+      setConfirmModal({
+        message: `Are you sure you want to REMOVE the ${key.replace(/_/g, ' ')}? This will break Google Sheets sync.`,
+        onConfirm: async () => {
+          setConfirmModal(null);
+          setAppConfig(prev => ({ ...prev, [key]: sanitizedValue }));
+          try {
+            await apiFetch('/api/admin/config', {
+              method: 'POST',
+              body: JSON.stringify({ key, value: sanitizedValue })
+            });
+          } catch (err) {
+            console.error(err);
+          }
+        },
+        onCancel: () => setConfirmModal(null)
+      });
+      return;
     }
 
     setAppConfig(prev => ({ ...prev, [key]: sanitizedValue }));
@@ -2531,12 +2687,7 @@ export default function App() {
     const role = (userRole || '').toUpperCase();
     if (!['NSM', 'RSM', 'SC', 'DIRECTOR', 'ADMIN', 'SUPER ADMIN'].includes(role)) return;
 
-    const interval = setInterval(() => {
-      console.log("Periodic refresh triggered...");
-      syncEverything();
-    }, 30 * 60 * 1000); // 30 minutes
-
-    return () => clearInterval(interval);
+    // Removed auto-refresh per user request
   }, [token, userRole, appConfig.google_spreadsheet_id]);
 
   // Expose to window for NationalDashboard
@@ -2795,18 +2946,6 @@ export default function App() {
       }
     }
     fetchHistory();
-    
-    // Auto-refresh every 2 minutes to keep stats updated from other team members
-    const interval = setInterval(() => {
-      if (view === 'dashboard' || view === 'history' || view === 'admin') {
-        fetchHistory(view === 'dashboard' || view === 'admin');
-        if (view === 'admin' && (userRole === 'Admin' || userRole === 'Super Admin')) {
-          fetchDailyStatus(new Date().toISOString().split('T')[0]);
-        }
-      }
-    }, 120000);
-
-    return () => clearInterval(interval);
   }, [view, userRole, token]);
 
   useEffect(() => {
@@ -4298,6 +4437,48 @@ export default function App() {
   }
 
   if (view === 'admin') {
+    if (!isAdminAuthenticated) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex flex-col">
+          <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+          <div className="flex-1 flex items-center justify-center p-4">
+            <div className="card-clean p-6 max-w-sm w-full bg-white shadow-xl">
+              <div className="flex items-center gap-3 mb-6">
+                <div className="p-3 bg-red-100 text-red-600 rounded-xl">
+                  <Settings className="w-6 h-6" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black uppercase tracking-tight text-slate-800">Admin Access</h2>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Authentication Required</p>
+                </div>
+              </div>
+              <form onSubmit={(e) => {
+                e.preventDefault();
+                const fd = new FormData(e.currentTarget);
+                if (fd.get('password') === 'Admin@1234') {
+                  setIsAdminAuthenticated(true);
+                } else {
+                  alert('Incorrect password');
+                }
+              }} className="space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-500 uppercase tracking-widest mb-1">Password</label>
+                  <input 
+                    type="password" 
+                    name="password" 
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all"
+                    placeholder="Enter admin password"
+                    autoFocus
+                  />
+                </div>
+                <button type="submit" className="btn-seablue w-full py-3">Unlock Admin Panel</button>
+              </form>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     if (isLoadingAdmin) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
@@ -4356,7 +4537,7 @@ export default function App() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-600">Retention:</span>
-                <span className="text-[10px] font-bold text-emerald-600 uppercase">90 Days+</span>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase">Never Delete data</span>
               </div>
             </div>
             <div className="card-clean p-4 space-y-2">
@@ -5116,6 +5297,22 @@ export default function App() {
             </div>
           </section>
         </main>
+      </div>
+    );
+  }
+
+  if (view === 'profile') {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-20">
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+        <UserProfileView 
+          user={user} 
+          apiFetch={apiFetch}
+          onUpdate={(updatedUser) => {
+            setUser(updatedUser);
+            localStorage.setItem('user_data', JSON.stringify(updatedUser));
+          }} 
+        />
       </div>
     );
   }
@@ -6074,11 +6271,33 @@ export default function App() {
             initial={{ opacity: 0, y: 50, x: '-50%' }} 
             animate={{ opacity: 1, y: 0, x: '-50%' }} 
             exit={{ opacity: 0, y: 20, x: '-50%' }}
-            className={`fixed bottom-32 left-1/2 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 z-[100] min-w-[280px] border border-white/10 ${message.type === 'success' ? 'bg-emerald-600 text-white' : 'bg-red-600 text-white'}`}
+            className={`fixed bottom-32 left-1/2 px-6 py-4 rounded-2xl shadow-2xl flex items-center gap-4 z-[100] min-w-[280px] border border-white/10 ${message.type === 'success' ? 'bg-emerald-600 text-white' : message.type === 'error' ? 'bg-red-600 text-white' : 'bg-seablue text-white'}`}
           >
             {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             <span className="text-sm font-bold uppercase tracking-widest">{message.text}</span>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {confirmModal && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }} className="card-clean p-6 max-w-sm w-full bg-white shadow-2xl">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-amber-100 text-amber-600 rounded-xl">
+                  <AlertTriangle className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-tight text-slate-800">Confirm Action</h3>
+                </div>
+              </div>
+              <p className="text-sm text-slate-600 mb-6">{confirmModal.message}</p>
+              <div className="flex gap-3">
+                <button onClick={confirmModal.onCancel} className="flex-1 py-3 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
+                <button onClick={confirmModal.onConfirm} className="flex-1 py-3 bg-rose-500 text-white rounded-xl text-sm font-bold hover:bg-rose-600 transition-colors shadow-lg shadow-rose-500/20">Confirm</button>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

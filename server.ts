@@ -280,7 +280,8 @@ async function startServer() {
   const app = express();
   const PORT = 3000;
 
-  app.use(express.json());
+  app.use(express.json({ limit: '50mb' }));
+  app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
@@ -305,6 +306,31 @@ async function startServer() {
     db.prepare("INSERT OR REPLACE INTO drafts (id, data, updated_at) VALUES (?, ?, CURRENT_TIMESTAMP)")
       .run(id, JSON.stringify(data));
     res.json({ success: true });
+  });
+
+  app.get("/api/user/profile", authenticateToken, (req, res) => {
+    try {
+      const user = db.prepare("SELECT id, username, email, role, name, contact, region, town FROM users WHERE id = ?").get(req.user!.id) as any;
+      if (!user) return res.status(404).json({ error: "User not found" });
+      res.json(user);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch profile" });
+    }
+  });
+
+  app.put("/api/user/profile", authenticateToken, (req, res) => {
+    const { name, contact, region, town } = req.body;
+    try {
+      db.prepare("UPDATE users SET name = ?, contact = ?, region = ?, town = ? WHERE id = ?")
+        .run(name, contact, region, town, req.user!.id);
+      
+      logAction(req.user!.id.toString(), req.user!.name, req.user!.role, "UPDATE_PROFILE", { name, contact, region, town });
+      
+      res.json({ success: true, message: "Profile updated successfully" });
+    } catch (err) {
+      console.error("Profile Update Error:", err);
+      res.status(500).json({ error: "Failed to update profile" });
+    }
   });
 
   // Admin Configuration Tables
@@ -552,18 +578,15 @@ async function startServer() {
     
     let formatted = key.trim();
     
-    // Try to parse as JSON first
+    // Try to parse as JSON first (common if the whole service account JSON was pasted)
     try {
-      const parsed = JSON.parse(formatted);
-      if (typeof parsed === 'object' && parsed.private_key) {
-        return parsed.private_key;
+      if (formatted.startsWith('{')) {
+        const parsed = JSON.parse(formatted);
+        if (parsed.private_key) {
+          formatted = parsed.private_key;
+        }
       }
-      if (typeof parsed === 'string') {
-        formatted = parsed;
-      }
-    } catch (e) {
-      // Not a JSON string, continue with raw string cleaning
-    }
+    } catch (e) {}
 
     // Remove wrapping quotes if they exist
     formatted = formatted.replace(/^["']|["']$/g, '');
@@ -571,23 +594,29 @@ async function startServer() {
     // Handle escaped newlines (both \n and \\n)
     formatted = formatted.replace(/\\n/g, '\n');
     
-    // If it's just the base64 part, wrap it
-    if (!formatted.includes('-----BEGIN PRIVATE KEY-----')) {
-      const clean = formatted.replace(/\s/g, '');
+    // If it already has the headers and looks like a proper PEM, just return it
+    if (formatted.includes('-----BEGIN') && formatted.includes('-----END')) {
+      // Ensure it has proper newlines between headers and content
+      const parts = formatted.split(/-----BEGIN [^-]+-----|-----END [^-]+-----/).filter(p => p.trim());
+      if (parts.length === 1) {
+        const headerMatch = formatted.match(/-----BEGIN [^-]+-----/);
+        const footerMatch = formatted.match(/-----END [^-]+-----/);
+        if (headerMatch && footerMatch) {
+          const header = headerMatch[0];
+          const footer = footerMatch[0];
+          const content = parts[0].replace(/\s/g, '');
+          const lines = content.match(/.{1,64}/g) || [];
+          return `${header}\n${lines.join('\n')}\n${footer}`;
+        }
+      }
+      return formatted;
+    }
+    
+    // If it's just the base64 part, wrap it in PKCS#8 headers
+    const clean = formatted.replace(/\s/g, '');
+    if (/^[A-Za-z0-9+/=]+$/.test(clean)) {
       const lines = clean.match(/.{1,64}/g) || [];
-      formatted = `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
-    } else {
-      // Ensure it has proper newlines even if it has headers
-      const header = '-----BEGIN PRIVATE KEY-----';
-      const footer = '-----END PRIVATE KEY-----';
-      
-      let content = formatted;
-      if (content.includes(header)) content = content.split(header)[1];
-      if (content.includes(footer)) content = content.split(footer)[0];
-      
-      const cleanContent = content.replace(/\s/g, '');
-      const lines = cleanContent.match(/.{1,64}/g) || [];
-      formatted = `${header}\n${lines.join('\n')}\n${footer}`;
+      return `-----BEGIN PRIVATE KEY-----\n${lines.join('\n')}\n-----END PRIVATE KEY-----`;
     }
     
     return formatted;
@@ -597,12 +626,12 @@ async function startServer() {
     const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
     const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
     
-    let spreadsheetId = config.google_spreadsheet_id;
+    let spreadsheetId = config.google_spreadsheet_id || process.env.GOOGLE_SPREADSHEET_ID;
     if (spreadsheetId) {
       spreadsheetId = spreadsheetId.trim().replace(/^\/+|\/+$/g, '');
     }
-    let clientEmail = config.google_service_account_email;
-    let privateKeyRaw = config.google_private_key;
+    let clientEmail = config.google_service_account_email || process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+    let privateKeyRaw = config.google_private_key || process.env.GOOGLE_PRIVATE_KEY;
     let tokensRaw = config.google_tokens;
 
     if (privateKeyRaw) {
@@ -1007,17 +1036,17 @@ async function startServer() {
       const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
       const targetsData = typeof order.targets_data === 'string' ? JSON.parse(order.targets_data) : (order.targets_data || {});
       const ach = calculateAchievement(orderData);
-      const totalAch = Object.values(ach).reduce((a, b) => a + b, 0);
-      const totalTarget = Object.values(targetsData).reduce((a: any, b: any) => a + b, 0);
+      const totalAch = Object.values(ach).reduce((a: any, b: any) => Number(a) + Number(b), 0);
+      const totalTarget = Object.values(targetsData).reduce((a: any, b: any) => Number(a) + Number(b), 0);
 
       allPerformanceRows.push([
         order.date, order.order_booker, order.ob_contact, order.route,
         order.total_shops, order.visited_shops, order.productive_shops,
         order.total_shops > 0 ? ((order.visited_shops / order.total_shops) * 100).toFixed(1) + '%' : '0%',
         order.visited_shops > 0 ? ((order.productive_shops / order.visited_shops) * 100).toFixed(1) + '%' : '0%',
-        ...CATEGORIES.map(cat => (ach[cat] as number).toFixed(2)),
-        (totalAch as number).toFixed(2), (totalTarget as number).toFixed(2),
-        (totalTarget as number) > 0 ? (((totalAch as number) / (totalTarget as number)) * 100).toFixed(1) + '%' : '0%'
+        ...CATEGORIES.map(cat => Number(ach[cat] || 0).toFixed(2)),
+        Number(totalAch).toFixed(2), Number(totalTarget).toFixed(2),
+        Number(totalTarget) > 0 ? ((Number(totalAch) / Number(totalTarget)) * 100).toFixed(1) + '%' : '0%'
       ]);
     });
 
@@ -1094,22 +1123,44 @@ async function startServer() {
     });
 
     // Consolidated Batch Update for all summary sheets
-    await sheets.spreadsheets.values.batchUpdate({
-      spreadsheetId,
-      requestBody: {
-        valueInputOption: "USER_ENTERED",
-        data: [
-          { range: "Targets_vs_Achievement!A1", values: [targetHeaders, ...targetRows] },
-          { range: "OB_Performance!A1", values: [obPerformanceHeaders, ...obPerformanceRows] },
-          { range: "TSM_Performance!A1", values: [tsmPerformanceHeaders, ...tsmPerformanceRows] },
-          { range: "Stocks_Report!A1", values: [stockHeaders, ...stockRows] },
-          { range: "Current_Stocks!A1", values: [matrixHeaders, ...matrixRows] },
-          { range: "OB_Route_Performance!A1", values: [performanceHeaders, ...allPerformanceRows] },
-          { range: "Last_Entry_Date!A1", values: [lastEntryHeaders, ...lastEntryRows] },
-          { range: "Visit_Type_Analysis!A1", values: [analysisHeaders, ...analysisRows] }
-        ]
-      }
-    });
+    try {
+      // Clear existing data first to avoid stale rows at the bottom
+      await sheets.spreadsheets.values.batchClear({
+        spreadsheetId,
+        requestBody: {
+          ranges: [
+            "Targets_vs_Achievement",
+            "OB_Performance",
+            "TSM_Performance",
+            "Stocks_Report",
+            "Current_Stocks",
+            "OB_Route_Performance",
+            "Last_Entry_Date",
+            "Visit_Type_Analysis"
+          ]
+        }
+      });
+
+      await sheets.spreadsheets.values.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          valueInputOption: "USER_ENTERED",
+          data: [
+            { range: "Targets_vs_Achievement!A1", values: [targetHeaders, ...targetRows] },
+            { range: "OB_Performance!A1", values: [obPerformanceHeaders, ...obPerformanceRows] },
+            { range: "TSM_Performance!A1", values: [tsmPerformanceHeaders, ...tsmPerformanceRows] },
+            { range: "Stocks_Report!A1", values: [stockHeaders, ...stockRows] },
+            { range: "Current_Stocks!A1", values: [matrixHeaders, ...matrixRows] },
+            { range: "OB_Route_Performance!A1", values: [performanceHeaders, ...allPerformanceRows] },
+            { range: "Last_Entry_Date!A1", values: [lastEntryHeaders, ...lastEntryRows] },
+            { range: "Visit_Type_Analysis!A1", values: [analysisHeaders, ...analysisRows] }
+          ]
+        }
+      });
+    } catch (err: any) {
+      console.error("refreshSummarySheets Error:", err.message || err);
+      throw err;
+    }
   }
 
   async function syncAllToSheets() {
@@ -1322,6 +1373,18 @@ async function startServer() {
     try {
       const rows = db.prepare("SELECT * FROM app_config").all();
       const config = rows.reduce((acc: any, row: any) => ({ ...acc, [row.key]: row.value }), {});
+      
+      // Fallback to environment variables if not in DB
+      if (!config.google_spreadsheet_id && process.env.GOOGLE_SPREADSHEET_ID) {
+        config.google_spreadsheet_id = process.env.GOOGLE_SPREADSHEET_ID;
+      }
+      if (!config.google_service_account_email && process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL) {
+        config.google_service_account_email = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+      }
+      if (!config.google_private_key && process.env.GOOGLE_PRIVATE_KEY) {
+        config.google_private_key = process.env.GOOGLE_PRIVATE_KEY;
+      }
+      
       res.json(config);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch config" });
@@ -1770,13 +1833,14 @@ async function startServer() {
       }
 
       const insertOB = db.prepare("INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?)");
-      const insertTarget = db.prepare("INSERT INTO brand_targets (ob_contact, brand_name, target_ctn) VALUES (?, ?, ?)");
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const insertTarget = db.prepare("INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month) VALUES (?, ?, ?, ?)");
       
       seedOBs.forEach(ob => {
         insertOB.run(ob.name, ob.contact, ob.town, ob.distributor, ob.tsm, ob.totalShops, ob.routes);
         // Add default targets
         ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].forEach(brand => {
-          insertTarget.run(ob.contact, brand, (Math.random() * 10).toFixed(1));
+          insertTarget.run(ob.contact, brand, (Math.random() * 10).toFixed(1), currentMonth);
         });
       });
     });
@@ -2392,17 +2456,17 @@ async function startServer() {
         };
 
         return {
-          name: getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name']),
-          contact: getVal(['ID', 'OB ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id']),
-          town: getVal(['Town', 'town', 'town name']),
-          distributor: getVal(['Distributor', 'distributor', 'distributor name']),
-          tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm']),
-          zone: getVal(['Zone', 'zone']),
-          region: getVal(['Region', 'region', 'territory', 'territory/region']),
-          nsm: getVal(['NSM', 'nsm', 'nsm name']),
-          rsm: getVal(['RSM', 'rsm', 'rsm name']),
-          sc: getVal(['SC', 'sc', 'sc name']),
-          director: getVal(['Director', 'director', 'director sales']),
+          name: getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name'])?.toString().trim() || '',
+          contact: getVal(['ID', 'OB ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id'])?.toString().trim() || '',
+          town: getVal(['Town', 'town', 'town name'])?.toString().trim() || '',
+          distributor: getVal(['Distributor', 'distributor', 'distributor name'])?.toString().trim() || '',
+          tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm'])?.toString().trim() || '',
+          zone: getVal(['Zone', 'zone'])?.toString().trim() || '',
+          region: getVal(['Region', 'region', 'territory', 'territory/region'])?.toString().trim() || '',
+          nsm: getVal(['NSM', 'nsm', 'nsm name'])?.toString().trim() || '',
+          rsm: getVal(['RSM', 'rsm', 'rsm name'])?.toString().trim() || '',
+          sc: getVal(['SC', 'sc', 'sc name'])?.toString().trim() || '',
+          director: getVal(['Director', 'director', 'director sales'])?.toString().trim() || '',
           total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
           routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
           targets: {
@@ -2584,8 +2648,10 @@ async function startServer() {
       const catCount = CATEGORIES.length;
 
       const transaction = db.transaction(() => {
+        db.prepare("DELETE FROM submitted_orders").run();
+        
         const insertOrder = db.prepare(`
-          INSERT OR REPLACE INTO submitted_orders (
+          INSERT INTO submitted_orders (
             date, director, nsm, rsm, sc, tsm, town, distributor, order_booker, ob_contact, route, 
             zone, region,
             total_shops, visited_shops, productive_shops, 
@@ -2609,7 +2675,25 @@ async function startServer() {
           if (!date || !obContact) continue;
 
           const cleanContact = obContact.toString().trim();
-          const cleanDate = date.toString().trim();
+          
+          let cleanDate = date.toString().trim();
+          // Handle DD/MM/YYYY or M/D/YYYY from Google Sheets
+          const dateParts = cleanDate.split(/[-/]/);
+          if (dateParts.length === 3) {
+            if (dateParts[0].length === 4) {
+              cleanDate = `${dateParts[0]}-${dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`;
+            } else if (dateParts[2].length === 4) {
+              let dd = dateParts[0];
+              let mm = dateParts[1];
+              if (parseInt(mm) > 12) {
+                // It must be MM/DD/YYYY
+                dd = dateParts[1];
+                mm = dateParts[0];
+              }
+              cleanDate = `${dateParts[2]}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
+            }
+          }
+
           const cleanRoute = getVal(['Route'])?.toString().trim() || '';
 
           const visitTypeLabel = getVal(['Visit Type']);
