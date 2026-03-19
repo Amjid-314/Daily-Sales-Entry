@@ -97,6 +97,208 @@ const getWorkingDays = (year: number, month: number, holidaysStr: string, dayLim
   return workingDays;
 };
 
+const TSMDashboard = ({ stats, hierarchy, isSyncing, onRefresh, userName, holidays }: { stats: any[], hierarchy: any[], isSyncing?: boolean, onRefresh?: () => void, userName?: string | null, holidays: string }) => {
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+
+  const currentMonthStats = useMemo(() => {
+    return stats.filter(s => s.date.startsWith(selectedMonth));
+  }, [stats, selectedMonth]);
+
+  const totalTarget = useMemo(() => {
+    return hierarchy.reduce((sum, h) => sum + (parseFloat(h.target_ctn) || 0), 0);
+  }, [hierarchy]);
+
+  const totalCartonsSold = useMemo(() => {
+    return currentMonthStats.reduce((sum, s) => sum + (parseFloat(s.cartons) || 0), 0);
+  }, [currentMonthStats]);
+
+  const achievementPercentage = totalTarget > 0 ? (totalCartonsSold / totalTarget) * 100 : 0;
+
+  const workingDaysSoFar = useMemo(() => {
+    const [year, month] = selectedMonth.split('-').map(Number);
+    const startDate = new Date(year, month - 1, 1);
+    const endDate = new Date(year, month, 0);
+    const today = new Date();
+    const actualEndDate = endDate > today ? today : endDate;
+    
+    let workingDays = 0;
+    const holidayList = (holidays || '').split(',').map(d => d.trim());
+
+    for (let d = new Date(startDate); d <= actualEndDate; d.setDate(d.getDate() + 1)) {
+      const dateStr = d.toISOString().split('T')[0];
+      const isSunday = d.getDay() === 0;
+      const isHoliday = holidayList.includes(dateStr);
+      if (!isSunday && !isHoliday) workingDays++;
+    }
+    return workingDays || 1;
+  }, [selectedMonth, holidays]);
+
+  const obPerformance = useMemo(() => {
+    return hierarchy.map(h => {
+      const obStats = currentMonthStats.filter(s => s.ob_contact === h.ob_id);
+      const cartonsSold = obStats.reduce((sum, s) => sum + (parseFloat(s.cartons) || 0), 0);
+      const target = parseFloat(h.target_ctn) || 0;
+      const achievement = target > 0 ? (cartonsSold / target) * 100 : 0;
+      
+      const uniqueDays = new Set(obStats.map(s => s.date)).size;
+      const submissionConsistency = (uniqueDays / workingDaysSoFar) * 100;
+
+      const routeStats = obStats.reduce((acc, s) => {
+        const route = s.route_name || 'Unknown';
+        if (!acc[route]) acc[route] = 0;
+        acc[route] += (parseFloat(s.cartons) || 0);
+        return acc;
+      }, {} as Record<string, number>);
+
+      const weakRoutes = Object.entries(routeStats)
+        .filter(([_, cartons]: [string, number]) => cartons < 10)
+        .map(([route]) => route);
+
+      return {
+        ...h,
+        cartonsSold,
+        target,
+        achievement,
+        submissionConsistency,
+        weakRoutes
+      };
+    }).sort((a, b) => b.achievement - a.achievement);
+  }, [hierarchy, currentMonthStats, workingDaysSoFar]);
+
+  return (
+    <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+        <div>
+          <h1 className="text-2xl font-black text-seablue uppercase tracking-widest">TSM Dashboard</h1>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Overview for {userName}</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input 
+            type="month" 
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-seablue text-slate-600 font-bold"
+          />
+          {onRefresh && (
+            <button 
+              onClick={onRefresh}
+              disabled={isSyncing}
+              className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
+            >
+              <RefreshCw className={`w-5 h-5 text-slate-600 ${isSyncing ? 'animate-spin' : ''}`} />
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Cartons Sold</h3>
+            <Package className="w-5 h-5 text-seablue" />
+          </div>
+          <p className="text-3xl font-black text-slate-800">{totalCartonsSold.toLocaleString()}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Target</h3>
+            <TrendingUp className="w-5 h-5 text-emerald-600" />
+          </div>
+          <p className="text-3xl font-black text-slate-800">{totalTarget.toLocaleString()}</p>
+        </div>
+        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Achievement</h3>
+            <TrendingUp className="w-5 h-5 text-amber-500" />
+          </div>
+          <p className="text-3xl font-black text-slate-800">{achievementPercentage.toFixed(1)}%</p>
+          <div className="w-full bg-slate-100 rounded-full h-2 mt-3">
+            <div 
+              className={`h-2 rounded-full ${achievementPercentage >= 100 ? 'bg-emerald-500' : achievementPercentage >= 80 ? 'bg-amber-500' : 'bg-rose-500'}`}
+              style={{ width: `${Math.min(achievementPercentage, 100)}%` }}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
+        <div className="p-4 border-b border-slate-200 bg-slate-50">
+          <h2 className="text-xs font-black text-seablue uppercase tracking-widest">OB Performance & Consistency</h2>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 text-[10px] font-black uppercase tracking-widest">
+              <tr>
+                <th className="px-4 py-3">OB Name</th>
+                <th className="px-4 py-3">Town</th>
+                <th className="px-4 py-3 text-right">Target</th>
+                <th className="px-4 py-3 text-right">Sold</th>
+                <th className="px-4 py-3 text-right">Achievement</th>
+                <th className="px-4 py-3 text-right">Consistency</th>
+                <th className="px-4 py-3">Weak Routes (&lt;10 Ctn)</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {obPerformance.map((ob, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/50">
+                  <td className="px-4 py-3 font-bold text-slate-700 text-xs">{ob.ob_name || ob.ob_id}</td>
+                  <td className="px-4 py-3 text-slate-500 text-xs font-bold">{ob.town_name || '-'}</td>
+                  <td className="px-4 py-3 text-right text-slate-500 font-mono text-xs">{ob.target.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-bold text-slate-700 font-mono text-xs">{ob.cartonsSold.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black tracking-widest ${
+                      ob.achievement >= 100 ? 'bg-emerald-100 text-emerald-800' : 
+                      ob.achievement >= 80 ? 'bg-amber-100 text-amber-800' : 
+                      'bg-rose-100 text-rose-800'
+                    }`}>
+                      {ob.achievement.toFixed(1)}%
+                    </span>
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    <div className="flex items-center justify-end gap-2">
+                      <span className={`text-xs font-bold ${ob.submissionConsistency < 70 ? 'text-rose-600' : 'text-slate-600'}`}>
+                        {ob.submissionConsistency.toFixed(0)}%
+                      </span>
+                      {ob.submissionConsistency < 70 && (
+                        <AlertTriangle className="w-4 h-4 text-rose-500" title="Low submission consistency" />
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-slate-600">
+                    {ob.weakRoutes.length > 0 ? (
+                      <div className="flex flex-wrap gap-1">
+                        {ob.weakRoutes.slice(0, 2).map((route: string, i: number) => (
+                          <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold border border-slate-200">
+                            {route}
+                          </span>
+                        ))}
+                        {ob.weakRoutes.length > 2 && (
+                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px] font-bold border border-slate-200">
+                            +{ob.weakRoutes.length - 2} more
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 text-xs font-bold">-</span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+              {obPerformance.length === 0 && (
+                <tr>
+                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500 text-xs font-bold uppercase tracking-widest">
+                    No OBs found for your purview.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string }) => {
   const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'RSM' | 'SC' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>('National');
   const [filterValue, setFilterValue] = useState<string>('');
@@ -104,11 +306,11 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
   const visibleFilterLevels = useMemo(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') {
-      return ['National', 'Region', 'RSM', 'SC', 'TSM', 'ASM', 'Town', 'Distributor', 'OB', 'Route'];
+      return ['National', 'Region', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB', 'Route'];
     } else if (userRole === 'RSM' || userRole === 'SC') {
-      return ['Region', 'RSM', 'SC', 'TSM', 'ASM', 'Town', 'Distributor', 'OB', 'Route'];
+      return ['Region', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB', 'Route'];
     } else if ((userRole === 'TSM' || userRole === 'ASM')) {
-      return ['TSM', 'ASM', 'OB', 'Route'];
+      return ['ASM/TSM', 'OB', 'Route'];
     } else {
       return ['OB', 'Route'];
     }
@@ -200,7 +402,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         if (filterLevel === 'Region') return s.region === filterValue;
         if (filterLevel === 'RSM') return s.rsm === filterValue;
         if (filterLevel === 'SC') return s.sc === filterValue;
-        if (filterLevel === 'TSM') return s.tsm === filterValue;
+        if (filterLevel === 'ASM/TSM') return s.tsm === filterValue;
         if (filterLevel === 'Town') return s.town === filterValue;
         if (filterLevel === 'Distributor') return s.distributor === filterValue;
         if (filterLevel === 'OB') return s.ob_name === filterValue;
@@ -220,7 +422,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       Region: Array.from(new Set(processedStats.map(s => s.region))).filter(Boolean).sort() as string[],
       RSM: Array.from(new Set(processedStats.map(s => s.rsm))).filter(Boolean).sort() as string[],
       SC: Array.from(new Set(processedStats.map(s => s.sc))).filter(Boolean).sort() as string[],
-      TSM: Array.from(new Set(processedStats.map(s => s.tsm))).filter(Boolean).sort() as string[],
+      'ASM/TSM': Array.from(new Set(processedStats.map(s => s.tsm))).filter(Boolean).sort() as string[],
       Town: Array.from(new Set(processedStats.map(s => s.town))).filter(Boolean).sort() as string[],
       Distributor: Array.from(new Set(processedStats.map(s => s.distributor))).filter(Boolean).sort() as string[],
       OB: Array.from(new Set(processedStats.map(s => s.ob_name))).filter(Boolean).sort() as string[],
@@ -455,7 +657,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           <div className="flex flex-wrap gap-2">
             <button 
               onClick={() => {
-                const headers = ['Date', 'Month', 'Director', 'NSM', 'RSM', 'SC', 'TSM', 'ASM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Route', 'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type', ...CATEGORIES, 'Total Bags'];
+                const headers = ['Date', 'Month', 'Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Route', 'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type', ...CATEGORIES, 'Total Bags'];
                 const rows = monthStats.map(s => {
                   const h = hierarchy.find(h => h.ob_id === s.ob_contact);
                   return [
@@ -1035,8 +1237,8 @@ const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v:
   const tabs = [
     { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'stats', label: 'Stats', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
+    { id: 'stats', label: 'Stats', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
+    { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
     { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
@@ -1152,7 +1354,7 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredOBs.map((ob: any) => {
+              {filteredOBs.map((ob: any, idx: number) => {
                 const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
                 const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
                 const missing = Math.max(0, workingDaysTillDate - uniqueEntryDays);
@@ -1160,7 +1362,7 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                 const efficiency = workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0;
                 
                 return (
-                  <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
+                  <tr key={ob.contact || `ob-${idx}`} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-6 py-4">
                       <p className="text-xs font-black text-slate-700">{ob.name}</p>
                       <p className="text-[9px] text-slate-400 font-bold">{ob.town}</p>
@@ -1201,7 +1403,7 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredTSMList.map((tsm: string) => {
+              {filteredTSMList.map((tsm: string, idx: number) => {
                 const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm);
                 const tsmOrders = history.filter((h: any) => h.tsm === tsm && h.date.startsWith(currentMonth));
                 const activeOBs = new Set(tsmOrders.map((h: any) => h.ob_contact)).size;
@@ -1217,7 +1419,7 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                 const score = (activeOBs / Math.max(1, tsmOBs.length) * 40) + (avgProd * 0.6);
                 
                 return (
-                  <tr key={tsm} className="hover:bg-slate-50/50">
+                  <tr key={tsm || `tsm-${idx}`} className="hover:bg-slate-50/50">
                     <td className="px-6 py-4 text-xs font-bold text-slate-700">{tsm}</td>
                     <td className="px-6 py-4 text-center text-xs font-bold text-slate-500">{activeOBs}/{tsmOBs.length}</td>
                     <td className="px-6 py-4 text-center text-xs font-black text-seablue">{totalSales.toFixed(1)}</td>
@@ -1315,13 +1517,13 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredOBs.map((ob: any) => {
+              {filteredOBs.map((ob: any, idx: number) => {
                 const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
                 let total = 0;
                 return (
-                  <tr key={ob.contact} className="hover:bg-slate-50/50">
+                  <tr key={ob.contact || `ob-matrix-${idx}`} className="hover:bg-slate-50/50">
                     <td className="px-4 py-2 sticky left-0 bg-white z-10 text-[10px] font-bold text-slate-700 border-r border-slate-100">{ob.name}</td>
-                    {Array.from({ length: dayOfMonth }, (_, i) => i + 1).map(day => {
+                    {Array.from({ length: dayOfMonth }, (_, i) => i + 1).map((day, dIdx) => {
                       const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
                       const dayOrders = obStats.filter((h: any) => h.date === dateStr);
                       const daySales = dayOrders.reduce((sum, h) => {
@@ -1334,7 +1536,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                       }, 0);
                       total += daySales;
                       return (
-                        <td key={day} className={`px-2 py-2 text-center text-[9px] ${daySales > 0 ? 'font-bold text-seablue' : 'text-slate-300'}`}>
+                        <td key={`${ob.contact}-${day}-${dIdx}`} className={`px-2 py-2 text-center text-[9px] ${daySales > 0 ? 'font-bold text-seablue' : 'text-slate-300'}`}>
                           {daySales > 0 ? daySales.toFixed(1) : '-'}
                         </td>
                       );
@@ -1525,7 +1727,6 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
 
 const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => {
   const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -1537,7 +1738,7 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password })
+        body: JSON.stringify({ username })
       });
       const data = await res.json();
       if (res.ok) {
@@ -1578,21 +1779,6 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
                 onChange={(e) => setUsername(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
                 placeholder="Enter your username or ID"
-                required
-              />
-            </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1.5">Password</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none transition-all"
-                placeholder="Enter your password"
                 required
               />
             </div>
@@ -1711,11 +1897,18 @@ export default function App() {
       'Content-Type': 'application/json'
     };
     const response = await fetch(url, { ...options, headers });
-    if (response.status === 401 || response.status === 403) {
-      console.warn(`apiFetch: ${response.status} on ${url}. Logging out.`);
-      const errorMsg = response.status === 401 ? "Session expired. Please login again." : "Access denied. You don't have permission for this action.";
+    if (response.status === 401) {
+      console.warn(`apiFetch: 401 on ${url}. Logging out.`);
+      const errorMsg = "Session expired. Please login again.";
       setMessage({ text: errorMsg, type: 'error' });
       handleLogout();
+      setTimeout(() => setMessage(null), 5000);
+      throw new Error(errorMsg);
+    }
+    if (response.status === 403) {
+      console.warn(`apiFetch: 403 on ${url}. Access denied.`);
+      const errorMsg = "Access denied. You don't have permission for this action.";
+      setMessage({ text: errorMsg, type: 'error' });
       setTimeout(() => setMessage(null), 5000);
       throw new Error(errorMsg);
     }
@@ -1781,6 +1974,10 @@ export default function App() {
       route: '',
       zone: '',
       region: '',
+      nsm: '',
+      rsm: '',
+      sc: '',
+      director: '',
       totalShops: 50,
       visitedShops: 0,
       productiveShops: 0,
@@ -1951,7 +2148,7 @@ export default function App() {
         const isDuplicate = await checkDuplicate(order.date, String(value));
         if (isDuplicate) {
           setMessage({ text: "Entry already exists for this OB today!", type: 'error' });
-          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', director: '' }));
+          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', sc: '', director: '' }));
           setTimeout(() => setMessage(null), 3000);
           return;
         }
@@ -1985,6 +2182,7 @@ export default function App() {
           region: assignment.region || '',
           nsm: assignment.nsm || '',
           rsm: assignment.rsm || '',
+          sc: assignment.sc || '',
           director: assignment.director || '',
           route: assignment.routes?.[0] || '',
           totalShops: assignment.total_shops || 50,
@@ -1995,7 +2193,7 @@ export default function App() {
         }));
         fetchTargetsForOB(String(value));
       } else {
-        setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', director: '' }));
+        setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', sc: '', director: '' }));
       }
     } else if (field === 'town') {
       const townDists = distributors.filter(d => d.town === value);
@@ -2192,7 +2390,7 @@ export default function App() {
         setOrder({
           date: getPSTDate(),
           tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
-          zone: '', region: '', nsm: '', rsm: '', director: '',
+          zone: '', region: '', nsm: '', rsm: '', sc: '', director: '',
           totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {},
           visitType: 'A'
         });
@@ -2271,6 +2469,14 @@ export default function App() {
     if (key === 'google_spreadsheet_id') {
       sanitizedValue = value.trim().replace(/^\/+|\/+$/g, '');
     }
+    
+    // Add confirmation if clearing sensitive fields
+    if (['google_spreadsheet_id', 'google_service_account_email', 'google_private_key'].includes(key) && !sanitizedValue && appConfig[key]) {
+      if (!window.confirm(`Are you sure you want to REMOVE the ${key.replace(/_/g, ' ')}? This will break Google Sheets sync.`)) {
+        return;
+      }
+    }
+
     setAppConfig(prev => ({ ...prev, [key]: sanitizedValue }));
     try {
       await apiFetch('/api/admin/config', {
@@ -2341,7 +2547,7 @@ export default function App() {
 
   useEffect(() => {
     if (!token || token === 'null') return;
-    if (view === 'national' || view === 'dashboard') {
+    if (view === 'national' || view === 'dashboard' || view === 'reports') {
       fetchNationalData();
     }
   }, [view, token]);
@@ -2363,8 +2569,8 @@ export default function App() {
 
   const handleRegisterUser = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newUser.username || !newUser.password || !newUser.name) {
-      setMessage({ text: "Username, Password and Name are required", type: 'error' });
+    if (!newUser.username || !newUser.name) {
+      setMessage({ text: "Username and Name are required", type: 'error' });
       return;
     }
     setIsRegisteringUser(true);
@@ -2424,7 +2630,7 @@ export default function App() {
             method: 'POST',
             body: JSON.stringify({
               username: member.contact, // Use contact ID as username
-              password: 'password123', // Default password
+              password: 'abc123', // Default password
               role: member.role,
               name: member.name,
               contact: member.contact,
@@ -2450,14 +2656,14 @@ export default function App() {
     try {
       const normalizedRole = (userRole || '').toUpperCase();
       const isAdmin = normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN';
-      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes(normalizedRole);
+      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
       
       const requests = [
-        apiFetch('/api/admin/obs'),
         apiFetch('/api/stocks'),
       ];
 
       if (isStaff) {
+        requests.push(apiFetch('/api/admin/obs'));
         requests.push(apiFetch('/api/admin/distributors'));
         requests.push(apiFetch('/api/admin/config'));
         requests.push(apiFetch('/api/admin/hierarchy'));
@@ -2470,11 +2676,13 @@ export default function App() {
       const results = await Promise.all(requests);
       
       // Map results back to states
-      if (results[0].ok) setObAssignments(await results[0].json());
-      if (results[1].ok) setStockHistory(await results[1].json());
+      let nextIdx = 0;
+      if (results[nextIdx]?.ok) setStockHistory(await results[nextIdx].json());
+      nextIdx++;
       
-      let nextIdx = 2;
       if (isStaff) {
+        if (results[nextIdx]?.ok) setObAssignments(await results[nextIdx].json());
+        nextIdx++;
         if (results[nextIdx]?.ok) setDistributors(await results[nextIdx].json());
         nextIdx++;
         if (results[nextIdx]?.ok) setAppConfig(await results[nextIdx].json());
@@ -2580,7 +2788,7 @@ export default function App() {
   useEffect(() => {
     if (!token || token === 'null') return;
     const normalizedRole = (userRole || '').toUpperCase();
-    if (['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes(normalizedRole)) {
+    if (['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole)) {
       fetchAdminData();
       if (normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN') {
         fetchUsers();
@@ -2678,11 +2886,11 @@ export default function App() {
           };
 
           return {
-            name: getVal(['Name', 'name', 'Distributor', 'distributor']),
-            town: getVal(['Town', 'town']),
-            tsm: getVal(['TSM', 'tsm']),
+            name: getVal(['Name', 'name', 'Distributor', 'distributor', 'distributor name']),
+            town: getVal(['Town', 'town', 'town name']),
+            tsm: getVal(['TSM', 'tsm', 'asm', 'asm/tsm', 'asm / tsm']),
             zone: getVal(['Zone', 'zone']),
-            region: getVal(['Region', 'region'])
+            region: getVal(['Region', 'region', 'territory', 'territory/region'])
           };
         }).filter((item: any) => item.name);
 
@@ -2757,13 +2965,14 @@ export default function App() {
             director_sales: getVal(['Director Sales', 'director_sales', 'director']),
             nsm_name: getVal(['NSM Name', 'nsm_name', 'nsm']),
             rsm_name: getVal(['RSM Name', 'rsm_name', 'rsm']),
-            asm_tsm_name: getVal(['ASM / TSM Name', 'asm_tsm_name', 'asm', 'tsm']),
+            sc_name: getVal(['SC Name', 'sc_name', 'sc']),
+            asm_tsm_name: getVal(['ASM / TSM Name', 'asm/tsm name', 'asm_tsm_name', 'asm', 'tsm', 'asm/tsm']),
             town_name: getVal(['Town Name', 'town_name', 'town']),
             distributor_name: getVal(['Distributor Name', 'distributor_name', 'distributor']),
             distributor_code: getVal(['Distributor Code', 'distributor_code', 'code']),
-            ob_name: getVal(['Order Booker Name', 'ob_name', 'ob']),
-            ob_id: getVal(['Order Booker ID', 'ob_id', 'id', 'contact']),
-            territory_region: getVal(['Territory / Region', 'territory_region', 'territory', 'region']),
+            ob_name: getVal(['Order Booker Name', 'ob name', 'ob_name', 'ob']),
+            ob_id: getVal(['Order Booker ID', 'ob id', 'ob_id', 'id', 'contact']),
+            territory_region: getVal(['Territory / Region', 'territory/region', 'territory_region', 'territory', 'region']),
             target_ctn: parseFloat(getVal(['Target', 'target_ctn', 'target']) || '0')
           };
         }).filter((item: any) => item.ob_id && item.ob_name);
@@ -2947,17 +3156,17 @@ export default function App() {
           };
 
           return {
-            name: getVal(['OB Name', 'Name', 'name']),
-            contact: getVal(['OB ID', 'ID', 'id', 'Contact', 'contact']),
-            town: getVal(['Town', 'town']),
-            distributor: getVal(['Distributor', 'distributor']),
-            tsm: getVal(['TSM', 'tsm']),
+            name: getVal(['OB Name', 'Name', 'name', 'ob name', 'ob_name']),
+            contact: getVal(['OB ID', 'ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id']),
+            town: getVal(['Town', 'town', 'town name']),
+            distributor: getVal(['Distributor', 'distributor', 'distributor name']),
+            tsm: getVal(['TSM', 'tsm', 'asm', 'asm/tsm', 'asm / tsm']),
             zone: getVal(['Zone', 'zone']),
-            region: getVal(['Region', 'region']),
-            nsm: getVal(['NSM', 'nsm']),
-            rsm: getVal(['RSM', 'rsm']),
-            sc: getVal(['SC', 'sc']),
-            director: getVal(['Director', 'director']),
+            region: getVal(['Region', 'region', 'territory', 'territory/region']),
+            nsm: getVal(['NSM', 'nsm', 'nsm name']),
+            rsm: getVal(['RSM', 'rsm', 'rsm name']),
+            sc: getVal(['SC', 'sc', 'sc name']),
+            director: getVal(['Director', 'director', 'director sales']),
             total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops']) || '50') || 50,
             routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
             targets: {
@@ -3183,20 +3392,31 @@ export default function App() {
                 </div>
               </div>
             ) : (
-              <NationalDashboard 
-                stats={nationalStats} 
-                hierarchy={hierarchy} 
-                categories={CATEGORIES} 
-                skus={SKUS}
-                isSyncing={isSyncingGlobal}
-                onRefresh={syncEverything}
-                userRole={userRole}
-                userRegion={userRegion}
-                userName={userName}
-                userContact={userContact}
-                timeGone={timeGone.percentage}
-                holidays={appConfig.holidays || ''}
-              />
+              (userRole === 'TSM' || userRole === 'ASM') ? (
+                <TSMDashboard
+                  stats={nationalStats}
+                  hierarchy={hierarchy}
+                  isSyncing={isSyncingGlobal}
+                  onRefresh={syncEverything}
+                  userName={userName}
+                  holidays={appConfig.holidays || ''}
+                />
+              ) : (
+                <NationalDashboard 
+                  stats={nationalStats} 
+                  hierarchy={hierarchy} 
+                  categories={CATEGORIES} 
+                  skus={SKUS}
+                  isSyncing={isSyncingGlobal}
+                  onRefresh={syncEverything}
+                  userRole={userRole}
+                  userRegion={userRegion}
+                  userName={userName}
+                  userContact={userContact}
+                  timeGone={timeGone.percentage}
+                  holidays={appConfig.holidays || ''}
+                />
+              )
             )}
           </div>
         );
@@ -4061,7 +4281,7 @@ export default function App() {
         ) : (
           <ReportsView 
             history={nationalStats} 
-            obAssignments={hierarchy} 
+            obAssignments={obAssignments} 
             tsmList={tsmList} 
             appConfig={appConfig} 
             getPSTDate={() => new Date().toISOString().split('T')[0]} 
@@ -4279,7 +4499,7 @@ export default function App() {
                 <div className="grid grid-cols-2 gap-2">
                   <button 
                     onClick={() => {
-                      const headers = ['Director', 'NSM', 'RSM', 'SC', 'TSM', 'ASM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+                      const headers = ['Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
                       const csvContent = headers.join(",") + "\n" + 
                         "Director Name,NSM Name,RSM Name,SC Name,TSM Name,Town Name,Distributor Name,OB Name,03001234567,Zone Name,Region Name,50,\"Route 1, Route 2\",10,10,10,10,10";
                       const blob = new Blob([csvContent], { type: 'text/csv' });
@@ -4407,7 +4627,6 @@ export default function App() {
             <div className="p-4 space-y-4">
               <form onSubmit={handleRegisterUser} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
                 <input type="text" placeholder="Username" value={newUser.username || ''} onChange={e => setNewUser({...newUser, username: e.target.value})} className="input-clean text-[10px]" required />
-                <input type="password" placeholder="Password" value={newUser.password || ''} onChange={e => setNewUser({...newUser, password: e.target.value})} className="input-clean text-[10px]" required />
                 <input type="text" placeholder="Full Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="input-clean text-[10px]" required />
                 <input type="text" placeholder="Contact/ID" value={newUser.contact} onChange={e => setNewUser({...newUser, contact: e.target.value})} className="input-clean text-[10px]" />
                   <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="input-clean text-[10px]">
@@ -4854,6 +5073,13 @@ export default function App() {
           <section className="card-clean overflow-hidden">
             <div className="bg-emerald-600 text-white px-4 py-2 flex justify-between items-center">
               <h2 className="text-sm font-bold uppercase tracking-widest">National Sales Hierarchy</h2>
+              <div className="flex items-center gap-2">
+                <label className="text-[10px] font-bold bg-white/20 px-2 py-1 rounded hover:bg-white/30 cursor-pointer flex items-center gap-1">
+                  <Upload className="w-3 h-3" />
+                  Upload Hierarchy CSV
+                  <input type="file" accept=".csv" className="hidden" onChange={handleHierarchyBulkUpload} />
+                </label>
+              </div>
             </div>
             <div className="p-4 overflow-x-auto">
               <table className="w-full text-[10px] text-left border-collapse">

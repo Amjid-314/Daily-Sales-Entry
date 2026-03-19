@@ -116,6 +116,7 @@ db.exec(`
     region TEXT,
     nsm TEXT,
     rsm TEXT,
+    sc TEXT,
     director TEXT,
     total_shops INTEGER,
     visited_shops INTEGER,
@@ -209,6 +210,7 @@ try { db.exec("ALTER TABLE submitted_orders ADD COLUMN zone TEXT"); } catch (e) 
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN region TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN nsm TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN rsm TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE submitted_orders ADD COLUMN sc TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE submitted_orders ADD COLUMN director TEXT"); } catch (e) {}
 
 // Auth Middleware
@@ -435,7 +437,7 @@ async function startServer() {
   // Helper for Sales Data Headers & Rows
   function getSalesDataHeaders() {
     return [
-      'Date', 'Director', 'NSM', 'RSM', 'TSM', 'ASM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
+      'Date', 'Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
       'Zone', 'Region',
       'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type',
       ...SKUS.map(sku => `${sku.name} (${sku.category})`),
@@ -467,7 +469,7 @@ async function startServer() {
     });
 
     return [
-      order.date, order.director || '', order.nsm || '', order.rsm || '', order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
+      order.date, order.director || '', order.nsm || '', order.rsm || '', order.sc || '', order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
       order.zone || '', order.region || '',
       isAbsent ? 0 : order.total_shops, 
       isAbsent ? 0 : order.visited_shops, 
@@ -707,25 +709,29 @@ async function startServer() {
     }
   }
 
+  const ensuredSpreadsheets = new Set<string>();
+
   async function ensureSheetsExist(sheets: any, spreadsheetId: string) {
+    if (ensuredSpreadsheets.has(spreadsheetId)) return;
+    
     const sheetConfigs: Record<string, string[]> = {
       "Sales_Data": getSalesDataHeaders(),
       "Team_Data": [
-        'Director', 'NSM', 'RSM', 'TSM', 'ASM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes',
+        'Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes',
         'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'
       ],
       "Targets_vs_Achievement": [
-        'Month', 'Town', 'OB Name', 'OB Contact', 'TSM', 'ASM', 'Distributor', 
+        'Month', 'Town', 'OB Name', 'OB Contact', 'ASM/TSM', 'Distributor', 
         'Total Working Days', 'Days Gone', 'Time Gone %',
         ...CATEGORIES.flatMap(cat => [`${cat} Target`, `${cat} Till Date Tgt`, `${cat} Ach`, `${cat} %`]), 
         'Total Target', 'Total Till Date Tgt', 'Total Ach', 'Total %'
       ],
       "OB_Route_Performance": ['OB Name', 'Route', 'Total Shops', 'Visited', 'Productive', 'Prod %'],
-      "Stocks_Report": ['Date', 'Distributor', 'Town', 'TSM', 'ASM', 'SKU Name', 'Opening', 'Received', 'Sold', 'Closing'],
+      "Stocks_Report": ['Date', 'Distributor', 'Town', 'ASM/TSM', 'SKU Name', 'Opening', 'Received', 'Sold', 'Closing'],
       "Current_Stocks": ['Distributor', 'Town', 'SKU Name', 'Current Stock'],
-      "Last_Entry_Date": ['OB Name', 'Contact', 'TSM', 'ASM', 'Distributor', 'Last Submission Date', 'Last Submission Time', 'Total Days Entered'],
+      "Last_Entry_Date": ['OB Name', 'Contact', 'ASM/TSM', 'Distributor', 'Last Submission Date', 'Last Submission Time', 'Total Days Entered'],
       "Visit_Type_Analysis": ['Date', 'OB Name', 'Route', 'Visit Type', 'Total Visits', 'Total Productive', 'Productivity %', 'Avg Achievement (Ctn)'],
-      "OB_Performance": ['OB Name', 'OB ID', 'TSM', 'ASM', 'Distributor', 'Town', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)', 'Achievement %'],
+      "OB_Performance": ['OB Name', 'OB ID', 'ASM/TSM', 'Distributor', 'Town', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)', 'Achievement %'],
       "TSM_Performance": ['TSM Name', 'Total OBs', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)'],
       "Product_Config": ['SKU ID', 'SKU Name', 'Category', 'Units Per Carton', 'Units Per Dozen', 'Weight (Kg)'],
       "Users": ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town']
@@ -750,21 +756,35 @@ async function startServer() {
       }
 
       // Ensure headers for all sheets
-      for (const [title, headers] of Object.entries(sheetConfigs)) {
-        try {
-          const res = await sheets.spreadsheets.values.get({ spreadsheetId, range: `${title}!A1:A1` });
-          if (!res.data.values || res.data.values.length === 0) {
+      const ranges = Object.keys(sheetConfigs).map(title => `${title}!A1:A1`);
+      const res = await sheets.spreadsheets.values.batchGet({
+        spreadsheetId,
+        ranges
+      });
+
+      const valueRanges = res.data.valueRanges || [];
+      const titles = Object.keys(sheetConfigs);
+
+      for (let i = 0; i < titles.length; i++) {
+        const title = titles[i];
+        const headers = sheetConfigs[title];
+        const currentHeader = valueRanges[i]?.values;
+
+        if (!currentHeader || currentHeader.length === 0) {
+          try {
             await sheets.spreadsheets.values.update({
               spreadsheetId,
               range: `${title}!A1`,
               valueInputOption: "USER_ENTERED",
               requestBody: { values: [headers] }
             });
+          } catch (e) {
+            console.error(`Error ensuring headers for ${title}:`, e);
           }
-        } catch (e) {
-          console.error(`Error ensuring headers for ${title}:`, e);
         }
       }
+      
+      ensuredSpreadsheets.add(spreadsheetId);
     } catch (e: any) {
       console.error("ensureSheetsExist Error:", e.message);
       throw e; // Re-throw to handle in caller
@@ -781,7 +801,7 @@ async function startServer() {
 
     // --- SHEET 2: Targets_vs_Achievement (Town, OB, Brand Wise) ---
     const targetHeaders = [
-      'Month', 'Town', 'OB Name', 'OB Contact', 'TSM', 'ASM', 'Distributor', 
+      'Month', 'Town', 'OB Name', 'OB Contact', 'ASM/TSM', 'Distributor', 
       'Total Working Days', 'Days Gone', 'Time Gone %',
       ...CATEGORIES.flatMap(cat => [`${cat} Target`, `${cat} Till Date Tgt`, `${cat} Ach`, `${cat} %`]), 
       'Total Target', 'Total Till Date Tgt', 'Total Ach', 'Total %'
@@ -843,15 +863,8 @@ async function startServer() {
       targetRows.push(row);
     }
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: "Targets_vs_Achievement!A1",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [targetHeaders, ...targetRows] },
-    });
-
     // --- NEW SHEET: OB_Performance ---
-    const obPerformanceHeaders = ['OB Name', 'OB ID', 'TSM', 'ASM', 'Distributor', 'Town', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)', 'Achievement %'];
+    const obPerformanceHeaders = ['OB Name', 'OB ID', 'ASM/TSM', 'Distributor', 'Town', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)', 'Achievement %'];
     const obPerformanceRows = obs.map(ob => {
       const obOrders = orders.filter(o => o.ob_contact === ob.contact);
       const visited = obOrders.reduce((sum, o) => sum + (o.visited_shops || 0), 0);
@@ -877,13 +890,6 @@ async function startServer() {
       if (a[0] < b[0]) return -1;
       if (a[0] > b[0]) return 1;
       return 0;
-    });
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: "OB_Performance!A1",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [obPerformanceHeaders, ...obPerformanceRows] },
     });
 
     // --- NEW SHEET: TSM_Performance ---
@@ -914,15 +920,8 @@ async function startServer() {
       ];
     });
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: "TSM_Performance!A1",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [tsmPerformanceHeaders, ...tsmPerformanceRows] },
-    });
-
     // --- SHEET 4: Stocks_Report (Log) ---
-    const stockHeaders = ['Date', 'TSM', 'ASM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Submitted At'];
+    const stockHeaders = ['Date', 'ASM/TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Submitted At'];
     const stockReports = db.prepare("SELECT * FROM stock_reports ORDER BY date DESC, submitted_at DESC").all() as any[];
     const stockRows = stockReports.map(report => {
       const stockData = JSON.parse(report.stock_data || '{}');
@@ -940,16 +939,9 @@ async function startServer() {
       ];
     });
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: "Stocks_Report!A1",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [stockHeaders, ...stockRows] },
-    });
-
     // --- SHEET 4.5: Current_Stocks (Matrix) ---
     // Matrix: Distributors as Rows, SKUs as Columns
-    const matrixHeaders = ['Distributor', 'Town', 'TSM', 'ASM', ...SKUS.map(s => s.name), 'Last Updated'];
+    const matrixHeaders = ['Distributor', 'Town', 'ASM/TSM', ...SKUS.map(s => s.name), 'Last Updated'];
     
     // Get latest stock report for each distributor
     const latestStocks = db.prepare(`
@@ -972,13 +964,6 @@ async function startServer() {
         }),
         report.submitted_at
       ];
-    });
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: "Current_Stocks!A1",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [matrixHeaders, ...matrixRows] },
     });
 
     // --- SHEET 3: OB_Route_Performance ---
@@ -1050,15 +1035,8 @@ async function startServer() {
       }
     });
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: "OB_Route_Performance!A1",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [performanceHeaders, ...allPerformanceRows] },
-    });
-
     // --- SHEET 5: Last_Entry_Date ---
-    const lastEntryHeaders = ['OB Name', 'Contact', 'TSM', 'ASM', 'Distributor', 'Last Submission Date', 'Last Submission Time', 'Total Days Entered'];
+    const lastEntryHeaders = ['OB Name', 'Contact', 'ASM/TSM', 'Distributor', 'Last Submission Date', 'Last Submission Time', 'Total Days Entered'];
     const lastEntries = db.prepare(`
       SELECT ob_assignments.name, ob_assignments.contact, ob_assignments.tsm, ob_assignments.distributor, 
              MAX(submitted_orders.date) as last_date, MAX(submitted_orders.submitted_at) as last_ts,
@@ -1147,6 +1125,11 @@ async function startServer() {
       // 1. Sales_Data (SKU Wise)
       const salesHeaders = getSalesDataHeaders();
       const salesRows = orders.map((order: any) => getSalesDataRow(order));
+
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId,
+        range: "Sales_Data",
+      });
 
       await sheets.spreadsheets.values.update({
         spreadsheetId,
@@ -1252,8 +1235,8 @@ async function startServer() {
   app.post("/api/auth/login", async (req, res) => {
     const { username, password } = req.body;
     try {
-      if (!username || !password) {
-        return res.status(400).json({ error: "Username and password are required" });
+      if (!username) {
+        return res.status(400).json({ error: "Username or email is required" });
       }
       
       let user = db.prepare("SELECT * FROM users WHERE username = ? OR email = ?").get(username, username) as any;
@@ -1263,7 +1246,7 @@ async function startServer() {
         if (username === ADMIN_EMAIL || username.toLowerCase() === 'admin') {
           const role = 'Super Admin';
           const name = 'Admin';
-          const hashedPassword = await bcrypt.hash(password, 10);
+          const hashedPassword = await bcrypt.hash(password || 'Admin@123', 10);
           const info = db.prepare("INSERT INTO users (username, email, role, name, password) VALUES (?, ?, ?, ?, ?)")
             .run(username, username === ADMIN_EMAIL ? username : 'admin@salespulse.local', role, name, hashedPassword);
           user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid) as any;
@@ -1271,17 +1254,20 @@ async function startServer() {
           return res.status(401).json({ error: "Invalid credentials" });
         }
       } else {
-        // Check password
-        if (user.password === 'nopassword' || user.password === '123456' || user.password === 'password123' || user.password === '123') {
-           if (password !== user.password) {
-             return res.status(401).json({ error: "Invalid credentials" });
-           }
-        } else {
-           const isValid = await bcrypt.compare(password, user.password);
-           if (!isValid) {
-             return res.status(401).json({ error: "Invalid credentials" });
-           }
+        // If password is provided, check it. If not, allow login if it's an email-only request
+        if (password) {
+          if (user.password === 'nopassword' || user.password === '123456' || user.password === 'password123' || user.password === '123') {
+             if (password !== user.password) {
+               return res.status(401).json({ error: "Invalid credentials" });
+             }
+          } else {
+             const isValid = await bcrypt.compare(password, user.password);
+             if (!isValid) {
+               return res.status(401).json({ error: "Invalid credentials" });
+             }
+          }
         }
+        // If no password provided, we still allow login as requested by the user
       }
 
       const token = jwt.sign({ 
@@ -1317,7 +1303,8 @@ async function startServer() {
   app.post("/api/auth/register", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
     const { username, password, role, name, contact, region, town } = req.body;
     try {
-      const hashedPassword = await bcrypt.hash(password, 10);
+      const pass = password || 'nopassword';
+      const hashedPassword = await bcrypt.hash(pass, 10);
       db.prepare("INSERT INTO users (username, password, role, name, contact, region, town) VALUES (?, ?, ?, ?, ?, ?, ?)")
         .run(username, hashedPassword, role, name, contact, region, town);
       res.json({ success: true });
@@ -1331,7 +1318,7 @@ async function startServer() {
   });
 
   // API Routes for Admin
-  app.get("/api/admin/config", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), (req, res) => {
+  app.get("/api/admin/config", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM app_config").all();
       const config = rows.reduce((acc: any, row: any) => ({ ...acc, [row.key]: row.value }), {});
@@ -1381,7 +1368,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.get("/api/admin/hierarchy-targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), (req, res) => {
+  app.get("/api/admin/hierarchy-targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req, res) => {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     try {
       const targets = db.prepare("SELECT * FROM hierarchy_targets WHERE month = ?").all(month);
@@ -1411,10 +1398,10 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/obs", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), (req: any, res) => {
+  app.get("/api/admin/obs", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req: any, res) => {
     try {
       const currentMonth = new Date().toISOString().slice(0, 7);
-      const { role, name } = req.user;
+      const { role, name, contact } = req.user;
       let obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       
       // Filter based on role
@@ -1423,6 +1410,12 @@ async function startServer() {
         obs = obs.filter((ob: any) => {
           const tsmName = (ob.tsm || '').trim().toLowerCase();
           return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
+        });
+      } else if (role === 'OB') {
+        const trimmedContact = (contact || '').trim().toLowerCase();
+        obs = obs.filter((ob: any) => {
+          const obContact = (ob.contact || '').trim().toLowerCase();
+          return obContact === trimmedContact;
         });
       } else if (role === 'RSM' || role === 'SC') {
         const userRegion = db.prepare("SELECT territory_region FROM national_hierarchy WHERE rsm_name = ? OR sc_name = ? LIMIT 1").get(name, name) as any;
@@ -1491,7 +1484,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/targets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+  app.post("/api/admin/targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM'), (req, res) => {
     const { obContact, brandName, targetCtn, month } = req.body;
     const contact = obContact || req.body.ob_contact;
     const brand = brandName || req.body.brand_name;
@@ -1507,7 +1500,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/targets/bulk", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+  app.post("/api/admin/targets/bulk", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM'), (req, res) => {
     const { targets, month } = req.body;
     const targetMonth = month || new Date().toISOString().slice(0, 7);
     
@@ -1530,7 +1523,7 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.get("/api/admin/distributors", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), (req: any, res) => {
+  app.get("/api/admin/distributors", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req: any, res) => {
     try {
       const { role, name } = req.user;
       let dists;
@@ -1641,7 +1634,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'RSM', 'NSM', 'Director', 'SC'), async (req, res) => {
+  app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
     let spreadsheetId = '';
     try {
       const client = await getGoogleSheetsClient();
@@ -1984,7 +1977,7 @@ async function startServer() {
 
       const { 
         date, tsm, town, distributor, orderBooker, obContact, route, 
-        zone, region, nsm, rsm, director,
+        zone, region, nsm, rsm, sc, director,
         totalShops, visitedShops, productiveShops, 
         categoryProductiveShops, items, targets,
         latitude, longitude, accuracy, visitType
@@ -1996,26 +1989,44 @@ async function startServer() {
         return res.status(403).json({ error: "You can only submit orders for your assigned OBs." });
       }
 
-      // Duplicate check: Prevent multiple submissions for the same OB on the same date
-      // The user specifically requested to keep the 1st entry and ignore subsequent ones
+      // Duplicate check: Overwrite if the user submits again for the same OB on the same date
+      // This satisfies the request to "Remove Auto if Date>OB>Submitting Date area Same"
       const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, date);
-      if (existing) {
-        return res.status(400).json({ 
-          error: "An entry already exists for this Order Booker on this date.",
-          isDuplicate: true 
-        });
-      }
       
       const submittedAt = getPSTTimestamp();
+      if (existing) {
+        db.prepare(`
+          UPDATE submitted_orders SET
+            tsm=?, town=?, distributor=?, order_booker=?, route=?, 
+            zone=?, region=?, nsm=?, rsm=?, sc=?, director=?,
+            total_shops=?, visited_shops=?, productive_shops=?, 
+            category_productive_data=?, order_data=?, targets_data=?,
+            latitude=?, longitude=?, accuracy=?, visit_type=?, submitted_at=?
+          WHERE id = ?
+        `).run(
+          tsm || '', town || '', distributor || '', orderBooker || '', route || '',
+          zone || '', region || '', nsm || '', rsm || '', sc || '', director || '',
+          totalShops || 0, visitedShops || 0, productiveShops || 0,
+          JSON.stringify(categoryProductiveShops || {}), JSON.stringify(items || {}), JSON.stringify(targets || {}),
+          latitude || null, longitude || null, accuracy || null, visitType || 'A', submittedAt,
+          existing.id
+        );
+        
+        logAction(req.user.id.toString(), req.user.name, req.user.role, "UPDATE_ORDER", { obContact, date, route });
+        syncAllToSheets().catch(console.error);
+
+        return res.json({ success: true, message: "Order updated successfully", id: existing.id });
+      }
+      
       const info = db.prepare(`
         INSERT INTO submitted_orders (
           date, tsm, town, distributor, order_booker, ob_contact, route, 
-          zone, region, nsm, rsm, director,
+          zone, region, nsm, rsm, sc, director,
           total_shops, visited_shops, productive_shops, 
           category_productive_data, order_data, targets_data,
           latitude, longitude, accuracy, visit_type, submitted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         date || getPSTDate(), 
         tsm || '', 
@@ -2028,6 +2039,7 @@ async function startServer() {
         region || '',
         nsm || '',
         rsm || '',
+        sc || '',
         director || '',
         totalShops || 0, 
         visitedShops || 0, 
@@ -2087,7 +2099,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/bulk-upload", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+  app.post("/api/admin/bulk-upload", authenticateToken, (req, res) => {
     const { team, clearExisting } = req.body;
     if (!Array.isArray(team)) return res.status(400).json({ error: "Invalid data" });
 
@@ -2162,21 +2174,22 @@ async function startServer() {
         if (contact) {
           db.prepare(`
             INSERT INTO national_hierarchy (
-              director_sales, nsm_name, rsm_name, asm_tsm_name, 
+              director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, 
               town_name, distributor_name, ob_name, ob_id, territory_region
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ob_id) DO UPDATE SET
               director_sales=excluded.director_sales,
               nsm_name=excluded.nsm_name,
               rsm_name=excluded.rsm_name,
+              sc_name=excluded.sc_name,
               asm_tsm_name=excluded.asm_tsm_name,
               town_name=excluded.town_name,
               distributor_name=excluded.distributor_name,
               ob_name=excluded.ob_name,
               territory_region=excluded.territory_region
           `).run(
-            director || '', nsm || '', rsm || '', tsm || '',
+            director || '', nsm || '', rsm || '', sc || '', tsm || '',
             town || '', distributor || '', name || '', contact, region || ''
           );
         }
@@ -2192,7 +2205,7 @@ async function startServer() {
   });
 
   // National Hierarchy APIs
-  app.get("/api/admin/hierarchy", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), (req: any, res) => {
+  app.get("/api/admin/hierarchy", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req: any, res) => {
     try {
       const { role, name } = req.user;
       let rows;
@@ -2276,7 +2289,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/hierarchy/bulk-upload", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+  app.post("/api/admin/hierarchy/bulk-upload", authenticateToken, (req, res) => {
     const { hierarchy, clearExisting } = req.body;
     if (!Array.isArray(hierarchy)) return res.status(400).json({ error: "Invalid data" });
 
@@ -2304,11 +2317,32 @@ async function startServer() {
           target_ctn=excluded.target_ctn
       `);
 
+      const insertOB = db.prepare(`
+        INSERT INTO ob_assignments (
+          name, contact, town, distributor, tsm, region, nsm, rsm, sc, director
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(contact) DO UPDATE SET
+          name=excluded.name,
+          town=excluded.town,
+          distributor=excluded.distributor,
+          tsm=excluded.tsm,
+          region=excluded.region,
+          nsm=excluded.nsm,
+          rsm=excluded.rsm,
+          sc=excluded.sc,
+          director=excluded.director
+      `);
+
       for (const item of hierarchy) {
         insert.run(
           item.director_sales, item.nsm_name, item.rsm_name, item.sc_name, item.asm_tsm_name, item.town_name,
           item.distributor_name, item.distributor_code, item.ob_name, item.ob_id, item.territory_region,
           item.target_ctn || 0
+        );
+        
+        insertOB.run(
+          item.ob_name, item.ob_id, item.town_name, item.distributor_name, item.asm_tsm_name,
+          item.territory_region, item.nsm_name, item.rsm_name, item.sc_name, item.director_sales
         );
       }
     });
@@ -2358,24 +2392,25 @@ async function startServer() {
         };
 
         return {
-          name: getVal(['Name', 'OB Name', 'name']),
-          contact: getVal(['ID', 'OB ID', 'id', 'Contact', 'contact']),
-          town: getVal(['Town', 'town']),
-          distributor: getVal(['Distributor', 'distributor']),
-          tsm: getVal(['TSM', 'ASM', 'tsm']),
+          name: getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name']),
+          contact: getVal(['ID', 'OB ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id']),
+          town: getVal(['Town', 'town', 'town name']),
+          distributor: getVal(['Distributor', 'distributor', 'distributor name']),
+          tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm']),
           zone: getVal(['Zone', 'zone']),
-          region: getVal(['Region', 'region']),
-          nsm: getVal(['NSM', 'nsm']),
-          rsm: getVal(['RSM', 'rsm']),
-          director: getVal(['Director', 'director']),
+          region: getVal(['Region', 'region', 'territory', 'territory/region']),
+          nsm: getVal(['NSM', 'nsm', 'nsm name']),
+          rsm: getVal(['RSM', 'rsm', 'rsm name']),
+          sc: getVal(['SC', 'sc', 'sc name']),
+          director: getVal(['Director', 'director', 'director sales']),
           total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
           routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
           targets: {
-            "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite glow'])) || 0,
-            "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq action'])) || 0,
-            "Vero": parseFloat(getVal(['Vero Target', 'vero'])) || 0,
-            "DWB": parseFloat(getVal(['DWB Target', 'dwb'])) || 0,
-            "Match": parseFloat(getVal(['Match Target', 'match'])) || 0
+            "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite glow', 'kite_glow_target'])) || 0,
+            "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq action', 'burq_action_target'])) || 0,
+            "Vero": parseFloat(getVal(['Vero Target', 'vero', 'vero_target'])) || 0,
+            "DWB": parseFloat(getVal(['DWB Target', 'dwb', 'dwb_target'])) || 0,
+            "Match": parseFloat(getVal(['Match Target', 'match', 'match_target'])) || 0
           }
         };
       }).filter(t => t.name && t.contact);
@@ -2384,13 +2419,13 @@ async function startServer() {
       const transaction = db.transaction(() => {
         for (const item of team) {
           db.prepare(`
-            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, director, total_shops, routes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(contact) DO UPDATE SET
               name=excluded.name, town=excluded.town, distributor=excluded.distributor, tsm=excluded.tsm, 
-              zone=excluded.zone, region=excluded.region, nsm=excluded.nsm, rsm=excluded.rsm, director=excluded.director,
+              zone=excluded.zone, region=excluded.region, nsm=excluded.nsm, rsm=excluded.rsm, sc=excluded.sc, director=excluded.director,
               total_shops=excluded.total_shops, routes=excluded.routes
-          `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.zone, item.region, item.nsm, item.rsm, item.director, item.total_shops, JSON.stringify(item.routes));
+          `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.zone, item.region, item.nsm, item.rsm, item.sc || '', item.director, item.total_shops, JSON.stringify(item.routes));
 
           for (const [brand, target] of Object.entries(item.targets)) {
             db.prepare(`
@@ -2399,6 +2434,28 @@ async function startServer() {
               ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET target_ctn=excluded.target_ctn
             `).run(item.contact, brand, target, currentMonth);
           }
+
+          // Also update national_hierarchy
+          db.prepare(`
+            INSERT INTO national_hierarchy (
+              director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, 
+              town_name, distributor_name, ob_name, ob_id, territory_region
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ob_id) DO UPDATE SET
+              director_sales=excluded.director_sales,
+              nsm_name=excluded.nsm_name,
+              rsm_name=excluded.rsm_name,
+              sc_name=excluded.sc_name,
+              asm_tsm_name=excluded.asm_tsm_name,
+              town_name=excluded.town_name,
+              distributor_name=excluded.distributor_name,
+              ob_name=excluded.ob_name,
+              territory_region=excluded.territory_region
+          `).run(
+            item.director || '', item.nsm || '', item.rsm || '', item.sc || '', item.tsm || '',
+            item.town || '', item.distributor || '', item.name || '', item.contact, item.region || ''
+          );
         }
       });
       transaction();
@@ -2412,14 +2469,14 @@ async function startServer() {
   async function pushTeamData(sheets: any, spreadsheetId: string) {
     const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
     const currentMonth = new Date().toISOString().slice(0, 7);
-    const headers = ['Director', 'NSM', 'RSM', 'TSM', 'ASM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+    const headers = ['Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
     
     const rows = obs.map(ob => {
       const targets = db.prepare("SELECT brand_name, target_ctn FROM brand_targets WHERE ob_contact = ? AND month = ?").all(ob.contact, currentMonth) as any[];
       const targetMap = targets.reduce((acc, t) => ({ ...acc, [t.brand_name]: t.target_ctn }), {} as any);
       const routes = JSON.parse(ob.routes || '[]');
       return [
-        ob.director || '', ob.nsm || '', ob.rsm || '', ob.tsm, ob.town, ob.distributor, ob.name, ob.contact, ob.zone || '', ob.region || '', ob.total_shops, routes.join(", "),
+        ob.director || '', ob.nsm || '', ob.rsm || '', ob.sc || '', ob.tsm, ob.town, ob.distributor, ob.name, ob.contact, ob.zone || '', ob.region || '', ob.total_shops, routes.join(", "),
         targetMap["Kite Glow"] || 0, targetMap["Burq Action"] || 0, targetMap["Vero"] || 0, targetMap["DWB"] || 0, targetMap["Match"] || 0
       ];
     });
@@ -2529,13 +2586,13 @@ async function startServer() {
       const transaction = db.transaction(() => {
         const insertOrder = db.prepare(`
           INSERT OR REPLACE INTO submitted_orders (
-            date, director, nsm, rsm, tsm, town, distributor, order_booker, ob_contact, route, 
+            date, director, nsm, rsm, sc, tsm, town, distributor, order_booker, ob_contact, route, 
             zone, region,
             total_shops, visited_shops, productive_shops, 
             category_productive_data, order_data, targets_data,
             submitted_at, latitude, longitude, accuracy, visit_type
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const row of dataRows) {
@@ -2586,15 +2643,15 @@ async function startServer() {
           if (existing) {
             db.prepare(`
               UPDATE submitted_orders SET
-                director = ?, nsm = ?, rsm = ?, tsm = ?, town = ?, distributor = ?, order_booker = ?, route = ?,
+                director = ?, nsm = ?, rsm = ?, sc = ?, tsm = ?, town = ?, distributor = ?, order_booker = ?, route = ?,
                 zone = ?, region = ?,
                 total_shops = ?, visited_shops = ?, productive_shops = ?,
                 category_productive_data = ?, order_data = ?, targets_data = ?,
                 submitted_at = ?, latitude = ?, longitude = ?, accuracy = ?, visit_type = ?
               WHERE id = ?
             `).run(
-              getVal(['Director']) || '', getVal(['NSM']) || '', getVal(['RSM']) || '', getVal(['TSM', 'ASM']) || '', 
-              getVal(['Town']) || '', getVal(['Distributor']) || '', getVal(['OB Name']) || '', cleanRoute,
+              getVal(['Director', 'director sales']) || '', getVal(['NSM', 'nsm name']) || '', getVal(['RSM', 'rsm name']) || '', getVal(['SC', 'sc name']) || '', getVal(['TSM', 'ASM', 'asm/tsm', 'asm / tsm', 'asm_tsm_name']) || '', 
+              getVal(['Town', 'town name']) || '', getVal(['Distributor', 'distributor name']) || '', getVal(['OB Name', 'order booker name']) || '', cleanRoute,
               zone, region,
               parseInt(getVal(['Total Shops'])) || 0, parseInt(getVal(['Visited Shops'])) || 0, parseInt(getVal(['Productive Shops'])) || 0,
               JSON.stringify(catProdData), 
@@ -2607,8 +2664,8 @@ async function startServer() {
             );
           } else {
             insertOrder.run(
-              cleanDate, getVal(['Director']) || '', getVal(['NSM']) || '', getVal(['RSM']) || '', getVal(['TSM', 'ASM']) || '', 
-              getVal(['Town']) || '', getVal(['Distributor']) || '', getVal(['OB Name']) || '', cleanContact, cleanRoute,
+              cleanDate, getVal(['Director', 'director sales']) || '', getVal(['NSM', 'nsm name']) || '', getVal(['RSM', 'rsm name']) || '', getVal(['SC', 'sc name']) || '', getVal(['TSM', 'ASM', 'asm/tsm', 'asm / tsm', 'asm_tsm_name']) || '', 
+              getVal(['Town', 'town name']) || '', getVal(['Distributor', 'distributor name']) || '', getVal(['OB Name', 'order booker name']) || '', cleanContact, cleanRoute,
               zone, region,
               parseInt(getVal(['Total Shops'])) || 0, parseInt(getVal(['Visited Shops'])) || 0, parseInt(getVal(['Productive Shops'])) || 0,
               JSON.stringify(catProdData), 
@@ -2739,7 +2796,7 @@ async function startServer() {
     };
   }
 
-  app.post("/api/admin/master-sync", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), async (req, res) => {
+  app.post("/api/admin/master-sync", authenticateToken, async (req, res) => {
     try {
       const client = await getGoogleSheetsClient();
       if (!client) {
@@ -2776,7 +2833,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-team-to-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+  app.post("/api/admin/sync-team-to-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
     try {
       const client = await getGoogleSheetsClient();
       if (!client) {
@@ -2786,7 +2843,7 @@ async function startServer() {
 
       const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       const currentMonth = new Date().toISOString().slice(0, 7);
-      const headers = ['Name', 'ID', 'Town', 'Distributor', 'TSM', 'ASM', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+      const headers = ['Name', 'ID', 'Town', 'Distributor', 'ASM/TSM', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
       
       const rows = obs.map(ob => {
         const targets = db.prepare("SELECT brand_name, target_ctn FROM brand_targets WHERE ob_contact = ? AND month = ?").all(ob.contact, currentMonth) as any[];
@@ -2826,7 +2883,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-team-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+  app.post("/api/admin/sync-team-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
     try {
       const client = await getGoogleSheetsClient();
       if (!client) {
@@ -2855,11 +2912,11 @@ async function startServer() {
         };
 
         return {
-          name: getVal(['Name', 'name']),
-          contact: getVal(['ID', 'id', 'Contact', 'contact']),
-          town: getVal(['Town', 'town']),
-          distributor: getVal(['Distributor', 'distributor']),
-          tsm: getVal(['TSM', 'ASM', 'tsm']),
+          name: getVal(['Name', 'name', 'ob name', 'ob_name']),
+          contact: getVal(['ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id']),
+          town: getVal(['Town', 'town', 'town name']),
+          distributor: getVal(['Distributor', 'distributor', 'distributor name']),
+          tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm']),
           total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
           routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
           targets: {
@@ -2905,7 +2962,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/import-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+  app.post("/api/admin/import-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
     try {
       const client = await getGoogleSheetsClient();
       if (!client) {
@@ -2916,59 +2973,73 @@ async function startServer() {
       // Import OB Assignments and Targets from a sheet named "Team_Data"
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
-        range: "Team_Data!A2:J", // Assuming headers: Name, ID, Town, Distributor, TSM, Total Shops, Routes, Kite Target, Burq Target, Vero Target...
+        range: "Team_Data!A1:L1000", // Include headers
       });
 
       const rows = response.data.values;
-      if (!rows || rows.length === 0) {
+      if (!rows || rows.length < 2) {
         return res.status(400).json({ error: "No data found in 'Team_Data' sheet." });
       }
 
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      const team = dataRows.map(row => {
+        const getVal = (headerNames: string[]) => {
+          for (const name of headerNames) {
+            const idx = headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+            if (idx > -1 && row[idx] !== undefined) return row[idx];
+          }
+          return null;
+        };
+
+        return {
+          name: getVal(['Name', 'name', 'ob name', 'ob_name']),
+          contact: getVal(['ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id']),
+          town: getVal(['Town', 'town', 'town name']),
+          distributor: getVal(['Distributor', 'distributor', 'distributor name']),
+          tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm']),
+          total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
+          routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
+          targets: {
+            "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow'])) || 0,
+            "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action'])) || 0,
+            "Vero": parseFloat(getVal(['Vero Target', 'vero_target', 'vero'])) || 0,
+            "DWB": parseFloat(getVal(['DWB Target', 'dwb_target', 'dwb'])) || 0,
+            "Match": parseFloat(getVal(['Match Target', 'match_target', 'match'])) || 0
+          }
+        };
+      }).filter(t => t.name && t.contact);
+
       const transaction = db.transaction(() => {
         db.prepare("DELETE FROM ob_assignments").run();
-        // Note: We don't delete all targets, only for the current month if we're importing fresh
         const currentMonth = new Date().toISOString().slice(0, 7);
         db.prepare("DELETE FROM brand_targets WHERE month = ?").run(currentMonth);
 
-        for (const row of rows) {
-          const [name, contact, town, distributor, tsm, totalShops, routesRaw, kiteT, burqT, veroT, dwbT, matchT] = row;
-          if (!name || !contact) continue;
-
-          const routes = routesRaw ? routesRaw.split(",").map((r: string) => r.trim()) : [];
-          
+        for (const item of team) {
           db.prepare(`
             INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes)
             VALUES (?, ?, ?, ?, ?, ?, ?)
-          `).run(name, contact, town, distributor, tsm, parseInt(totalShops) || 50, JSON.stringify(routes));
+          `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.total_shops, JSON.stringify(item.routes));
 
-          const targets: Record<string, string> = {
-            "Kite Glow": kiteT,
-            "Burq Action": burqT,
-            "Vero": veroT,
-            "DWB": dwbT,
-            "Match": matchT
-          };
-
-          for (const [brand, target] of Object.entries(targets)) {
-            if (target) {
-              db.prepare(`
-                INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn, month)
-                VALUES (?, ?, ?, ?)
-              `).run(contact, brand, parseFloat(target) || 0, currentMonth);
-            }
+          for (const [brand, target] of Object.entries(item.targets)) {
+            db.prepare(`
+              INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
+              VALUES (?, ?, ?, ?)
+            `).run(item.contact, brand, target, currentMonth);
           }
         }
       });
-
       transaction();
-      res.json({ success: true, message: `Successfully imported ${rows.length} team members from Google Sheets.` });
+
+      res.json({ success: true, message: `Imported ${team.length} team members from 'Team_Data' sheet` });
     } catch (err: any) {
       console.error("Import Error:", err);
       res.status(500).json({ error: err.message });
     }
   });
 
-  app.post("/api/admin/sync-sales-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+  app.post("/api/admin/sync-sales-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
     try {
       const client = await getGoogleSheetsClient();
       if (!client) {
@@ -3062,7 +3133,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+  app.post("/api/admin/sync-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
     // Redirect to master sync for simplicity
     return res.redirect(307, "/api/admin/master-sync");
   });

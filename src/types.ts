@@ -27,6 +27,7 @@ export interface OrderState {
   region?: string;
   nsm?: string;
   rsm?: string;
+  sc?: string;
   director?: string;
   visitedShops: number;
   productiveShops: number; // Global productive shops
@@ -52,6 +53,7 @@ export interface OBAssignment {
   region?: string;
   nsm?: string;
   rsm?: string;
+  sc?: string;
   director?: string;
   total_shops?: number;
   targets?: Record<string, number>;
