@@ -626,6 +626,49 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     return brandWorst;
   }, [obPerformance]);
 
+  const tsmPerformance = useMemo(() => {
+    const tsms: Record<string, any> = {};
+    const obStatsByTsm: Record<string, Set<string>> = {};
+    
+    monthStats.forEach(s => {
+      if (!s.tsm) return;
+      if (!tsms[s.tsm]) {
+        tsms[s.tsm] = {
+          name: s.tsm,
+          totalSales: 0,
+          totalTarget: 0,
+          activeOBs: 0,
+          totalOBAchievement: 0
+        };
+        obStatsByTsm[s.tsm] = new Set();
+      }
+      tsms[s.tsm].totalSales += s.totalBags;
+      obStatsByTsm[s.tsm].add(s.ob_contact);
+    });
+
+    // Calculate active OBs and average achievement
+    Object.keys(tsms).forEach(tsm => {
+      const activeOBs = obStatsByTsm[tsm].size;
+      tsms[tsm].activeOBs = activeOBs;
+      
+      // Find OBs for this TSM in obAnalysis to get their achievements
+      const tsmOBs = obAnalysis.filter(ob => ob.tsm === tsm);
+      let totalAchievement = 0;
+      let validOBs = 0;
+      
+      tsmOBs.forEach(ob => {
+        if (ob.target > 0) {
+          totalAchievement += (ob.totalSales / ob.target) * 100;
+          validOBs++;
+        }
+      });
+      
+      tsms[tsm].averageOBAchievement = validOBs > 0 ? totalAchievement / validOBs : 0;
+    });
+
+    return Object.values(tsms).sort((a, b) => b.totalSales - a.totalSales);
+  }, [monthStats, obAnalysis]);
+
   const categoryWiseSales = useMemo(() => {
     const groups: Record<string, any> = {};
     
@@ -879,6 +922,51 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               </BarChart>
             </ResponsiveContainer>
           </div>
+        </div>
+      </div>
+
+      {/* TSM Performance Table */}
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+        <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+          <h2 className="text-xs font-black text-seablue uppercase tracking-widest">TSM Performance Overview</h2>
+          <Users className="w-4 h-4 text-slate-400" />
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 text-[10px] font-black uppercase tracking-widest">
+              <tr>
+                <th className="px-4 py-3">TSM Name</th>
+                <th className="px-4 py-3 text-right">Active OBs</th>
+                <th className="px-4 py-3 text-right">Total Sales (Ctns)</th>
+                <th className="px-4 py-3 text-right">Avg OB Achievement</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {tsmPerformance.map((tsm, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/50">
+                  <td className="px-4 py-3 font-bold text-slate-700 text-xs">{tsm.name}</td>
+                  <td className="px-4 py-3 text-right text-slate-500 font-mono text-xs">{tsm.activeOBs}</td>
+                  <td className="px-4 py-3 text-right font-bold text-slate-700 font-mono text-xs">{tsm.totalSales.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right">
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black tracking-widest ${
+                      tsm.averageOBAchievement >= 100 ? 'bg-emerald-100 text-emerald-700' :
+                      tsm.averageOBAchievement >= 80 ? 'bg-amber-100 text-amber-700' :
+                      'bg-rose-100 text-rose-700'
+                    }`}>
+                      {tsm.averageOBAchievement.toFixed(1)}%
+                    </span>
+                  </td>
+                </tr>
+              ))}
+              {tsmPerformance.length === 0 && (
+                <tr>
+                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500 text-xs font-bold uppercase tracking-widest">
+                    No TSM data found.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
@@ -2074,7 +2162,7 @@ export default function App() {
   const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
   const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-  const [matrixView, setMatrixView] = useState<string>('Total Bags/Ctns');
+  const [matrixView, setMatrixView] = useState<string>('Total');
 
   const handleLogin = (token: string, userData: any) => {
     const role = normalizeRole(userData.role);
@@ -2513,19 +2601,72 @@ export default function App() {
     }
   };
 
-  const saveDraft = async () => {
-    setIsSaving(true);
+  const syncOfflineOrders = async () => {
+    if (!navigator.onLine) return;
     try {
-      const response = await apiFetch('/api/draft', {
-        method: 'POST',
-        body: JSON.stringify({ id: 'current_draft', data: order })
+      const draftsStr = localStorage.getItem('offline_orders');
+      if (!draftsStr) return;
+      const drafts = JSON.parse(draftsStr);
+      if (!Array.isArray(drafts) || drafts.length === 0) return;
+
+      let successCount = 0;
+      const remainingDrafts = [];
+
+      for (const draft of drafts) {
+        try {
+          const response = await apiFetch('/api/submit', {
+            method: 'POST',
+            body: JSON.stringify({ data: draft })
+          });
+          if (response.ok) {
+            successCount++;
+          } else {
+            remainingDrafts.push(draft);
+          }
+        } catch (e) {
+          remainingDrafts.push(draft);
+        }
+      }
+
+      if (successCount > 0) {
+        localStorage.setItem('offline_orders', JSON.stringify(remainingDrafts));
+        setMessage({ text: `Successfully synced ${successCount} offline order(s).`, type: 'success' });
+        setTimeout(() => setMessage(null), 5000);
+        syncGoogle();
+        fetchHistory(true);
+      }
+    } catch (e) {
+      console.error("Error syncing offline orders", e);
+    }
+  };
+
+  useEffect(() => {
+    window.addEventListener('online', syncOfflineOrders);
+    if (navigator.onLine) {
+      syncOfflineOrders();
+    }
+    return () => {
+      window.removeEventListener('online', syncOfflineOrders);
+    };
+  }, []);
+
+  const saveDraft = () => {
+    try {
+      const drafts = JSON.parse(localStorage.getItem('offline_orders') || '[]');
+      drafts.push(order);
+      localStorage.setItem('offline_orders', JSON.stringify(drafts));
+      setMessage({ text: 'Saved as draft locally. Will sync when online.', type: 'success' });
+      setOrder({
+        date: getPSTDate(),
+        tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
+        zone: '', region: '', nsm: '', rsm: '', sc: '', director: '',
+        totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {},
+        visitType: 'A'
       });
-      if (response.ok) setMessage({ text: 'Draft saved', type: 'success' });
-      else throw new Error('Failed to save draft');
+      localStorage.removeItem(STORAGE_KEY);
     } catch (err) {
       setMessage({ text: 'Error saving draft', type: 'error' });
     } finally {
-      setIsSaving(false);
       setTimeout(() => setMessage(null), 3000);
     }
   };
@@ -2569,12 +2710,14 @@ export default function App() {
     setIsSubmitting(true);
     
     // Final duplicate check before actual submission
-    const isDuplicate = await checkDuplicate(order.date, order.obContact);
-    if (isDuplicate) {
-      setMessage({ text: 'An entry already exists for this Order Booker on this date.', type: 'error' });
-      setIsSubmitting(false);
-      setTimeout(() => setMessage(null), 5000);
-      return;
+    if (navigator.onLine) {
+      const isDuplicate = await checkDuplicate(order.date, order.obContact);
+      if (isDuplicate) {
+        setMessage({ text: 'An entry already exists for this Order Booker on this date.', type: 'error' });
+        setIsSubmitting(false);
+        setTimeout(() => setMessage(null), 5000);
+        return;
+      }
     }
 
     let currentLoc = location;
@@ -2590,6 +2733,29 @@ export default function App() {
         };
         setLocation(currentLoc);
       } catch (e) {}
+    }
+
+    if (!navigator.onLine) {
+       const drafts = JSON.parse(localStorage.getItem('offline_orders') || '[]');
+       drafts.push({ 
+         ...order,
+         latitude: currentLoc?.latitude,
+         longitude: currentLoc?.longitude,
+         accuracy: currentLoc?.accuracy
+       });
+       localStorage.setItem('offline_orders', JSON.stringify(drafts));
+       setMessage({ text: 'Offline. Saved as draft. Will sync when online.', type: 'success' });
+       setOrder({
+         date: getPSTDate(),
+         tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
+         zone: '', region: '', nsm: '', rsm: '', sc: '', director: '',
+         totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {},
+         visitType: 'A'
+       });
+       localStorage.removeItem(STORAGE_KEY);
+       setIsSubmitting(false);
+       setTimeout(() => setMessage(null), 3000);
+       return;
     }
 
     try {
@@ -2704,10 +2870,16 @@ export default function App() {
           setConfirmModal(null);
           setAppConfig(prev => ({ ...prev, [key]: sanitizedValue }));
           try {
-            await apiFetch('/api/admin/config', {
+            const res = await apiFetch('/api/admin/config', {
               method: 'POST',
               body: JSON.stringify({ key, value: sanitizedValue })
             });
+            if (res.ok) {
+              const data = await res.json();
+              if (data.config) {
+                setAppConfig(data.config);
+              }
+            }
           } catch (err) {
             console.error(err);
           }
@@ -2719,10 +2891,16 @@ export default function App() {
 
     setAppConfig(prev => ({ ...prev, [key]: sanitizedValue }));
     try {
-      await apiFetch('/api/admin/config', {
+      const res = await apiFetch('/api/admin/config', {
         method: 'POST',
         body: JSON.stringify({ key, value: sanitizedValue })
       });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.config && key === 'google_private_key' && sanitizedValue.trim().startsWith('{')) {
+          setAppConfig(data.config);
+        }
+      }
     } catch (err) {
       console.error(err);
     }
@@ -6012,7 +6190,7 @@ export default function App() {
                 className="flex items-center gap-1.5 px-2 py-1.5 bg-slate-100 text-slate-700 rounded-lg font-black uppercase text-[9px] tracking-widest hover:bg-slate-200 transition-all disabled:opacity-50"
               >
                 {isSaving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                <span className="hidden sm:inline">Save</span>
+                <span className="hidden sm:inline">Save as Draft</span>
               </button>
               <button 
                 onClick={submitOrder} 

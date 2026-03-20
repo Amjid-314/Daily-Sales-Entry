@@ -583,7 +583,7 @@ async function startServer() {
       try {
         const parsed = JSON.parse(formatted);
         if (parsed.private_key) {
-          return parsed.private_key;
+          formatted = parsed.private_key;
         }
       } catch (e) {
         // Not valid JSON, continue
@@ -713,6 +713,9 @@ async function startServer() {
         console.error("JWT Initialization Error:", err);
         if (err.message.includes("DECODER routines::unsupported")) {
           throw new Error("Invalid Private Key format. Please ensure you copied the entire 'private_key' from the JSON file, including the BEGIN and END headers.");
+        }
+        if (err.message.includes("invalid_grant: Invalid JWT Signature")) {
+          throw new Error("Invalid JWT Signature. This means the Private Key does not match the Service Account Email. Please ensure you are using the correct pair from the same JSON file.");
         }
         throw err;
       }
@@ -1458,14 +1461,23 @@ async function startServer() {
   });
 
   app.post("/api/admin/config", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
-    const { key, value } = req.body;
+    let { key, value } = req.body;
     
     // If user pastes the entire JSON file into the private key field, extract the email too
-    if (key === 'google_private_key') {
+    if (key === 'google_private_key' || key === 'google_service_account_email') {
       try {
         const parsed = JSON.parse(value.toString());
         if (parsed.client_email) {
           db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run('google_service_account_email', parsed.client_email);
+          if (key === 'google_service_account_email') {
+            value = parsed.client_email;
+          }
+        }
+        if (parsed.private_key) {
+          db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run('google_private_key', parsed.private_key);
+          if (key === 'google_private_key') {
+            value = parsed.private_key;
+          }
         }
       } catch (e) {
         // Not a JSON string, ignore
@@ -1474,7 +1486,10 @@ async function startServer() {
 
     db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run(key, value.toString());
     logAction(req.user.id.toString(), req.user.name, req.user.role, "UPDATE_CONFIG", { key, value });
-    res.json({ success: true });
+    
+    const rows = db.prepare("SELECT * FROM app_config").all();
+    const config = rows.reduce((acc: any, row: any) => ({ ...acc, [row.key]: row.value }), {});
+    res.json({ success: true, config });
   });
 
   app.get("/api/admin/hierarchy-targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req, res) => {
@@ -1782,6 +1797,8 @@ async function startServer() {
         message = `Spreadsheet not found. Please check the ID and ensure it doesn't have extra slashes. Current ID: ${spreadsheetId}`;
       } else if (err.code === 403) {
         message = "Permission denied. Please ensure the Service Account email is shared as an 'Editor' on the Google Sheet.";
+      } else if (message.includes("invalid_grant: Invalid JWT Signature")) {
+        message = "Invalid JWT Signature. The Private Key does not match the Service Account Email. Please copy both from the SAME JSON file.";
       }
       res.status(500).json({ error: message });
     }
@@ -2658,8 +2675,6 @@ async function startServer() {
       const catCount = CATEGORIES.length;
 
       const transaction = db.transaction(() => {
-        db.prepare("DELETE FROM submitted_orders").run();
-        
         const insertOrder = db.prepare(`
           INSERT INTO submitted_orders (
             date, director, nsm, rsm, sc, tsm, town, distributor, order_booker, ob_contact, route, 
@@ -2681,24 +2696,39 @@ async function startServer() {
           };
 
           const date = getVal(['Date']);
-          const obContact = getVal(['OB Contact', 'contact']);
+          const obContact = getVal(['OB Contact', 'contact', 'ob_contact']) || getVal(['OB Name', 'order booker name', 'ob_name']);
           if (!date || !obContact) continue;
 
           const cleanContact = obContact.toString().trim();
           
           let cleanDate = date.toString().trim();
-          // Handle DD/MM/YYYY or M/D/YYYY from Google Sheets
-          const dateParts = cleanDate.split(/[-/]/);
-          if (dateParts.length === 3) {
+          // Handle DD/MM/YYYY, M/D/YYYY, or DD-MMM-YYYY from Google Sheets
+          const dateParts = cleanDate.split(/[-/ ]/);
+          if (dateParts.length >= 3) {
             if (dateParts[0].length === 4) {
               cleanDate = `${dateParts[0]}-${dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`;
             } else if (dateParts[2].length === 4) {
               let dd = dateParts[0];
               let mm = dateParts[1];
+              
+              // Handle month names (e.g., Mar, Apr)
+              const monthNames = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+              if (isNaN(parseInt(mm))) {
+                const mIdx = monthNames.findIndex(m => mm.toLowerCase().startsWith(m));
+                if (mIdx > -1) mm = (mIdx + 1).toString();
+              } else if (isNaN(parseInt(dd))) {
+                const mIdx = monthNames.findIndex(m => dd.toLowerCase().startsWith(m));
+                if (mIdx > -1) {
+                  mm = (mIdx + 1).toString();
+                  dd = dateParts[1];
+                }
+              }
+
               if (parseInt(mm) > 12) {
                 // It must be MM/DD/YYYY
-                dd = dateParts[1];
-                mm = dateParts[0];
+                const temp = dd;
+                dd = mm;
+                mm = temp;
               }
               cleanDate = `${dateParts[2]}-${mm.padStart(2, '0')}-${dd.padStart(2, '0')}`;
             }
@@ -2922,6 +2952,8 @@ async function startServer() {
         message = "Spreadsheet not found. Please check the Spreadsheet ID in settings.";
       } else if (err.code === 403) {
         message = "Permission denied. Please ensure the Service Account email is shared as an 'Editor' on the Google Sheet.";
+      } else if (message.includes("invalid_grant: Invalid JWT Signature")) {
+        message = "Invalid JWT Signature. The Private Key does not match the Service Account Email. Please copy both from the SAME JSON file.";
       }
       res.status(500).json({ error: message });
     }
