@@ -57,7 +57,8 @@ import {
   ArrowDownRight,
   Mail,
   Key,
-  User
+  User,
+  HelpCircle
 } from 'lucide-react';
 import { SKUS, CATEGORIES, OrderState, OrderItem, SKU, OBAssignment } from './types';
 
@@ -651,23 +652,14 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       const activeOBs = obStatsByTsm[tsm].size;
       tsms[tsm].activeOBs = activeOBs;
       
-      // Find OBs for this TSM in obAnalysis to get their achievements
-      const tsmOBs = obAnalysis.filter(ob => ob.tsm === tsm);
-      let totalAchievement = 0;
-      let validOBs = 0;
-      
-      tsmOBs.forEach(ob => {
-        if (ob.target > 0) {
-          totalAchievement += (ob.totalSales / ob.target) * 100;
-          validOBs++;
-        }
-      });
-      
-      tsms[tsm].averageOBAchievement = validOBs > 0 ? totalAchievement / validOBs : 0;
+      // We don't have obAnalysis here, so we will just calculate average achievement based on total target of TSM
+      const tsmTarget = hierarchy.filter(h => h.role === 'TSM' && h.name === tsm).reduce((sum, h) => sum + (Number(h.target_ctn) || 0), 0);
+      tsms[tsm].totalTarget = tsmTarget;
+      tsms[tsm].averageOBAchievement = tsmTarget > 0 ? (tsms[tsm].totalSales / tsmTarget) * 100 : 0;
     });
 
     return Object.values(tsms).sort((a, b) => b.totalSales - a.totalSales);
-  }, [monthStats, obAnalysis]);
+  }, [monthStats, hierarchy]);
 
   const categoryWiseSales = useMemo(() => {
     const groups: Record<string, any> = {};
@@ -1471,6 +1463,7 @@ const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v:
     { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'profile', label: 'Profile', icon: User, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
     { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
+    { id: 'help', label: 'Help', icon: HelpCircle, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
   ];
 
   const visibleTabs = tabs.filter(tab => !role || tab.roles.includes(role));
@@ -2133,7 +2126,7 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
 };
 
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'profile'>('entry');
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'profile' | 'help'>('entry');
   const [token, setToken] = useState<string | null>(() => {
     const saved = localStorage.getItem('auth_token');
     return (saved === 'null' || !saved) ? null : saved;
@@ -2163,6 +2156,7 @@ export default function App() {
   const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [matrixView, setMatrixView] = useState<string>('Total');
+  const [showUserManual, setShowUserManual] = useState(false);
 
   const handleLogin = (token: string, userData: any) => {
     const role = normalizeRole(userData.role);
@@ -2272,7 +2266,7 @@ export default function App() {
   const [obTargetsEdit, setObTargetsEdit] = useState<Record<string, number>>({});
   const [googleStatus, setGoogleStatus] = useState<{ connected: boolean; spreadsheetId: string | null; method?: string }>({ connected: false, spreadsheetId: null });
   const [isSyncing, setIsSyncing] = useState(false);
-  const [isGoogleConfigLocked, setIsGoogleConfigLocked] = useState(true);
+  const [isGoogleConfigLocked, setIsGoogleConfigLocked] = useState(false);
   const [dailyStatus, setDailyStatus] = useState<any[]>([]);
   const [isLoadingDailyStatus, setIsLoadingDailyStatus] = useState(false);
 
@@ -4816,13 +4810,6 @@ export default function App() {
             <div className="card-clean p-4 space-y-2">
               <div className="flex justify-between items-center">
                 <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Google Sheets Sync</h3>
-                <button 
-                  onClick={() => setIsGoogleConfigLocked(!isGoogleConfigLocked)}
-                  className={`p-1 rounded-md transition-colors ${isGoogleConfigLocked ? 'text-slate-400 hover:text-seablue' : 'text-seablue bg-seablue/10'}`}
-                  title={isGoogleConfigLocked ? "Unlock Settings" : "Lock Settings"}
-                >
-                  {isGoogleConfigLocked ? <Lock className="w-3.5 h-3.5" /> : <Settings className="w-3.5 h-3.5 animate-pulse" />}
-                </button>
                 <div className="flex items-center gap-2">
                   <div className={`w-2 h-2 rounded-full ${googleStatus.connected ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
                   <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
@@ -4831,11 +4818,16 @@ export default function App() {
                 </div>
               </div>
               
-              <div className={`space-y-3 transition-all duration-300 ${isGoogleConfigLocked ? 'opacity-50 pointer-events-none' : 'opacity-100'}`}>
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl mb-4">
+                <p className="text-[10px] font-bold text-amber-800">
+                  ⚠️ IMPORTANT: To prevent these credentials from being lost during app updates, please save them in the <strong>AI Studio Settings &gt; Secrets</strong> menu as <code className="bg-amber-100 px-1 rounded">GOOGLE_SPREADSHEET_ID</code>, <code className="bg-amber-100 px-1 rounded">GOOGLE_SERVICE_ACCOUNT_EMAIL</code>, and <code className="bg-amber-100 px-1 rounded">GOOGLE_PRIVATE_KEY</code>.
+                </p>
+              </div>
+              
+              <div className="space-y-3 transition-all duration-300">
                 <div className="space-y-1">
                   <label className="text-[8px] font-bold text-slate-400 uppercase flex justify-between">
                     Spreadsheet ID
-                    {isGoogleConfigLocked && <span className="text-[7px] text-amber-500 font-black">LOCKED</span>}
                   </label>
                   <input 
                     type="text" 
@@ -4843,7 +4835,6 @@ export default function App() {
                     value={appConfig.google_spreadsheet_id || ''} 
                     onChange={(e) => updateConfig('google_spreadsheet_id', e.target.value)}
                     className="input-clean w-full text-[10px]"
-                    disabled={isGoogleConfigLocked}
                   />
                 </div>
                 <div className="space-y-1">
@@ -4854,7 +4845,6 @@ export default function App() {
                     value={appConfig.google_service_account_email || ''} 
                     onChange={(e) => updateConfig('google_service_account_email', e.target.value)}
                     className="input-clean w-full text-[10px]"
-                    disabled={isGoogleConfigLocked}
                   />
                 </div>
                 <div className="space-y-1">
@@ -4887,7 +4877,6 @@ export default function App() {
                     value={appConfig.google_private_key || ''} 
                     onChange={(e) => updateConfig('google_private_key', e.target.value)}
                     className="input-clean w-full text-[10px] h-32 resize-none font-mono"
-                    disabled={isGoogleConfigLocked}
                   />
                 </div>
               </div>
@@ -5558,6 +5547,67 @@ export default function App() {
               </table>
             </div>
           </section>
+        </main>
+      </div>
+    );
+  }
+
+  if (view === 'help') {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-20">
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+        <main className="max-w-4xl mx-auto p-4 space-y-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h1 className="text-2xl font-black text-seablue uppercase tracking-tight mb-2">User Manual</h1>
+            <p className="text-sm text-slate-500 mb-6">A simple guide to using the SalesPulse application.</p>
+            
+            <div className="space-y-6">
+              <div className="border-l-4 border-seablue pl-4">
+                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">1. Login</h2>
+                <p className="text-sm text-slate-600">
+                  Open the app and click the <strong>"Sign in with Google"</strong> button. Use your official company email address. If you are not registered, contact your admin.
+                </p>
+              </div>
+
+              <div className="border-l-4 border-emerald-500 pl-4">
+                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">2. Entry Tab (Daily Sales)</h2>
+                <p className="text-sm text-slate-600 mb-2">This is where you enter your daily sales data.</p>
+                <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+                  <li><strong>Date & Location:</strong> Select the date, your town, and distributor.</li>
+                  <li><strong>Shops Data:</strong> Enter Total Shops, Visited Shops, and Productive Shops.</li>
+                  <li><strong>Sales Quantities:</strong> For each product, enter the number of Cartons (Ctn), Dozens (Dzn), or Packs (Pks) sold.</li>
+                  <li><strong>Save as Draft:</strong> If you don't have internet, click "Save as Draft". It will be saved on your phone.</li>
+                  <li><strong>Submit:</strong> When you have internet, click "Submit" to send the data to the server.</li>
+                </ul>
+              </div>
+
+              <div className="border-l-4 border-amber-500 pl-4">
+                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">3. History Tab</h2>
+                <p className="text-sm text-slate-600 mb-2">View your previously submitted orders and drafts.</p>
+                <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+                  <li><strong>Drafts:</strong> Orders saved without internet appear here. They will automatically sync when you connect to the internet.</li>
+                  <li><strong>Submitted Orders:</strong> View all orders you have successfully sent.</li>
+                  <li><strong>Delete:</strong> You can delete drafts if you made a mistake.</li>
+                </ul>
+              </div>
+
+              <div className="border-l-4 border-purple-500 pl-4">
+                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">4. Dashboard & Reports</h2>
+                <p className="text-sm text-slate-600 mb-2">View your performance and sales statistics.</p>
+                <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+                  <li><strong>Dashboard:</strong> Shows a summary of your sales, targets, and achievements.</li>
+                  <li><strong>Reports:</strong> Detailed breakdown of sales by product and category.</li>
+                </ul>
+              </div>
+
+              <div className="border-l-4 border-rose-500 pl-4">
+                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">5. Logout</h2>
+                <p className="text-sm text-slate-600">
+                  To log out, go to the <strong>Profile</strong> tab and click the <strong>"Logout"</strong> button.
+                </p>
+              </div>
+            </div>
+          </div>
         </main>
       </div>
     );
@@ -6609,7 +6659,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      <AIChatBot />
+      {(userRole === 'Super Admin' || userRole === 'Admin') && <AIChatBot />}
     </div>
   );
 }

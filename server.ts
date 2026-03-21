@@ -132,6 +132,20 @@ db.exec(`
   );
   `);
 
+  // Remove duplicate orders (keep the latest one based on id)
+  try {
+    db.exec(`
+      DELETE FROM submitted_orders 
+      WHERE id NOT IN (
+        SELECT MAX(id) 
+        FROM submitted_orders 
+        GROUP BY ob_contact, date
+      )
+    `);
+  } catch (e) {
+    console.error("Error removing duplicates:", e);
+  }
+
   // Add unique index for sync consistency
   try {
     db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_submitted_orders_date_ob ON submitted_orders(date, ob_contact)").run();
@@ -510,12 +524,33 @@ async function startServer() {
 
   // Initial Config - Only insert if not exists
   db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("total_working_days", "25");
-  db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("holidays", "");
+  
+  // Default Pakistani Holidays for 2026
+  const pakHolidays2026 = [
+    "2026-02-05", // Kashmir Day
+    "2026-03-20", "2026-03-21", "2026-03-22", // Eid-ul-Fitr (approx)
+    "2026-03-23", // Pakistan Day
+    "2026-05-01", // Labor Day
+    "2026-05-27", "2026-05-28", "2026-05-29", // Eid-ul-Azha (approx)
+    "2026-07-25", "2026-07-26", // Ashura (approx)
+    "2026-08-14", // Independence Day
+    "2026-09-25", // Eid Milad-un-Nabi (approx)
+    "2026-11-09", // Iqbal Day
+    "2026-12-25"  // Quaid-e-Azam Day
+  ].join(',');
+  
+  db.prepare("INSERT OR IGNORE INTO app_config (key, value) VALUES (?, ?)").run("holidays", pakHolidays2026);
   
   // Migration: Ensure total_working_days exists
   const hasWorkingDays = db.prepare("SELECT 1 FROM app_config WHERE key = 'total_working_days'").get();
   if (!hasWorkingDays) {
     db.prepare("INSERT INTO app_config (key, value) VALUES (?, ?)").run("total_working_days", "25");
+  }
+  
+  // Migration: If holidays is empty or missing, fill with defaults
+  const currentHolidays = db.prepare("SELECT value FROM app_config WHERE key = 'holidays'").get() as any;
+  if (!currentHolidays || (currentHolidays.value || '').trim() === '') {
+    db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("holidays", pakHolidays2026);
   }
 
   // Helper for PST Time
@@ -640,7 +675,14 @@ async function startServer() {
     const trimmedRegion = (region || '').trim().toLowerCase();
 
     if (role === 'Admin' || role === 'Super Admin' || role === 'Director') {
-      return hierarchy.map(h => h.ob_id);
+      const assignments = db.prepare("SELECT contact FROM ob_assignments").all() as any[];
+      const submissions = db.prepare("SELECT DISTINCT ob_contact FROM submitted_orders").all() as any[];
+      const allOBs = new Set([
+        ...hierarchy.map(h => h.ob_id), 
+        ...assignments.map(a => a.contact),
+        ...submissions.map(s => s.ob_contact)
+      ]);
+      return Array.from(allOBs).filter(id => id);
     } else if (role === 'NSM') {
       return hierarchy.filter(h => (h.nsm_name || '').trim().toLowerCase() === trimmedName).map(h => h.ob_id);
     } else if (role === 'RSM' || role === 'SC') {
@@ -653,6 +695,34 @@ async function startServer() {
       return hierarchy.filter(h => (h.asm_tsm_name || '').trim().toLowerCase() === trimmedName).map(h => h.ob_id);
     } else if (role === 'OB') {
       return [contact];
+    }
+    return [];
+  }
+
+  function getVisibleDistributors(user: any): string[] {
+    const { role, name, contact, region } = user;
+    const trimmedName = (name || '').trim().toLowerCase();
+    const trimmedRegion = (region || '').trim().toLowerCase();
+
+    if (role === 'Admin' || role === 'Super Admin' || role === 'Director') {
+      const dists = db.prepare("SELECT name FROM distributors").all() as any[];
+      const hierarchyDists = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy").all() as any[];
+      const allDists = new Set([...dists.map(d => d.name), ...hierarchyDists.map(h => h.distributor_name)]);
+      return Array.from(allDists).filter(d => d);
+    } else if (role === 'NSM') {
+      const hierarchy = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(nsm_name)) = ?").all(trimmedName) as any[];
+      return hierarchy.map(h => h.distributor_name);
+    } else if (role === 'RSM' || role === 'SC') {
+      const hierarchy = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(rsm_name)) = ? OR LOWER(TRIM(sc_name)) = ? OR LOWER(TRIM(territory_region)) = ?").all(trimmedName, trimmedName, trimmedRegion) as any[];
+      const dists = db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(region)) = ?").all(trimmedRegion) as any[];
+      return Array.from(new Set([...hierarchy.map(h => h.distributor_name), ...dists.map(d => d.name)])).filter(d => d);
+    } else if (role === 'TSM' || role === 'ASM') {
+      const hierarchy = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(asm_tsm_name)) = ?").all(trimmedName) as any[];
+      const dists = db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(tsm)) = ?").all(trimmedName) as any[];
+      return Array.from(new Set([...hierarchy.map(h => h.distributor_name), ...dists.map(d => d.name)])).filter(d => d);
+    } else if (role === 'OB') {
+      const hierarchy = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE ob_id = ?").all(contact) as any[];
+      return hierarchy.map(h => h.distributor_name);
     }
     return [];
   }
@@ -2021,20 +2091,15 @@ async function startServer() {
   app.get("/api/stocks", authenticateToken, (req: any, res) => {
     try {
       const { from, to, tsm } = req.query;
-      const visibleOBIds = getVisibleOBIds(req.user);
+      const visibleDists = getVisibleDistributors(req.user);
 
       let query = "SELECT * FROM stock_reports WHERE 1=1";
       const params: any[] = [];
 
-      // For stocks, we filter by distributors associated with visible OBs
-      const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
-      const visibleDists = hierarchy.filter(h => visibleOBIds.includes(h.ob_id)).map(h => h.distributor_name);
-      const uniqueDists = Array.from(new Set(visibleDists));
-
-      if (uniqueDists.length > 0) {
-        const placeholders = uniqueDists.map(() => '?').join(',');
+      if (visibleDists.length > 0) {
+        const placeholders = visibleDists.map(() => '?').join(',');
         query += ` AND distributor IN (${placeholders})`;
-        params.push(...uniqueDists);
+        params.push(...visibleDists);
       } else if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin' && req.user.role !== 'Director') {
         return res.json([]);
       }
@@ -2061,13 +2126,17 @@ async function startServer() {
   app.get("/api/daily-status", authenticateToken, (req: any, res) => {
     const { date } = req.query;
     try {
+      const { role } = req.user;
+      const isAdmin = role === 'Admin' || role === 'Super Admin' || role === 'Director';
       const visibleOBIds = getVisibleOBIds(req.user);
       let allOBs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       
-      if (visibleOBIds.length > 0) {
-        allOBs = allOBs.filter(ob => visibleOBIds.includes(ob.contact));
-      } else if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin' && req.user.role !== 'Director') {
-        allOBs = [];
+      if (!isAdmin) {
+        if (visibleOBIds.length > 0) {
+          allOBs = allOBs.filter(ob => visibleOBIds.includes(ob.contact));
+        } else {
+          allOBs = [];
+        }
       }
 
       const submissions = db.prepare("SELECT order_booker, ob_contact, visit_type, submitted_at FROM submitted_orders WHERE date = ?").all(date) as any[];
@@ -2335,29 +2404,34 @@ async function startServer() {
 
   app.get("/api/national/stats", authenticateToken, (req: any, res) => {
     try {
-      const { role, name, contact, region } = req.user;
-      const currentMonth = getPSTDate().slice(0, 7);
+      const { role } = req.user;
+      const isAdmin = role === 'Admin' || role === 'Super Admin' || role === 'Director';
       const visibleOBIds = getVisibleOBIds(req.user);
       
       // 1. Get hierarchy to determine visibility
       const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
       
-      if (visibleOBIds.length === 0) {
+      if (!isAdmin && visibleOBIds.length === 0) {
         return res.json({ stats: [], hierarchy: [], timeInfo: calculateTimeGone() });
       }
 
       // 2. Fetch stats for visible OBs
-      const placeholders = visibleOBIds.map(() => '?').join(',');
-      const stats = db.prepare(`
-        SELECT * FROM submitted_orders 
-        WHERE ob_contact IN (${placeholders})
-      `).all(...visibleOBIds);
+      let stats;
+      if (isAdmin) {
+        stats = db.prepare("SELECT * FROM submitted_orders").all();
+      } else {
+        const placeholders = visibleOBIds.map(() => '?').join(',');
+        stats = db.prepare(`
+          SELECT * FROM submitted_orders 
+          WHERE ob_contact IN (${placeholders})
+        `).all(...visibleOBIds);
+      }
 
       const timeInfo = calculateTimeGone();
 
       res.json({
         stats,
-        hierarchy: hierarchy.filter(h => visibleOBIds.includes(h.ob_id)),
+        hierarchy: isAdmin ? hierarchy : hierarchy.filter(h => visibleOBIds.includes(h.ob_id)),
         timeInfo
       });
     } catch (err) {
