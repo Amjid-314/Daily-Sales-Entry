@@ -1443,7 +1443,19 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   );
 };
 
-const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing }: { user: any, data: any, setView: (v: any) => void, onRefresh?: () => void, isSyncing?: boolean }) => {
+export const APP_TABS = [
+  { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
+  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'stats', label: 'Stats', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
+  { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
+  { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'profile', label: 'Profile', icon: User, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
+  { id: 'help', label: 'Help', icon: HelpCircle, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+];
+
+const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }: { user: any, data: any, setView: (v: any) => void, onRefresh?: () => void, isSyncing?: boolean, role: string | null }) => {
   if (!user || !data) return (
     <div className="flex items-center justify-center min-h-screen bg-slate-50">
       <Loader2 className="w-8 h-8 text-seablue animate-spin" />
@@ -1460,57 +1472,6 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing }: { use
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
-      {/* Brand Achievement (MTD) with RPD - MOVED TO TOP */}
-      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-seablue" />
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand Achievement (MTD) & RPD</h3>
-          </div>
-          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Required Per Day</span>
-        </div>
-        <div className="space-y-5">
-          {data.brandPerformance.map((bp: any, idx: number) => (
-            <motion.div 
-              key={bp.category}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              className="space-y-2"
-            >
-              <div className="flex justify-between items-end">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[bp.category] }} />
-                  <span className="text-[10px] font-black text-slate-700 uppercase">{bp.category}</span>
-                </div>
-                <div className="text-right flex flex-col items-end">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[10px] font-black text-seablue">{bp.achievement.toFixed(1)}</span>
-                    <span className="text-[8px] font-bold text-slate-400">/</span>
-                    <span className="text-[10px] font-black text-slate-400">{bp.target.toFixed(1)}</span>
-                    <span className={`ml-2 text-[10px] font-black ${bp.percentage >= 100 ? 'text-emerald-600' : bp.percentage >= 80 ? 'text-amber-500' : 'text-rose-500'}`}>
-                      {bp.percentage.toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="text-[8px] font-black text-rose-500 uppercase tracking-widest mt-0.5">
-                    RPD: {bp.rpd.toFixed(1)} Ctn
-                  </div>
-                </div>
-              </div>
-              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-50">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(100, bp.percentage)}%` }}
-                  transition={{ duration: 1, delay: 0.5 + idx * 0.1 }}
-                  className="h-full rounded-full shadow-sm"
-                  style={{ backgroundColor: CATEGORY_COLORS[bp.category] }}
-                />
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
       {/* Profile Header */}
       <div className="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-white flex items-center gap-4 relative overflow-hidden">
         <div className="absolute top-0 right-0 p-4">
@@ -1538,6 +1499,65 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing }: { use
           </p>
         </div>
       </div>
+
+      {/* Brand Achievement (MTD) with RPD */}
+      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <Target className="w-4 h-4 text-seablue" />
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand Performance</h3>
+          </div>
+        </div>
+        <div className="space-y-6">
+          {data.brandPerformance.map((bp: any, idx: number) => (
+            <motion.div 
+              key={bp.category}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              className="space-y-3"
+            >
+              <div className="flex justify-between items-end">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[bp.category] }} />
+                  <span className="text-[11px] font-black text-slate-700 uppercase">{bp.category}</span>
+                </div>
+                <div className="text-right flex flex-col items-end">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[12px] font-black text-seablue">{bp.achievement.toFixed(1)}</span>
+                    <span className="text-[9px] font-bold text-slate-400">/</span>
+                    <span className="text-[12px] font-black text-slate-400">{bp.target.toFixed(1)}</span>
+                    <span className={`ml-2 text-[11px] font-black ${bp.percentage >= 100 ? 'text-emerald-600' : bp.percentage >= 80 ? 'text-amber-500' : 'text-rose-500'}`}>
+                      {bp.percentage.toFixed(0)}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+              
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-50">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, bp.percentage)}%` }}
+                  transition={{ duration: 1, delay: 0.5 + idx * 0.1 }}
+                  className="h-full rounded-full shadow-sm"
+                  style={{ backgroundColor: CATEGORY_COLORS[bp.category] }}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-2 mt-2">
+                <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
+                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg Daily Sales</div>
+                  <div className="text-[10px] font-black text-slate-700">{bp.avgDailySales.toFixed(1)}</div>
+                </div>
+                <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100">
+                  <div className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-1">Today Target (RPD)</div>
+                  <div className="text-[10px] font-black text-amber-600">{bp.rpd.toFixed(1)}</div>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
 
       {/* Quick Stats Grid */}
       <div className="grid grid-cols-2 gap-4">
@@ -1649,7 +1669,7 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing }: { use
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="text-[8px] font-black text-slate-400 uppercase tracking-widest border-b">
-                <th className="py-2 pr-2">Date / Route</th>
+                <th className="py-2 pr-2">Date / Info</th>
                 {["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].map(cat => (
                   <th key={cat} className="py-2 px-2 text-center">{cat}</th>
                 ))}
@@ -1661,6 +1681,7 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing }: { use
                   <td className="py-2 pr-2">
                     <div className="text-[9px] font-black text-slate-700">{v.date}</div>
                     <div className="text-[7px] font-bold text-slate-400 uppercase">{v.route}</div>
+                    {role !== 'OB' && <div className="text-[7px] font-black text-seablue uppercase truncate max-w-[80px]">{v.obName}</div>}
                   </td>
                   {["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].map(cat => (
                     <td key={cat} className="py-2 px-2 text-center">
@@ -1726,26 +1747,28 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing }: { use
       </section>
 
       {/* Action Buttons */}
-      <div className="grid grid-cols-2 gap-4">
-        <button 
-          onClick={() => setView('entry')}
-          className="flex flex-col items-center justify-center p-6 bg-white border border-slate-100 rounded-3xl shadow-lg shadow-slate-200/40 hover:bg-slate-50 transition-all group"
-        >
-          <div className="w-12 h-12 bg-seablue/10 rounded-2xl flex items-center justify-center text-seablue mb-3 group-hover:scale-110 transition-transform">
-            <ClipboardList className="w-6 h-6" />
-          </div>
-          <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">New Entry</span>
-        </button>
-        <button 
-          onClick={() => setView('dashboard')}
-          className="flex flex-col items-center justify-center p-6 bg-white border border-slate-100 rounded-3xl shadow-lg shadow-slate-200/40 hover:bg-slate-50 transition-all group"
-        >
-          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 mb-3 group-hover:scale-110 transition-transform">
-            <LayoutDashboard className="w-6 h-6" />
-          </div>
-          <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Full Dashboard</span>
-        </button>
-      </div>
+      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
+        <div className="flex items-center gap-2 mb-6">
+          <LayoutDashboard className="w-4 h-4 text-seablue" />
+          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Quick Navigation</h3>
+        </div>
+        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+          {APP_TABS.filter(tab => !role || tab.roles.includes(role)).map((tab) => {
+            return (
+              <button 
+                key={tab.id}
+                onClick={() => setView(tab.id as any)}
+                className="flex flex-col items-center justify-center p-4 bg-slate-50 border border-slate-100 rounded-2xl shadow-sm hover:bg-seablue/5 hover:border-seablue/20 transition-all group"
+              >
+                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-seablue mb-2 shadow-sm group-hover:scale-110 transition-transform">
+                  <tab.icon className="w-5 h-5" />
+                </div>
+                <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest text-center">{tab.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
     </div>
   );
 };
@@ -1878,19 +1901,7 @@ const UserProfileView = ({ user, onUpdate, apiFetch }: { user: any, onUpdate: (d
 };
 
 const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v: any) => void, role: string | null, onLogout: () => void }) => {
-  const tabs = [
-    { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'stats', label: 'Stats', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
-    { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
-    { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'profile', label: 'Profile', icon: User, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-    { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
-    { id: 'help', label: 'Help', icon: HelpCircle, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-  ];
-
-  const visibleTabs = tabs.filter(tab => !role || tab.roles.includes(role));
+  const visibleTabs = APP_TABS.filter(tab => !role || tab.roles.includes(role));
 
   return (
     <nav className="bg-white border-b border-slate-100 px-4 h-14 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar gap-2">
@@ -2595,19 +2606,45 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
   );
 };
 
-const calculateTotalBags = (order: OrderState) => {
-  if (!order.items) return 0;
-  return Object.keys(order.items).reduce((sum, skuId) => {
+const calculateTotalBags = (order: any) => {
+  const items = order.items || order.order_data;
+  if (!items) return 0;
+  return Object.keys(items).reduce((sum, skuId) => {
     const sku = SKUS.find(s => s.id === skuId);
     if (!sku) return sum;
-    const item = order.items[skuId];
+    const item = items[skuId];
     const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
     return sum + (packs / sku.unitsPerCarton);
   }, 0);
 };
 
+const normalizeRole = (role: string): any => {
+  const r = (role || '').trim().toUpperCase();
+  if (r === 'SUPER ADMIN') return 'Super Admin';
+  if (r === 'ADMIN') return 'Admin';
+  if (r === 'DIRECTOR') return 'Director';
+  if (r === 'NSM' || r === 'NATIONAL SALES MANAGER') return 'NSM';
+  if (r === 'RSM' || r === 'REGIONAL SALES MANAGER') return 'RSM';
+  if (r === 'SC' || r === 'SALES CONTROLLER' || r === 'SALES COORDINATOR') return 'SC';
+  if (r === 'TSM' || r === 'TERRITORY SALES MANAGER') return 'TSM';
+  if (r === 'ASM' || r === 'AREA SALES MANAGER') return 'ASM';
+  if (r === 'OB' || r === 'ORDER BOOKER') return 'OB';
+  return role;
+};
+
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'profile' | 'help'>('entry');
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'profile' | 'help'>(() => {
+    const saved = localStorage.getItem('user_data');
+    if (saved) {
+      try {
+        const role = normalizeRole(JSON.parse(saved).role);
+        if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(role)) {
+          return 'dashboard';
+        }
+      } catch(e) {}
+    }
+    return 'entry';
+  });
   const [token, setToken] = useState<string | null>(() => {
     const saved = localStorage.getItem('auth_token');
     return (saved === 'null' || !saved) ? null : saved;
@@ -2616,19 +2653,6 @@ export default function App() {
     const saved = localStorage.getItem('user_data');
     try { return saved ? JSON.parse(saved) : null; } catch(e) { return null; }
   });
-  const normalizeRole = (role: string): any => {
-    const r = (role || '').trim().toUpperCase();
-    if (r === 'SUPER ADMIN') return 'Super Admin';
-    if (r === 'ADMIN') return 'Admin';
-    if (r === 'DIRECTOR') return 'Director';
-    if (r === 'NSM' || r === 'NATIONAL SALES MANAGER') return 'NSM';
-    if (r === 'RSM' || r === 'REGIONAL SALES MANAGER') return 'RSM';
-    if (r === 'SC' || r === 'SALES CONTROLLER' || r === 'SALES COORDINATOR') return 'SC';
-    if (r === 'TSM' || r === 'TERRITORY SALES MANAGER') return 'TSM';
-    if (r === 'ASM' || r === 'AREA SALES MANAGER') return 'ASM';
-    if (r === 'OB' || r === 'ORDER BOOKER') return 'OB';
-    return role;
-  };
 
   const [userRole, setUserRole] = useState<'Super Admin' | 'Admin' | 'TSM' | 'ASM' | 'OB' | 'Director' | 'NSM' | 'RSM' | 'SC' | null>(() => normalizeRole(user?.role));
   const [userName, setUserName] = useState<string | null>(() => user?.name || null);
@@ -2658,7 +2682,7 @@ export default function App() {
     }
 
     if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(role)) {
-      setView('profile');
+      setView('dashboard');
     }
   };
 
@@ -2732,7 +2756,7 @@ export default function App() {
     });
 
     const todaySales = userStats.filter(s => s.date === today).reduce((sum, s) => sum + calculateTotalBags(s), 0);
-    const mtdSales = userStats.filter(s => s.date.startsWith(currentMonth)).reduce((sum, s) => sum + calculateTotalBags(s), 0);
+    const mtdSales = userStats.filter(s => s.date && s.date.startsWith(currentMonth)).reduce((sum, s) => sum + calculateTotalBags(s), 0);
 
     const now = getPSTDate();
     const year = parseInt(now.slice(0, 4));
@@ -2772,8 +2796,10 @@ export default function App() {
 
       const remainingTarget = Math.max(0, target - ach);
       const rpd = remainingTarget / remainingWorkingDays;
+      const avgDailySales = workingDaysPassed > 0 ? ach / workingDaysPassed : 0;
+      const todayTarget = rpd;
 
-      return { category: cat, achievement: ach, target: target || 1, percentage: (target || 1) > 0 ? (ach / (target || 1)) * 100 : 0, rpd };
+      return { category: cat, achievement: ach, target: target || 1, percentage: (target || 1) > 0 ? (ach / (target || 1)) * 100 : 0, rpd, avgDailySales, todayTarget };
     }).sort((a, b) => a.percentage - b.percentage);
 
     // OB Performance for TSM/ASM
@@ -2818,7 +2844,7 @@ export default function App() {
           }, 0);
           brands[cat] = catAch;
         });
-        return { date: s.date, route: s.route, brands };
+        return { date: s.date, route: s.route, obName: s.ob_name || s.order_booker || s.ob_contact || 'Unknown', brands };
       });
 
     const routes: Record<string, any[]> = {};
@@ -3008,10 +3034,14 @@ export default function App() {
 
   const focusableIds = useMemo(() => {
     const ids: string[] = [];
-    SKUS.forEach(sku => {
-      ids.push(`${sku.id}-ctn`);
-      if (sku.unitsPerDozen > 0) ids.push(`${sku.id}-dzn`);
-      ids.push(`${sku.id}-pks`);
+    CATEGORIES.forEach(category => {
+      ids.push(`prod-${category}`);
+      ids.push(`target-${category}`);
+      SKUS.filter(s => s.category === category).forEach(sku => {
+        ids.push(`${sku.id}-ctn`);
+        if (sku.unitsPerDozen > 0 && category !== "Match") ids.push(`${sku.id}-dzn`);
+        ids.push(`${sku.id}-pks`);
+      });
     });
     return ids;
   }, []);
@@ -6273,15 +6303,7 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-50 pb-20">
         <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
-        <div className="max-w-4xl mx-auto">
-          <PostLoginDashboard 
-            user={user} 
-            data={postLoginData} 
-            setView={setView} 
-            onRefresh={syncEverything}
-            isSyncing={isSyncingGlobal}
-          />
-          
+        <div className="max-w-4xl mx-auto pt-6">
           <div className="px-4 pb-10">
             <div className="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-white">
               <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 border-b pb-2">Edit Profile Settings</h2>
@@ -7078,12 +7100,14 @@ export default function App() {
                   <div className={`flex flex-col items-center bg-white border rounded-lg px-1.5 py-0.5 shadow-sm min-w-[40px] transition-colors ${categoryTotals[category] > 0 && (order.categoryProductiveShops[category] || 0) <= 0 ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}>
                     <span className={`text-[6px] font-black uppercase tracking-tighter ${categoryTotals[category] > 0 && (order.categoryProductiveShops[category] || 0) <= 0 ? 'text-red-600' : 'text-slate-400'}`}>Prod</span>
                     <input 
+                      ref={el => inputRefs.current[`prod-${category}`] = el}
                       type="number" 
                       inputMode="numeric" 
                       autoComplete="off" 
                       placeholder="0"
                       value={order.categoryProductiveShops[category] || ''} 
                       onChange={(e) => setOrder(prev => ({ ...prev, categoryProductiveShops: { ...prev.categoryProductiveShops, [category]: parseInt(e.target.value) || 0 } }))} 
+                      onKeyDown={(e) => handleKeyDown(e, `prod-${category}`)}
                       className={`w-6 text-center text-[10px] font-bold focus:outline-none bg-transparent ${categoryTotals[category] > 0 && (order.categoryProductiveShops[category] || 0) <= 0 ? 'text-red-700' : 'text-seablue'}`} 
                     />
                   </div>
@@ -7106,11 +7130,13 @@ export default function App() {
                       <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Brand Target</span>
                     </div>
                     <input 
+                      ref={el => inputRefs.current[`target-${category}`] = el}
                       type="number" 
                       inputMode="decimal"
                       autoComplete="off"
                       value={order.targets[category] || ''} 
                       onChange={(e) => handleTargetChange(category, parseFloat(e.target.value) || 0)}
+                      onKeyDown={(e) => handleKeyDown(e, `target-${category}`)}
                       className="w-10 text-center text-[11px] font-bold text-slate-600 bg-transparent focus:outline-none"
                       placeholder="0"
                     />
