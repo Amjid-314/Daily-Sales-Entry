@@ -243,11 +243,12 @@ const authenticateToken = (req: any, res: any, next: any) => {
       if (r === 'SUPER ADMIN') user.role = 'Super Admin';
       else if (r === 'ADMIN') user.role = 'Admin';
       else if (r === 'DIRECTOR') user.role = 'Director';
-      else if (r === 'NSM') user.role = 'NSM';
-      else if (r === 'RSM') user.role = 'RSM';
-      else if (r === 'SC') user.role = 'SC';
-      else if (r === 'TSM' || r === 'ASM') user.role = r;
-      else if (r === 'OB') user.role = 'OB';
+      else if (r === 'NSM' || r === 'NATIONAL SALES MANAGER') user.role = 'NSM';
+      else if (r === 'RSM' || r === 'REGIONAL SALES MANAGER') user.role = 'RSM';
+      else if (r === 'SC' || r === 'SALES CONTROLLER' || r === 'SALES COORDINATOR') user.role = 'SC';
+      else if (r === 'TSM' || r === 'TERRITORY SALES MANAGER') user.role = 'TSM';
+      else if (r === 'ASM' || r === 'AREA SALES MANAGER') user.role = 'ASM';
+      else if (r === 'OB' || r === 'ORDER BOOKER') user.role = 'OB';
       else user.role = user.role.trim();
     }
     

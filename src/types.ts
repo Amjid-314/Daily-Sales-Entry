@@ -111,6 +111,22 @@ export const CATEGORIES = [
   "Match"
 ];
 
+export const BRAND_GROUPS: Record<string, string[]> = {
+  "Washing Powder": ["Kite Glow", "Burq Action", "Vero"],
+  "DWB": ["DWB"],
+  "Match": ["Match"]
+};
+
+export const BRAND_GROUP_NAMES = Object.keys(BRAND_GROUPS);
+
+export const CATEGORY_COLORS: Record<string, string> = {
+  "Kite Glow": "#38bdf8", // Light Blue
+  "Burq Action": "#f97316", // Orange
+  "Vero": "#eab308", // Yellow
+  "DWB": "#22c55e", // Green
+  "Match": "#1e3a8a" // Dark Blue
+};
+
 export const SKUS: SKU[] = [
   // Kite Glow
   { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12, pricePerCarton: 1440, weight_gm_per_pack: 30 },

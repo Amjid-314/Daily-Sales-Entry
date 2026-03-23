@@ -48,6 +48,7 @@ import {
   Cloud,
   Share2,
   TrendingUp,
+  TrendingDown,
   Target,
   Users,
   DollarSign,
@@ -60,7 +61,7 @@ import {
   User,
   HelpCircle
 } from 'lucide-react';
-import { SKUS, CATEGORIES, OrderState, OrderItem, SKU, OBAssignment } from './types';
+import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
 
 const STORAGE_KEY = 'ob_order_draft';
 const LOGO_STORAGE_KEY = 'app_logo_base64';
@@ -310,6 +311,9 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   });
   const [filterValue, setFilterValue] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [targetView, setTargetView] = useState('Brand');
+  const [productFilter, setProductFilter] = useState<string>('All');
+  const [heatmapView, setHeatmapView] = useState('Total');
 
   const visibleFilterLevels = useMemo(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') {
@@ -329,7 +333,11 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     }
   }, [visibleFilterLevels]);
 
-  const brands = ["Kite Glow", "Vero", "Burq Action"];
+  const brands = useMemo(() => {
+    if (productFilter === 'All') return categories;
+    if (productFilter === 'Washing Powder') return ['Kite Glow', 'Burq Action', 'Vero'];
+    return [productFilter];
+  }, [productFilter, categories]);
 
   const processedStats = useMemo(() => {
     let baseStats = stats;
@@ -381,10 +389,20 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton || 0)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen || 0)) + Number(item.pks || 0);
         const ctns = Number(sku.unitsPerCarton || 0) > 0 ? packs / Number(sku.unitsPerCarton) : 0;
         
-        totalBags += ctns;
-        brandSales[sku.category] = (brandSales[sku.category] || 0) + ctns;
+        let matchesFilter = true;
+        if (productFilter !== 'All') {
+          if (productFilter === 'Washing Powder') {
+            matchesFilter = ['Kite Glow', 'Burq Action', 'Vero'].includes(sku.category);
+          } else {
+            matchesFilter = sku.category === productFilter;
+          }
+        }
         
-        totalWeightKg += (packs * (Number(sku.weight_gm_per_pack) || 0)) / 1000;
+        if (matchesFilter) {
+          totalBags += ctns;
+          totalWeightKg += (packs * (Number(sku.weight_gm_per_pack) || 0)) / 1000;
+          brandSales[sku.category] = (brandSales[sku.category] || 0) + ctns;
+        }
       });
 
       const visitEfficiency = s.visited_shops > 0 ? s.productive_shops / s.visited_shops : 0;
@@ -407,7 +425,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         isFakeVisit
       };
     });
-  }, [stats, hierarchy, skus, userRole, userRegion, userName, userContact]);
+  }, [stats, hierarchy, skus, userRole, userRegion, userName, userContact, productFilter]);
 
   const filteredStats = useMemo(() => {
     let result = processedStats;
@@ -450,6 +468,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     monthStats.forEach(s => {
       if (!obs[s.ob_contact]) {
         obs[s.ob_contact] = { 
+          ob_contact: s.ob_contact,
           name: s.ob_name, 
           town: s.town, 
           tsm: s.tsm, 
@@ -473,7 +492,9 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       });
     });
 
-    return Object.values(obs).map(ob => {
+    return Object.values(obs)
+      .filter(ob => ob.totalSales > 0 || ob.entries > 0)
+      .map(ob => {
       const workingDays = 25; // Default
       const consistencyScore = (ob.entries / workingDays) * 100;
       
@@ -559,14 +580,14 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     const costPerBag = totalSales > 0 ? totalSalaryCost / totalSales : 0;
 
     const brandTotals: Record<string, number> = {};
-    CATEGORIES.forEach(b => {
+    brands.forEach(b => {
       brandTotals[b] = monthStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0);
     });
 
     const totalTonnage = monthStats.reduce((sum, s) => sum + (s.totalWeightKg || 0), 0) / 1000;
 
     return { totalSales, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, brandTotals, totalTonnage };
-  }, [monthStats]);
+  }, [monthStats, brands]);
 
   const categoryStats = useMemo(() => {
     const cats = { A: { count: 0, sales: 0 }, B: { count: 0, sales: 0 }, C: { count: 0, sales: 0 }, D: { count: 0, sales: 0 } };
@@ -604,7 +625,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         totalSalary
       };
     });
-  }, [filteredStats]);
+  }, [filteredStats, brands]);
 
   const worstOBs = useMemo(() => {
     return [...obPerformance].sort((a, b) => a.totalSales - b.totalSales).slice(0, 5);
@@ -658,7 +679,9 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       tsms[tsm].averageOBAchievement = tsmTarget > 0 ? (tsms[tsm].totalSales / tsmTarget) * 100 : 0;
     });
 
-    return Object.values(tsms).sort((a, b) => b.totalSales - a.totalSales);
+    return Object.values(tsms)
+      .filter(tsm => tsm.activeOBs > 0 || tsm.totalSales > 0)
+      .sort((a, b) => b.totalSales - a.totalSales);
   }, [monthStats, hierarchy]);
 
   const categoryWiseSales = useMemo(() => {
@@ -672,12 +695,12 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       
       if (!groups[key]) {
         groups[key] = { name: key, obCount: new Set(), totalSales: 0, brandSales: {} };
-        CATEGORIES.forEach(cat => groups[key].brandSales[cat] = 0);
+        brands.forEach(cat => groups[key].brandSales[cat] = 0);
       }
       
       groups[key].obCount.add(s.ob_contact);
       groups[key].totalSales += s.totalBags;
-      CATEGORIES.forEach(cat => {
+      brands.forEach(cat => {
         groups[key].brandSales[cat] += (s.brandSales[cat] || 0);
       });
     });
@@ -687,7 +710,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       obCount: g.obCount.size,
       avgSales: g.obCount.size > 0 ? g.totalSales / g.obCount.size : 0
     }));
-  }, [monthStats, filterLevel]);
+  }, [monthStats, filterLevel, brands]);
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
@@ -746,6 +769,22 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         </div>
 
         <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-50">
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Product:</span>
+            <select 
+              value={productFilter} 
+              onChange={(e) => setProductFilter(e.target.value)}
+              className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
+            >
+              <option value="All">All Products</option>
+              <option value="Washing Powder">Washing Powder (Kite Glow, Burq Action, Vero)</option>
+              <option value="DWB">DWB</option>
+              <option value="Match">Match</option>
+              <option value="Kite Glow">Kite Glow</option>
+              <option value="Burq Action">Burq Action</option>
+              <option value="Vero">Vero</option>
+            </select>
+          </div>
           <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Level:</span>
             <select 
@@ -872,8 +911,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  {Object.entries(summary.brandTotals).map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'][index % 6]} />
+                  {Object.entries(summary.brandTotals).map(([name], index) => (
+                    <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[name] || ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'][index % 6]} />
                   ))}
                 </Pie>
                 <Tooltip 
@@ -887,6 +926,52 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         </div>
 
         <div className="card-clean p-6 bg-white border border-slate-100">
+          <div className="flex items-center justify-between mb-6">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Category Achievement (MTD)</h3>
+            <Target className="w-4 h-4 text-slate-300" />
+          </div>
+          <div className="h-[300px]">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart 
+                data={CATEGORIES.map(cat => {
+                  const achievement = summary.brandTotals[cat] || 0;
+                  // Aggregating targets from hierarchy
+                  const target = hierarchy.reduce((sum, h) => {
+                    const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+                    return sum + (Number(h[targetKey]) || 0);
+                  }, 0) || 1000;
+                  return { name: cat, achievement, target };
+                })}
+                layout="vertical"
+                margin={{ left: 20, right: 20 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false} stroke="#f1f5f9" />
+                <XAxis type="number" hide />
+                <YAxis 
+                  dataKey="name" 
+                  type="category" 
+                  axisLine={false} 
+                  tickLine={false} 
+                  tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }}
+                  width={80}
+                />
+                <Tooltip 
+                  cursor={{ fill: '#f8fafc' }}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                />
+                <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', paddingBottom: '10px' }} />
+                <Bar dataKey="achievement" radius={[0, 4, 4, 0]} barSize={15} name="Ach">
+                  {CATEGORIES.map((cat, index) => (
+                    <Cell key={`cell-ach-${index}`} fill={CATEGORY_COLORS[cat] || "#0ea5e9"} />
+                  ))}
+                </Bar>
+                <Bar dataKey="target" fill="#e2e8f0" radius={[0, 4, 4, 0]} barSize={15} name="Tar" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        <div className="card-clean p-6 bg-white border border-slate-100 lg:col-span-2">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Top 10 TSM Performance</h3>
             <TrendingUp className="w-4 h-4 text-slate-300" />
@@ -970,14 +1055,14 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
             <AlertTriangle className="w-4 h-4 text-rose-500" />
           </div>
           <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
-            {obPerformance.filter(ob => ob.isIrregular).map(ob => (
-              <div key={ob.name} className="flex items-center justify-between p-2 bg-rose-50 rounded-lg">
+            {obPerformance.filter(ob => ob.isIrregular).map((ob, idx) => (
+              <div key={`${idx}-${ob.ob_contact || ob.name}`} className="flex items-center justify-between p-2 bg-rose-50 rounded-lg">
                 <span className="text-[10px] font-bold text-rose-700">{ob.name}</span>
                 <span className="text-[8px] font-black bg-rose-200 text-rose-800 px-2 py-0.5 rounded uppercase">Irregular</span>
               </div>
             ))}
             {monthStats.filter(s => s.isFakeVisit).map((s, idx) => (
-              <div key={idx} className="flex items-center justify-between p-2 bg-orange-50 rounded-lg">
+              <div key={`fake-${idx}-${s.ob_contact}`} className="flex items-center justify-between p-2 bg-orange-50 rounded-lg">
                 <span className="text-[10px] font-bold text-orange-700">{s.ob_name}</span>
                 <span className="text-[8px] font-black bg-orange-200 text-orange-800 px-2 py-0.5 rounded uppercase">Fake Visit?</span>
               </div>
@@ -992,8 +1077,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
             <TrendingUp className="w-4 h-4 text-seablue" />
           </div>
           <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
-            {[...obPerformance].sort((a, b) => b.productivityScore - a.productivityScore).slice(0, 5).map(ob => (
-              <div key={ob.name} className="flex items-center justify-between p-2 bg-sky-50 rounded-lg">
+            {[...obPerformance].sort((a, b) => b.productivityScore - a.productivityScore).slice(0, 5).map((ob, idx) => (
+              <div key={`top-${idx}-${ob.ob_contact || ob.name}`} className="flex items-center justify-between p-2 bg-sky-50 rounded-lg">
                 <span className="text-[10px] font-bold text-sky-700">{ob.name}</span>
                 <span className="text-[8px] font-black bg-sky-200 text-sky-800 px-2 py-0.5 rounded uppercase">{ob.scoreLabel}</span>
               </div>
@@ -1127,7 +1212,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                 <tr className="border-b border-slate-100 bg-slate-50/50">
                   <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">{filterLevel}</th>
                   <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center">OBs</th>
-                  {CATEGORIES.map(cat => (
+                  {brands.map(cat => (
                     <th key={cat} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">{cat}</th>
                   ))}
                   <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Total</th>
@@ -1141,7 +1226,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                       <span className="text-xs font-black text-slate-700">{row.name}</span>
                     </td>
                     <td className="px-6 py-4 text-xs font-bold text-slate-500 text-center">{row.obCount}</td>
-                    {CATEGORIES.map(cat => (
+                    {brands.map(cat => (
                       <td key={cat} className="px-6 py-4 text-xs font-bold text-slate-600 text-right">
                         {(row.brandSales[cat] || 0).toFixed(1)}
                       </td>
@@ -1157,7 +1242,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                   <td className="px-6 py-4 text-xs text-center text-slate-600">
                     {categoryWiseSales.reduce((sum, r) => sum + r.obCount, 0)}
                   </td>
-                  {CATEGORIES.map(cat => (
+                  {brands.map(cat => (
                     <td key={cat} className="px-6 py-4 text-xs text-right text-slate-600">
                       {categoryWiseSales.reduce((sum, r) => sum + (r.brandSales[cat] || 0), 0).toFixed(1)}
                     </td>
@@ -1279,13 +1364,45 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         </div>
 
         <div className="card-clean bg-white p-6">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2 mb-4">Daily Sales Heatmap (MTD)</h3>
+          <div className="flex items-center justify-between border-b pb-2 mb-4">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Daily Sales Heatmap (MTD)</h3>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
+              <select 
+                className="input-clean text-[10px] py-1 px-2 rounded-lg"
+                value={heatmapView}
+                onChange={(e) => setHeatmapView(e.target.value)}
+              >
+                <option value="Total">Total Bags/Ctns</option>
+                <optgroup label="Category-wise">
+                  {BRAND_GROUP_NAMES.map(cat => <option key={`cat_${cat}`} value={`cat_${cat}`}>{cat}</option>)}
+                </optgroup>
+                <optgroup label="Brand-wise">
+                  {brands.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </optgroup>
+              </select>
+            </div>
+          </div>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthStats.reduce((acc: any[], s) => {
-                const existing = acc.find(a => a.date === s.date);
-                if (existing) existing.sales += s.totalBags;
-                else acc.push({ date: s.date.split('-')[2], sales: s.totalBags });
+                const dateKey = s.date.split('-')[2];
+                let existing = acc.find(a => a.date === dateKey);
+                if (!existing) {
+                  existing = { date: dateKey, sales: 0 };
+                  acc.push(existing);
+                }
+                
+                if (heatmapView === 'Total') {
+                  existing.sales += s.totalBags;
+                } else if (heatmapView.startsWith('cat_')) {
+                  const categoryName = heatmapView.replace('cat_', '');
+                  const brandsInGroup = BRAND_GROUPS[categoryName] || [];
+                  existing.sales += brandsInGroup.reduce((sum, brand) => sum + (s.brandSales[brand] || 0), 0);
+                } else {
+                  existing.sales += (s.brandSales[heatmapView] || 0);
+                }
+                
                 return acc;
               }, []).sort((a, b) => a.date.localeCompare(b.date))}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -1313,15 +1430,322 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                 <YAxis fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
                 <Tooltip />
                 <Legend />
-                <Line type="monotone" dataKey="Kite Glow" stroke="#0ea5e9" strokeWidth={2} />
-                <Line type="monotone" dataKey="Vero" stroke="#10b981" strokeWidth={2} />
-                <Line type="monotone" dataKey="Burq Action" stroke="#f59e0b" strokeWidth={2} />
+                {brands.map((brand, idx) => (
+                  <Line key={brand} type="monotone" dataKey={brand} stroke={['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 5]} strokeWidth={2} />
+                ))}
                 <Line type="monotone" dataKey="totalSales" stroke="#0f172a" strokeWidth={3} strokeDasharray="5 5" />
               </LineChart>
             </ResponsiveContainer>
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing }: { user: any, data: any, setView: (v: any) => void, onRefresh?: () => void, isSyncing?: boolean }) => {
+  if (!user || !data) return (
+    <div className="flex items-center justify-center min-h-screen bg-slate-50">
+      <Loader2 className="w-8 h-8 text-seablue animate-spin" />
+    </div>
+  );
+
+  const CATEGORY_COLORS: Record<string, string> = {
+    "Kite Glow": "#38bdf8",
+    "Burq Action": "#f97316",
+    "Vero": "#eab308",
+    "DWB": "#22c55e",
+    "Match": "#1e3a8a"
+  };
+
+  return (
+    <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
+      {/* Brand Achievement (MTD) with RPD - MOVED TO TOP */}
+      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <Target className="w-4 h-4 text-seablue" />
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand Achievement (MTD) & RPD</h3>
+          </div>
+          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Required Per Day</span>
+        </div>
+        <div className="space-y-5">
+          {data.brandPerformance.map((bp: any, idx: number) => (
+            <motion.div 
+              key={bp.category}
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ delay: idx * 0.05 }}
+              className="space-y-2"
+            >
+              <div className="flex justify-between items-end">
+                <div className="flex items-center gap-2">
+                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[bp.category] }} />
+                  <span className="text-[10px] font-black text-slate-700 uppercase">{bp.category}</span>
+                </div>
+                <div className="text-right flex flex-col items-end">
+                  <div className="flex items-center gap-1">
+                    <span className="text-[10px] font-black text-seablue">{bp.achievement.toFixed(1)}</span>
+                    <span className="text-[8px] font-bold text-slate-400">/</span>
+                    <span className="text-[10px] font-black text-slate-400">{bp.target.toFixed(1)}</span>
+                    <span className={`ml-2 text-[10px] font-black ${bp.percentage >= 100 ? 'text-emerald-600' : bp.percentage >= 80 ? 'text-amber-500' : 'text-rose-500'}`}>
+                      {bp.percentage.toFixed(0)}%
+                    </span>
+                  </div>
+                  <div className="text-[8px] font-black text-rose-500 uppercase tracking-widest mt-0.5">
+                    RPD: {bp.rpd.toFixed(1)} Ctn
+                  </div>
+                </div>
+              </div>
+              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-50">
+                <motion.div 
+                  initial={{ width: 0 }}
+                  animate={{ width: `${Math.min(100, bp.percentage)}%` }}
+                  transition={{ duration: 1, delay: 0.5 + idx * 0.1 }}
+                  className="h-full rounded-full shadow-sm"
+                  style={{ backgroundColor: CATEGORY_COLORS[bp.category] }}
+                />
+              </div>
+            </motion.div>
+          ))}
+        </div>
+      </section>
+
+      {/* Profile Header */}
+      <div className="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-white flex items-center gap-4 relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4">
+          <button 
+            onClick={onRefresh}
+            disabled={isSyncing}
+            className={`p-2 rounded-full bg-slate-50 text-slate-400 hover:text-seablue transition-all ${isSyncing ? 'animate-spin' : ''}`}
+            title="Sync Data"
+          >
+            <RefreshCw className="w-4 h-4" />
+          </button>
+        </div>
+        <div className="w-16 h-16 bg-seablue/10 rounded-2xl flex items-center justify-center text-seablue">
+          <User className="w-8 h-8" />
+        </div>
+        <div className="flex-1">
+          <h1 className="text-xl font-black text-slate-800 uppercase tracking-tight">{user.name}</h1>
+          <div className="flex flex-wrap gap-2 mt-1">
+            <span className="px-2 py-0.5 bg-seablue/10 text-seablue text-[8px] font-black uppercase tracking-widest rounded-full">{user.role}</span>
+            {user.region && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[8px] font-black uppercase tracking-widest rounded-full">{user.region}</span>}
+            {user.town && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[8px] font-black uppercase tracking-widest rounded-full">{user.town}</span>}
+          </div>
+          <p className="text-[10px] text-slate-400 font-bold mt-2 flex items-center gap-1">
+            <Mail className="w-3 h-3" /> {user.email}
+          </p>
+        </div>
+      </div>
+
+      {/* Quick Stats Grid */}
+      <div className="grid grid-cols-2 gap-4">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="card-clean p-5 bg-gradient-to-br from-seablue to-blue-700 text-white shadow-xl shadow-blue-100"
+        >
+          <div className="text-[9px] font-black uppercase tracking-widest opacity-70 mb-1">Today's Sales</div>
+          <div className="text-3xl font-black">{data.todaySales.toFixed(1)}</div>
+          <div className="text-[8px] font-bold opacity-60 mt-2 uppercase">Bags / Cartons</div>
+        </motion.div>
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.1 }}
+          className="card-clean p-5 bg-gradient-to-br from-emerald-600 to-emerald-800 text-white shadow-xl shadow-emerald-100"
+        >
+          <div className="text-[9px] font-black uppercase tracking-widest opacity-70 mb-1">MTD Sales</div>
+          <div className="text-3xl font-black">{data.mtdSales.toFixed(1)}</div>
+          <div className="text-[8px] font-bold opacity-60 mt-2 uppercase">Month to Date</div>
+        </motion.div>
+      </div>
+
+      {/* Sales Trend (Last 7 Days) */}
+      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <TrendingUp className="w-4 h-4 text-emerald-500" />
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Last 7 Days Sales</h3>
+          </div>
+        </div>
+        <div className="h-32 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <AreaChart data={data.last7DaysSales}>
+              <defs>
+                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
+                  <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
+                </linearGradient>
+              </defs>
+              <Tooltip 
+                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px', fontWeight: 'bold' }}
+                labelStyle={{ display: 'none' }}
+              />
+              <Area 
+                type="monotone" 
+                dataKey="sales" 
+                stroke="#0ea5e9" 
+                strokeWidth={3}
+                fillOpacity={1} 
+                fill="url(#colorSales)" 
+              />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+        <div className="flex justify-between mt-2">
+          {data.last7DaysSales.map((d: any, i: number) => (
+            <span key={i} className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">
+              {d.day}
+            </span>
+          ))}
+        </div>
+      </section>
+
+      {/* OB Target vs Achievement (Brand wise) */}
+      {data.obPerformance && data.obPerformance.length > 0 && (
+        <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2">
+              <Users className="w-4 h-4 text-indigo-500" />
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Team Performance (Brand wise)</h3>
+            </div>
+          </div>
+          <div className="space-y-6">
+            {data.obPerformance.map((ob: any, idx: number) => (
+              <div key={ob.name} className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-100">
+                <div className="text-[11px] font-black text-slate-800 uppercase tracking-tight border-b pb-2 flex justify-between">
+                  <span>{ob.name}</span>
+                  <span className="text-[8px] text-slate-400">MTD Achievement</span>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  {ob.brands.map((b: any) => (
+                    <div key={b.category} className="flex flex-col">
+                      <span className="text-[8px] font-black text-slate-400 uppercase">{b.category}</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-[10px] font-black text-slate-700">{b.achievement.toFixed(1)}</span>
+                        <span className="text-[8px] text-slate-400">/</span>
+                        <span className="text-[10px] font-bold text-slate-400">{b.target.toFixed(1)}</span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* Brand wise Sales (Last 8 Visits) */}
+      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <History className="w-4 h-4 text-amber-500" />
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Last 8 Visits Brand Sales</h3>
+          </div>
+        </div>
+        <div className="overflow-x-auto scrollbar-thin">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="text-[8px] font-black text-slate-400 uppercase tracking-widest border-b">
+                <th className="py-2 pr-2">Date / Route</th>
+                {["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].map(cat => (
+                  <th key={cat} className="py-2 px-2 text-center">{cat}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.last8Visits.map((v: any, idx: number) => (
+                <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                  <td className="py-2 pr-2">
+                    <div className="text-[9px] font-black text-slate-700">{v.date}</div>
+                    <div className="text-[7px] font-bold text-slate-400 uppercase">{v.route}</div>
+                  </td>
+                  {["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].map(cat => (
+                    <td key={cat} className="py-2 px-2 text-center">
+                      <span className={`text-[10px] font-black ${v.brands[cat] > 0 ? 'text-seablue' : 'text-slate-300'}`}>
+                        {v.brands[cat].toFixed(1)}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+              {data.last8Visits.length === 0 && (
+                <tr>
+                  <td colSpan={6} className="py-10 text-center text-[10px] font-black text-slate-400 uppercase">No recent visits found</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Weakest Routes (Bottom to Top) */}
+      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-rose-500" />
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Weakest Routes</h3>
+          </div>
+          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Bottom to Top</span>
+        </div>
+        <div className="space-y-4">
+          {data.weakestRoutes.map((wr: any, idx: number) => (
+            <motion.div 
+              key={wr.route}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: idx * 0.1 }}
+              className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between group hover:border-rose-200 transition-all"
+            >
+              <div className="space-y-1">
+                <div className="text-[11px] font-black text-slate-800 uppercase tracking-tight">{wr.route}</div>
+                <div className="flex flex-wrap gap-1">
+                  {wr.reasons.map((reason: string) => (
+                    <span key={reason} className="px-1.5 py-0.5 bg-rose-100 text-rose-600 text-[7px] font-black uppercase tracking-widest rounded">
+                      {reason}
+                    </span>
+                  ))}
+                </div>
+                <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{wr.ob}</div>
+              </div>
+              <div className="text-right">
+                <div className="text-[11px] font-black text-rose-600">{wr.avgSales.toFixed(1)} <span className="text-[8px] text-slate-400">Avg</span></div>
+                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{wr.efficiency.toFixed(0)}% Efficiency</div>
+              </div>
+            </motion.div>
+          ))}
+          {data.weakestRoutes.length === 0 && (
+            <div className="py-10 text-center text-slate-400">
+              <CheckCircle2 className="w-10 h-10 mx-auto mb-2 opacity-20" />
+              <p className="text-[10px] font-black uppercase tracking-widest">All routes performing well!</p>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {/* Action Buttons */}
+      <div className="grid grid-cols-2 gap-4">
+        <button 
+          onClick={() => setView('entry')}
+          className="flex flex-col items-center justify-center p-6 bg-white border border-slate-100 rounded-3xl shadow-lg shadow-slate-200/40 hover:bg-slate-50 transition-all group"
+        >
+          <div className="w-12 h-12 bg-seablue/10 rounded-2xl flex items-center justify-center text-seablue mb-3 group-hover:scale-110 transition-transform">
+            <ClipboardList className="w-6 h-6" />
+          </div>
+          <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">New Entry</span>
+        </button>
+        <button 
+          onClick={() => setView('dashboard')}
+          className="flex flex-col items-center justify-center p-6 bg-white border border-slate-100 rounded-3xl shadow-lg shadow-slate-200/40 hover:bg-slate-50 transition-all group"
+        >
+          <div className="w-12 h-12 bg-emerald-50 rounded-2xl flex items-center justify-center text-emerald-600 mb-3 group-hover:scale-110 transition-transform">
+            <LayoutDashboard className="w-6 h-6" />
+          </div>
+          <span className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Full Dashboard</span>
+        </button>
+      </div>
     </div>
   );
 };
@@ -1589,12 +2013,12 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-6 py-4">OB Name</th>
-                <th className="px-6 py-4">TSM</th>
-                <th className="px-6 py-4 text-center">Entries</th>
-                <th className="px-6 py-4 text-center">Missing</th>
-                <th className="px-6 py-4">Last Entry</th>
-                <th className="px-6 py-4 text-right">Efficiency</th>
+                <th className="px-6 py-4 whitespace-nowrap">OB Name</th>
+                <th className="px-6 py-4 whitespace-nowrap">TSM</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Entries</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Missing</th>
+                <th className="px-6 py-4 whitespace-nowrap">Last Entry</th>
+                <th className="px-6 py-4 text-right whitespace-nowrap">Efficiency</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -1607,7 +2031,7 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                 
                 return (
                   <tr key={ob.contact || `ob-${idx}`} className="group hover:bg-slate-50/80 transition-all duration-200">
-                    <td className="px-6 py-4">
+                    <td className="px-6 py-4 whitespace-nowrap">
                       <p className="text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{ob.name}</p>
                       <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{ob.town}</p>
                     </td>
@@ -1648,11 +2072,11 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-6 py-4">TSM Name</th>
-                <th className="px-6 py-4 text-center">Active OBs</th>
-                <th className="px-6 py-4 text-center">Total Sales</th>
-                <th className="px-6 py-4 text-center">Avg Productivity</th>
-                <th className="px-6 py-4 text-right">Activity Score</th>
+                <th className="px-6 py-4 whitespace-nowrap">TSM Name</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Active OBs</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Total Sales</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Avg Productivity</th>
+                <th className="px-6 py-4 text-right whitespace-nowrap">Activity Score</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -1673,13 +2097,13 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                 
                 return (
                   <tr key={tsm || `tsm-${idx}`} className="group hover:bg-slate-50/80 transition-all duration-200">
-                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{tsm}</td>
-                    <td className="px-6 py-4 text-center">
+                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors whitespace-nowrap">{tsm}</td>
+                    <td className="px-6 py-4 text-center whitespace-nowrap">
                       <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">{activeOBs}/{tsmOBs.length}</span>
                     </td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono">{totalSales.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-emerald-600 bg-emerald-50/50">{avgProd.toFixed(0)}%</td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{totalSales.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-emerald-600 bg-emerald-50/50 whitespace-nowrap">{avgProd.toFixed(0)}%</td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
                       <span className={`text-xs font-black px-3 py-1 rounded-full ${score > 70 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                         {score.toFixed(1)}
                       </span>
@@ -1702,6 +2126,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
   const [selectedAnalysisRoute, setSelectedAnalysisRoute] = useState('');
   const [selectedAnalysisOB, setSelectedAnalysisOB] = useState('');
   const [matrixView, setMatrixView] = useState('Total');
+  const [targetView, setTargetView] = useState('Brand');
 
   const filteredOBs = useMemo(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin') {
@@ -1777,7 +2202,12 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               onChange={(e) => setMatrixView(e.target.value)}
             >
               <option value="Total">Total Bags/Ctns</option>
-              {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              <optgroup label="Category-wise">
+                {BRAND_GROUP_NAMES.map(cat => <option key={`cat_${cat}`} value={`cat_${cat}`}>{cat}</option>)}
+              </optgroup>
+              <optgroup label="Brand-wise">
+                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+              </optgroup>
             </select>
           </div>
         </div>
@@ -1785,11 +2215,11 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
           <table className="w-full text-left min-w-[1200px] border-collapse">
             <thead>
               <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-4 py-3 sticky left-0 bg-slate-50/90 backdrop-blur-sm z-10 border-r border-slate-100">OB Name</th>
-                {Array.from({ length: dayOfMonth }, (_, i) => i + 1).map(day => (
-                  <th key={day} className="px-2 py-3 text-center border-r border-slate-100/50">{day}</th>
+                <th className="px-4 py-3 sticky left-0 bg-slate-50/90 backdrop-blur-sm z-10 border-r border-slate-100 whitespace-nowrap w-24 sm:w-32 truncate" title="OB Name">OB Name</th>
+                {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
+                  <th key={day} className="px-2 py-3 text-center border-r border-slate-100/50 whitespace-nowrap">{day}</th>
                 ))}
-                <th className="px-4 py-3 text-right bg-slate-50/90 backdrop-blur-sm sticky right-0 z-10 border-l border-slate-100">Total</th>
+                <th className="px-4 py-3 text-right bg-slate-50/90 backdrop-blur-sm sticky right-0 z-10 border-l border-slate-100 whitespace-nowrap">Total</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -1798,14 +2228,22 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                 let total = 0;
                 return (
                   <tr key={ob.contact || `ob-matrix-${idx}`} className="group hover:bg-slate-50/80 transition-all">
-                    <td className="px-4 py-3 sticky left-0 bg-white group-hover:bg-slate-50 z-10 text-[10px] font-black text-slate-700 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">{ob.name}</td>
-                    {Array.from({ length: dayOfMonth }, (_, i) => i + 1).map((day, dIdx) => {
+                    <td className="px-4 py-3 sticky left-0 bg-white group-hover:bg-slate-50 z-10 text-[10px] font-black text-slate-700 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)] whitespace-nowrap w-24 sm:w-32 truncate" title={ob.name}>{ob.name}</td>
+                    {Array.from({ length: 31 }, (_, i) => i + 1).map((day, dIdx) => {
                       const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
                       const dayOrders = obStats.filter((h: any) => h.date === dateStr);
                       const daySales = dayOrders.reduce((sum, h) => {
                         const data = h.order_data || {};
                         if (matrixView === 'Total') {
                           return sum + SKUS.reduce((s, sku) => {
+                            const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                            return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                          }, 0);
+                        } else if (matrixView.startsWith('cat_')) {
+                          const categoryName = matrixView.replace('cat_', '');
+                          const brandsInGroup = BRAND_GROUPS[categoryName] || [];
+                          return sum + SKUS.filter(s => brandsInGroup.includes(s.category)).reduce((s, sku) => {
                             const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                             const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
                             return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
@@ -1839,42 +2277,74 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
         </div>
       </section>
 
-      {/* Brand Target vs Achievement (MTD) */}
+      {/* Target vs Achievement (MTD) */}
       <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
-        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-3">
-          <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-            <Target className="w-4 h-4" />
+        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+              <Target className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">{targetView} Target vs Achievement (MTD)</h3>
           </div>
-          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand Target vs Achievement (MTD)</h3>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
+            <select 
+              className="input-clean text-[10px] py-1 px-2 rounded-lg"
+              value={targetView}
+              onChange={(e) => setTargetView(e.target.value)}
+            >
+              <option value="Brand">Brand-wise</option>
+              <option value="Category">Category-wise</option>
+            </select>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-6 py-4">Brand Name</th>
-                <th className="px-6 py-4 text-center">Target</th>
-                <th className="px-6 py-4 text-center">Achievement</th>
-                <th className="px-6 py-4 text-right">Ach %</th>
+                <th className="px-6 py-4 whitespace-nowrap">{targetView} Name</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Target</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Achievement</th>
+                <th className="px-6 py-4 text-right whitespace-nowrap">Ach %</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {CATEGORIES.map(cat => {
-                const catTarget = obAssignments.reduce((sum: number, ob: any) => sum + (ob.targets?.[cat] || 0), 0);
-                const catAch = history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((sum: number, h: any) => {
-                  const data = h.order_data || {};
-                  return sum + SKUS.filter((s: any) => s.category === cat).reduce((s: number, sku: any) => {
-                    const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                    const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                    return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+              {(targetView === 'Brand' ? CATEGORIES : BRAND_GROUP_NAMES).map(cat => {
+                let catTarget = 0;
+                let catAch = 0;
+
+                if (targetView === 'Brand') {
+                  catTarget = obAssignments.reduce((sum: number, ob: any) => sum + (ob.targets?.[cat] || 0), 0);
+                  catAch = history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((sum: number, h: any) => {
+                    const data = h.order_data || {};
+                    return sum + SKUS.filter((s: any) => s.category === cat).reduce((s: number, sku: any) => {
+                      const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                      const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                      return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                    }, 0);
                   }, 0);
-                }, 0);
+                } else {
+                  const brandsInGroup = BRAND_GROUPS[cat] || [];
+                  catTarget = obAssignments.reduce((sum: number, ob: any) => {
+                    return sum + brandsInGroup.reduce((s, brand) => s + (ob.targets?.[brand] || 0), 0);
+                  }, 0);
+                  catAch = history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((sum: number, h: any) => {
+                    const data = h.order_data || {};
+                    return sum + SKUS.filter((s: any) => brandsInGroup.includes(s.category)).reduce((s: number, sku: any) => {
+                      const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                      const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                      return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                    }, 0);
+                  }, 0);
+                }
+
                 const percent = catTarget > 0 ? (catAch / catTarget) * 100 : 0;
                 return (
                   <tr key={cat} className="group hover:bg-slate-50/80 transition-all">
-                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{cat}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500 font-mono">{catTarget.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono">{catAch.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-right">
+                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors whitespace-nowrap">{cat}</td>
+                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500 font-mono whitespace-nowrap">{catTarget.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{catAch.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
                       <span className={`text-[10px] font-black px-3 py-1 rounded-full shadow-sm ${percent > 80 ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
                         {percent.toFixed(1)}%
                       </span>
@@ -1924,22 +2394,22 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
             <table className="w-full text-left border-collapse">
               <thead>
                 <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                  <th className="px-6 py-4">Date</th>
-                  <th className="px-6 py-4 text-center">Visited</th>
-                  <th className="px-6 py-4 text-center">Productive</th>
-                  {CATEGORIES.map(cat => <th key={cat} className="px-6 py-4 text-center">{cat}</th>)}
+                  <th className="px-6 py-4 whitespace-nowrap">Date</th>
+                  <th className="px-6 py-4 text-center whitespace-nowrap">Visited</th>
+                  <th className="px-6 py-4 text-center whitespace-nowrap">Productive</th>
+                  {CATEGORIES.map(cat => <th key={cat} className="px-6 py-4 text-center whitespace-nowrap">{cat}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {routeAnalysisData.map((h: any) => (
                   <tr key={h.date} className="group hover:bg-slate-50/80 transition-all">
-                    <td className="px-6 py-4 text-xs font-black text-slate-700 font-mono">{h.date}</td>
-                    <td className="px-6 py-4 text-center text-xs text-slate-500 font-bold">{h.visited}</td>
-                    <td className="px-6 py-4 text-center">
+                    <td className="px-6 py-4 text-xs font-black text-slate-700 font-mono whitespace-nowrap">{h.date}</td>
+                    <td className="px-6 py-4 text-center text-xs text-slate-500 font-bold whitespace-nowrap">{h.visited}</td>
+                    <td className="px-6 py-4 text-center whitespace-nowrap">
                       <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{h.productive}</span>
                     </td>
                     {CATEGORIES.map(cat => (
-                      <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-seablue font-black">{h.brandSales[cat].toFixed(1)}</td>
+                      <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-seablue font-black whitespace-nowrap">{h.brandSales[cat].toFixed(1)}</td>
                     ))}
                   </tr>
                 ))}
@@ -2125,6 +2595,17 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
   );
 };
 
+const calculateTotalBags = (order: OrderState) => {
+  if (!order.items) return 0;
+  return Object.keys(order.items).reduce((sum, skuId) => {
+    const sku = SKUS.find(s => s.id === skuId);
+    if (!sku) return sum;
+    const item = order.items[skuId];
+    const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+    return sum + (packs / sku.unitsPerCarton);
+  }, 0);
+};
+
 export default function App() {
   const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'profile' | 'help'>('entry');
   const [token, setToken] = useState<string | null>(() => {
@@ -2140,12 +2621,12 @@ export default function App() {
     if (r === 'SUPER ADMIN') return 'Super Admin';
     if (r === 'ADMIN') return 'Admin';
     if (r === 'DIRECTOR') return 'Director';
-    if (r === 'NSM') return 'NSM';
-    if (r === 'RSM') return 'RSM';
-    if (r === 'SC') return 'SC';
-    if (r === 'TSM') return 'TSM';
-    if (r === 'ASM') return 'ASM';
-    if (r === 'OB') return 'OB';
+    if (r === 'NSM' || r === 'NATIONAL SALES MANAGER') return 'NSM';
+    if (r === 'RSM' || r === 'REGIONAL SALES MANAGER') return 'RSM';
+    if (r === 'SC' || r === 'SALES CONTROLLER' || r === 'SALES COORDINATOR') return 'SC';
+    if (r === 'TSM' || r === 'TERRITORY SALES MANAGER') return 'TSM';
+    if (r === 'ASM' || r === 'AREA SALES MANAGER') return 'ASM';
+    if (r === 'OB' || r === 'ORDER BOOKER') return 'OB';
     return role;
   };
 
@@ -2156,6 +2637,7 @@ export default function App() {
   const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   const [matrixView, setMatrixView] = useState<string>('Total');
+  const [targetView, setTargetView] = useState('Brand');
   const [showUserManual, setShowUserManual] = useState(false);
 
   const handleLogin = (token: string, userData: any) => {
@@ -2175,8 +2657,8 @@ export default function App() {
       setSelectedStockTSM(userData.name);
     }
 
-    if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'].includes(role)) {
-      setView('dashboard');
+    if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(role)) {
+      setView('profile');
     }
   };
 
@@ -2236,8 +2718,142 @@ export default function App() {
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [obAssignments, setObAssignments] = useState<OBAssignment[]>([]);
-  const [obSearch, setObSearch] = useState('');
+  
   const [appConfig, setAppConfig] = useState<Record<string, string>>({ total_working_days: '25' });
+  const postLoginData = useMemo(() => {
+    if (!user || !history) return null;
+    const today = getPSTDate();
+    const currentMonth = today.slice(0, 7);
+    
+    const userStats = history.filter(s => {
+      if (user.role === 'OB') return s.ob_contact === user.contact;
+      if (user.role === 'TSM' || user.role === 'ASM') return s.tsm === user.name;
+      return true;
+    });
+
+    const todaySales = userStats.filter(s => s.date === today).reduce((sum, s) => sum + calculateTotalBags(s), 0);
+    const mtdSales = userStats.filter(s => s.date.startsWith(currentMonth)).reduce((sum, s) => sum + calculateTotalBags(s), 0);
+
+    const now = getPSTDate();
+    const year = parseInt(now.slice(0, 4));
+    const month = parseInt(now.slice(5, 7)) - 1;
+    const todayNum = parseInt(now.slice(8, 10));
+    const totalWorkingDays = getWorkingDays(year, month, appConfig.holidays || '');
+    const workingDaysPassed = getWorkingDays(year, month, appConfig.holidays || '', todayNum);
+    const remainingWorkingDays = Math.max(1, totalWorkingDays - workingDaysPassed);
+
+    const brandPerformance = CATEGORIES.map(cat => {
+      const ach = userStats.filter(s => s.date.startsWith(currentMonth)).reduce((sum, s) => {
+        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+        const catAch = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
+          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return cSum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+        }, 0);
+        return sum + catAch;
+      }, 0);
+      
+      // Get real target from obAssignments
+      let target = 0;
+      if (user.role === 'OB') {
+        const assignment = obAssignments.find(a => a.contact === user.contact);
+        target = assignment?.targets?.[cat] || 0;
+      } else if (user.role === 'TSM' || user.role === 'ASM') {
+        target = obAssignments
+          .filter(a => a.tsm === user.name)
+          .reduce((sum, a) => sum + (a.targets?.[cat] || 0), 0);
+      } else {
+        // National/Admin targets from hierarchy
+        target = hierarchy.reduce((sum, h) => {
+          const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+          return sum + (Number(h[targetKey]) || 0);
+        }, 0);
+      }
+
+      const remainingTarget = Math.max(0, target - ach);
+      const rpd = remainingTarget / remainingWorkingDays;
+
+      return { category: cat, achievement: ach, target: target || 1, percentage: (target || 1) > 0 ? (ach / (target || 1)) * 100 : 0, rpd };
+    }).sort((a, b) => a.percentage - b.percentage);
+
+    // OB Performance for TSM/ASM
+    let obPerformance = [];
+    if (user.role === 'TSM' || user.role === 'ASM' || ['Admin', 'Super Admin', 'Director', 'NSM', 'RSM', 'SC'].includes(user.role)) {
+      const relevantOBs = obAssignments.filter(a => {
+        if (user.role === 'TSM' || user.role === 'ASM') return a.tsm === user.name;
+        return true;
+      });
+
+      obPerformance = relevantOBs.map(ob => {
+        const obStats = history.filter(s => s.ob_contact === ob.contact && s.date.startsWith(currentMonth));
+        const brands = CATEGORIES.map(cat => {
+          const ach = obStats.reduce((sum, s) => {
+            const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+            const catAch = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
+              const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+              const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+              return cSum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+            }, 0);
+            return sum + catAch;
+          }, 0);
+          const target = ob.targets?.[cat] || 0;
+          return { category: cat, achievement: ach, target };
+        });
+        return { name: ob.obName, brands };
+      });
+    }
+
+    // Last 8 Visits for specific brands
+    const last8Visits = userStats
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 8)
+      .map(s => {
+        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+        const brands: Record<string, number> = {};
+        ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].forEach(cat => {
+          const catAch = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
+            const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+            return cSum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+          }, 0);
+          brands[cat] = catAch;
+        });
+        return { date: s.date, route: s.route, brands };
+      });
+
+    const routes: Record<string, any[]> = {};
+    userStats.forEach(s => {
+      if (!routes[s.route]) routes[s.route] = [];
+      routes[s.route].push(s);
+    });
+
+    const weakestRoutes = Object.entries(routes).map(([route, entries]) => {
+      const sorted = entries.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 2);
+      const latest = sorted[0];
+      const prev = sorted[1];
+      const sales = calculateTotalBags(latest);
+      const prevSales = prev ? calculateTotalBags(prev) : sales;
+      
+      const reasons = [];
+      if (prev && sales < prevSales) reasons.push('Declining Sales');
+      if (latest.productive_shops < 15) reasons.push('Low Productivity');
+      if (latest.visited_shops < 40) reasons.push('Low Coverage');
+
+      return { route, sales, prevSales, reasons };
+    }).filter(r => r.reasons.length > 0).sort((a, b) => a.sales - b.sales).slice(0, 5);
+
+    const last7DaysSales = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date();
+      d.setDate(d.getDate() - (6 - i));
+      const dateStr = d.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
+      const dayName = d.toLocaleDateString("en-US", { weekday: 'short', timeZone: "Asia/Karachi" });
+      const sales = userStats.filter(s => s.date === dateStr).reduce((sum, s) => sum + calculateTotalBags(s), 0);
+      return { day: dayName, sales };
+    });
+
+    return { todaySales, mtdSales, brandPerformance, weakestRoutes, last7DaysSales, obPerformance, last8Visits };
+  }, [user, history, obAssignments, hierarchy, appConfig]);
+
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [stockHistory, setStockHistory] = useState<any[]>([]);
   const [selectedEntryRegion, setSelectedEntryRegion] = useState<string>('');
@@ -2453,14 +3069,6 @@ export default function App() {
     if (field === 'obContact') {
       const assignment = filteredOBs.find(a => a.contact === value);
       if (assignment) {
-        const isDuplicate = await checkDuplicate(order.date, String(value));
-        if (isDuplicate) {
-          setMessage({ text: "Entry already exists for this OB today!", type: 'error' });
-          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', sc: '', director: '' }));
-          setTimeout(() => setMessage(null), 3000);
-          return;
-        }
-
         // Filter distributors for this town
         const townDists = distributors.filter(d => d.town === assignment.town);
         let autoDist = assignment.distributor;
@@ -2512,14 +3120,6 @@ export default function App() {
       setOrder(prev => ({ ...prev, town: String(value), distributor: autoDist }));
     } else {
       setOrder(prev => ({ ...prev, [field]: value }));
-      if (field === 'date' && order.obContact) {
-        const isDuplicate = await checkDuplicate(String(value), order.obContact);
-        if (isDuplicate) {
-          setMessage({ text: "Entry already exists for this OB on this date!", type: 'error' });
-          setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {} }));
-          setTimeout(() => setMessage(null), 3000);
-        }
-      }
     }
   };
 
@@ -2579,6 +3179,30 @@ export default function App() {
     });
     return totals;
   }, [order.items]);
+
+  const mtdCategoryTotals = useMemo(() => {
+    const totals: Record<string, number> = {};
+    const currentMonth = order.date ? order.date.slice(0, 7) : new Date().toISOString().slice(0, 7);
+    
+    // Get past orders for this OB in the current month
+    const pastOrders = history.filter(h => h.ob_contact === order.obContact && h.date.startsWith(currentMonth) && h.date !== order.date);
+    
+    CATEGORIES.forEach(cat => {
+      // Past achievement
+      const pastAch = pastOrders.reduce((sum, h) => {
+        const items = h.order_data || {};
+        return sum + SKUS.filter(sku => sku.category === cat).reduce((s, sku) => {
+          const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+        }, 0);
+      }, 0);
+      
+      // Add current order achievement
+      totals[cat] = pastAch + (categoryTotals[cat] || 0);
+    });
+    return totals;
+  }, [order.obContact, order.date, history, categoryTotals, CATEGORIES, SKUS]);
 
   const handleKeyDown = (e: React.KeyboardEvent, currentId: string) => {
     if (e.key === 'Enter') {
@@ -2703,17 +3327,6 @@ export default function App() {
     setIsConfirming(false);
     setIsSubmitting(true);
     
-    // Final duplicate check before actual submission
-    if (navigator.onLine) {
-      const isDuplicate = await checkDuplicate(order.date, order.obContact);
-      if (isDuplicate) {
-        setMessage({ text: 'An entry already exists for this Order Booker on this date.', type: 'error' });
-        setIsSubmitting(false);
-        setTimeout(() => setMessage(null), 5000);
-        return;
-      }
-    }
-
     let currentLoc = location;
     if ("geolocation" in navigator) {
       try {
@@ -3864,13 +4477,30 @@ export default function App() {
         return totals;
       })();
 
-      const chartData = CATEGORIES.map(cat => ({
-        name: cat,
-        Target: globalTargets[cat] || 0,
-        Achievement: globalToday[cat] || 0,
-        MTD: globalMtd[cat] || 0,
-        AchPercent: globalTargets[cat] > 0 ? ((globalMtd[cat] / globalTargets[cat]) * 100).toFixed(1) : 0
-      }));
+      const chartData = (targetView === 'Brand' ? CATEGORIES : BRAND_GROUP_NAMES).map(cat => {
+        let target = 0;
+        let achievement = 0;
+        let mtd = 0;
+
+        if (targetView === 'Brand') {
+          target = globalTargets[cat] || 0;
+          achievement = globalToday[cat] || 0;
+          mtd = globalMtd[cat] || 0;
+        } else {
+          const brandsInGroup = BRAND_GROUPS[cat] || [];
+          target = brandsInGroup.reduce((sum, brand) => sum + (globalTargets[brand] || 0), 0);
+          achievement = brandsInGroup.reduce((sum, brand) => sum + (globalToday[brand] || 0), 0);
+          mtd = brandsInGroup.reduce((sum, brand) => sum + (globalMtd[brand] || 0), 0);
+        }
+
+        return {
+          name: cat,
+          Target: target,
+          Achievement: achievement,
+          MTD: mtd,
+          AchPercent: target > 0 ? ((mtd / target) * 100).toFixed(1) : 0
+        };
+      });
 
       // TSM Sales Analysis
       const tsmAnalysis = tsmList.map(tsmName => {
@@ -4031,7 +4661,15 @@ export default function App() {
               <div>
                 <h1 className="text-lg font-bold text-seablue leading-tight">Dashboard</h1>
                 <div className="flex items-center gap-1.5">
-                  <span className="text-[8px] font-black bg-seablue/10 text-seablue px-1.5 py-0.5 rounded uppercase tracking-widest">{userRole}</span>
+                  <span className="text-[8px] font-black bg-seablue/10 text-seablue px-1.5 py-0.5 rounded uppercase tracking-widest">
+                    {userRole === 'RSM' ? 'Regional Sales Manager' : 
+                     userRole === 'SC' ? 'Sales Coordinator' : 
+                     userRole === 'NSM' ? 'National Sales Manager' : 
+                     userRole === 'TSM' ? 'Territory Sales Manager' : 
+                     userRole === 'ASM' ? 'Area Sales Manager' : 
+                     userRole === 'OB' ? 'Order Booker' : 
+                     userRole}
+                  </span>
                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{userName}</span>
                 </div>
               </div>
@@ -4048,11 +4686,10 @@ export default function App() {
                 onClick={() => {
                   const summary = `*Global Sales Dashboard - ${today}*\n` +
                     `------------------\n` +
-                    chartData.map(d => `*${d.name}:*\n  Ach: ${d.Achievement.toFixed(2)}\n  MTD: ${d.MTD.toFixed(2)}\n  Tgt: ${d.Target.toFixed(2)}`).join('\n') +
+                    chartData.map(d => `*${d.name}:*\n  Ach: ${d.Achievement.toFixed(2)}\n  Brand Target: ${d.Target.toFixed(2)}`).join('\n') +
                     `\n------------------\n` +
                     `*Total Today:* ${(Object.values(globalToday) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}\n` +
-                    `*Total MTD:* ${(Object.values(globalMtd) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}\n` +
-                    `*Total Target:* ${(Object.values(globalTargets) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}`;
+                    `*Total Brand Target:* ${(Object.values(globalTargets) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}`;
                   
                   const encodedMsg = encodeURIComponent(summary);
                   window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
@@ -4244,15 +4881,28 @@ export default function App() {
             </div>
           </div>
 
-          {/* Brand Target vs Achievement (MTD) - Added here as requested */}
+          {/* Target vs Achievement (MTD) - Added here as requested */}
           <div className="card-clean p-4">
-            <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">Brand Target vs Achievement (MTD)</h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-4">
+              <h3 className="text-sm font-bold text-seablue uppercase tracking-widest">{targetView} Brand Target vs Achievement</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
+                <select 
+                  className="input-clean text-[10px] py-1 px-2 rounded-lg"
+                  value={targetView}
+                  onChange={(e) => setTargetView(e.target.value)}
+                >
+                  <option value="Brand">Brand-wise</option>
+                  <option value="Category">Category-wise</option>
+                </select>
+              </div>
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-left text-[10px]">
                 <thead>
                   <tr className="border-b border-slate-100 text-slate-400 uppercase">
-                    <th className="py-2">Brand Name</th>
-                    <th className="py-2 text-right">Target (Ctn)</th>
+                    <th className="py-2">{targetView} Name</th>
+                    <th className="py-2 text-right">Brand Target (Ctn)</th>
                     <th className="py-2 text-right">Ach (Ctn)</th>
                     <th className="py-2 text-right">Ach %</th>
                     <th className="py-2 text-right">Status</th>
@@ -4279,7 +4929,7 @@ export default function App() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="card-clean p-4">
-              <h3 className="text-sm font-bold mb-4 text-seablue uppercase">Brand Wise Achievement Chart</h3>
+              <h3 className="text-sm font-bold mb-4 text-seablue uppercase">{targetView} Wise Brand Target vs Achievement Chart</h3>
               <div className="h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
@@ -4291,7 +4941,7 @@ export default function App() {
                       cursor={{ fill: '#f8fafc' }}
                     />
                     <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ paddingBottom: '20px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
-                    <Bar dataKey="Target" name="Target" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="Target" name="Brand Target" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="MTD" name="MTD Ach" fill="#10b981" radius={[4, 4, 0, 0]} />
                   </BarChart>
                 </ResponsiveContainer>
@@ -5062,13 +5712,13 @@ export default function App() {
                 <input type="text" placeholder="Full Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="input-clean text-[10px]" required />
                 <input type="text" placeholder="Contact/ID" value={newUser.contact} onChange={e => setNewUser({...newUser, contact: e.target.value})} className="input-clean text-[10px]" />
                   <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="input-clean text-[10px]">
-                    <option value="OB">OB</option>
-                    <option value="TSM">TSM</option>
-                    <option value="ASM">ASM</option>
-                    <option value="RSM">RSM</option>
-                    <option value="NSM">NSM</option>
+                    <option value="OB">Order Booker (OB)</option>
+                    <option value="TSM">Territory Sales Manager (TSM)</option>
+                    <option value="ASM">Area Sales Manager (ASM)</option>
+                    <option value="RSM">Regional Sales Manager (RSM)</option>
+                    <option value="NSM">National Sales Manager (NSM)</option>
                     <option value="Director">Director</option>
-                    <option value="SC">Sales Coordinator</option>
+                    <option value="SC">Sales Coordinator (SC)</option>
                     <option value="Admin">Admin</option>
                     <option value="Super Admin">Super Admin</option>
                   </select>
@@ -5103,7 +5753,13 @@ export default function App() {
                             (u.role === 'TSM' || u.role === 'ASM') ? 'bg-orange-100 text-orange-700' :
                             'bg-slate-100 text-slate-600'
                           }`}>
-                            {u.role}
+                            {u.role === 'RSM' ? 'Regional Sales Manager' : 
+                             u.role === 'SC' ? 'Sales Coordinator' : 
+                             u.role === 'NSM' ? 'National Sales Manager' : 
+                             u.role === 'TSM' ? 'Territory Sales Manager' : 
+                             u.role === 'ASM' ? 'Area Sales Manager' : 
+                             u.role === 'OB' ? 'Order Booker' : 
+                             u.role}
                           </span>
                         </td>
                         <td className="py-2 text-slate-500">{u.contact}</td>
@@ -5617,14 +6273,29 @@ export default function App() {
     return (
       <div className="min-h-screen bg-slate-50 pb-20">
         <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
-        <UserProfileView 
-          user={user} 
-          apiFetch={apiFetch}
-          onUpdate={(updatedUser) => {
-            setUser(updatedUser);
-            localStorage.setItem('user_data', JSON.stringify(updatedUser));
-          }} 
-        />
+        <div className="max-w-4xl mx-auto">
+          <PostLoginDashboard 
+            user={user} 
+            data={postLoginData} 
+            setView={setView} 
+            onRefresh={syncEverything}
+            isSyncing={isSyncingGlobal}
+          />
+          
+          <div className="px-4 pb-10">
+            <div className="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-white">
+              <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 border-b pb-2">Edit Profile Settings</h2>
+              <UserProfileView 
+                user={user} 
+                apiFetch={apiFetch}
+                onUpdate={(updatedUser) => {
+                  setUser(updatedUser);
+                  localStorage.setItem('user_data', JSON.stringify(updatedUser));
+                }} 
+              />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -5925,7 +6596,7 @@ export default function App() {
             </div>
           </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+              <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none w-full">
               <select 
                 value={historyFilters.tsm} 
                 onChange={(e) => {
@@ -5934,7 +6605,7 @@ export default function App() {
                   // Auto-fetch on change
                   setTimeout(() => fetchHistory(), 0);
                 }}
-                className="input-clean text-xs py-1.5"
+                className="input-clean text-[10px] py-1 px-1.5 min-w-[90px] flex-1"
               >
                 <option value="">All TSMs</option>
                 {tsmList.map(tsm => <option key={tsm} value={tsm}>{tsm}</option>)}
@@ -5946,7 +6617,7 @@ export default function App() {
                   setHistoryFilters(prev => ({ ...prev, ob: val }));
                   setTimeout(() => fetchHistory(), 0);
                 }}
-                className="input-clean text-xs py-1.5"
+                className="input-clean text-[10px] py-1 px-1.5 min-w-[90px] flex-1"
               >
                 <option value="">All OBs</option>
                 {obAssignments
@@ -5962,7 +6633,7 @@ export default function App() {
                   setHistoryFilters(prev => ({ ...prev, from: val }));
                   setTimeout(() => fetchHistory(), 0);
                 }}
-                className="input-clean text-xs py-1.5"
+                className="input-clean text-[10px] py-1 px-1 min-w-[100px] flex-1"
               />
               <input 
                 type="date" 
@@ -5972,7 +6643,7 @@ export default function App() {
                   setHistoryFilters(prev => ({ ...prev, to: val }));
                   setTimeout(() => fetchHistory(), 0);
                 }}
-                className="input-clean text-xs py-1.5"
+                className="input-clean text-[10px] py-1 px-1 min-w-[100px] flex-1"
               />
             </div>
           </div>
@@ -6003,7 +6674,12 @@ export default function App() {
                       onChange={(e) => setMatrixView(e.target.value as any)}
                     >
                       <option value="Total">Total Bags/Ctns</option>
-                      {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      <optgroup label="Category-wise">
+                        {BRAND_GROUP_NAMES.map(cat => <option key={`cat_${cat}`} value={`cat_${cat}`}>{cat}</option>)}
+                      </optgroup>
+                      <optgroup label="Brand-wise">
+                        {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                      </optgroup>
                     </select>
                   </div>
                 </div>
@@ -6012,11 +6688,11 @@ export default function App() {
                     <table className="w-full text-left border-collapse text-[9px]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200">
-                          <th className="px-1 py-2 font-black text-slate-400 uppercase sticky left-0 bg-slate-50 z-10 border-r border-slate-200 w-14 sm:w-24 truncate text-[6px] sm:text-[8px]">OB Name</th>
+                          <th className="px-1 py-2 font-black text-slate-400 uppercase sticky left-0 bg-slate-50 z-10 border-r border-slate-200 w-14 sm:w-24 truncate text-[6px] sm:text-[8px] whitespace-nowrap">OB Name</th>
                           {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                            <th key={day} className="px-0.5 py-2 font-black text-slate-600 text-center border-r border-slate-100 min-w-[14px] sm:min-w-[24px] text-[5px] sm:text-[8px]">{day}</th>
+                            <th key={day} className="px-0.5 py-2 font-black text-slate-600 text-center border-r border-slate-100 min-w-[14px] sm:min-w-[24px] text-[5px] sm:text-[8px] whitespace-nowrap">{day}</th>
                           ))}
-                          <th className="px-1 py-2 font-black text-seablue text-right sticky right-0 bg-slate-50 z-10 border-l border-slate-200 w-8 sm:w-16 text-[6px] sm:text-[8px]">Total</th>
+                          <th className="px-1 py-2 font-black text-seablue text-right sticky right-0 bg-slate-50 z-10 border-l border-slate-200 w-8 sm:w-16 text-[6px] sm:text-[8px] whitespace-nowrap">Total</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -6025,7 +6701,7 @@ export default function App() {
                           let obTotal = 0;
                           return (
                             <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-1 py-2 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] truncate w-14 sm:w-24 text-[6px] sm:text-[8px]" title={ob.name}>{ob.name}</td>
+                              <td className="px-1 py-2 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] truncate w-14 sm:w-24 text-[6px] sm:text-[8px] whitespace-nowrap" title={ob.name}>{ob.name}</td>
                               {Array.from({ length: 31 }, (_, i) => {
                                 const day = (i + 1).toString().padStart(2, '0');
                                 const dateStr = `${new Date().toISOString().slice(0, 7)}-${day}`;
@@ -6036,6 +6712,14 @@ export default function App() {
                                   const items = dayOrder.order_data || {};
                                   if (matrixView === 'Total') {
                                     daySales = SKUS.reduce((sum, sku) => {
+                                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                                      const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                                      return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                                    }, 0);
+                                  } else if (matrixView.startsWith('cat_')) {
+                                    const categoryName = matrixView.replace('cat_', '');
+                                    const brandsInGroup = BRAND_GROUPS[categoryName] || [];
+                                    daySales = SKUS.filter(s => brandsInGroup.includes(s.category)).reduce((sum, sku) => {
                                       const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                                       const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
                                       return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
@@ -6327,6 +7011,7 @@ export default function App() {
               ))}
             </select>
           </div>
+
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">Shops</label>
             <input type="number" inputMode="numeric" autoComplete="off" value={order.totalShops || ''} onChange={(e) => handleMetaChange('totalShops', parseInt(e.target.value) || 0)} className="input-clean w-full bg-slate-50 text-[10px] py-1" disabled={order.visitType === 'Absent'} />
@@ -6381,18 +7066,6 @@ export default function App() {
 
         {order.obContact && !order.isAbsent ? (
           <>
-            <div className="card-clean p-1.5 flex flex-wrap items-center justify-center gap-1.5 md:gap-3 bg-slate-50/50">
-              {CATEGORIES.map(cat => (
-                <div key={cat} className="flex flex-col items-center bg-white border border-slate-200 rounded-md px-2 py-1 shadow-sm min-w-[80px]">
-                  <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">{cat}</span>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-[11px] font-black text-seablue">{categoryTotals[cat].toFixed(2)}</span>
-                    <span className="text-[8px] font-bold text-slate-400">/ {(order.targets[cat] || 0).toFixed(2)}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-
             {/* Categories Section */}
             <div className="space-y-4">
               {CATEGORIES.map(category => (
@@ -6416,14 +7089,22 @@ export default function App() {
                   </div>
 
                   {/* 3rd: Today Sales */}
-                  <div className="flex flex-col items-center bg-seablue rounded-lg px-2 py-0.5 shadow-sm border border-seablue/10 min-w-[50px]">
-                    <span className="text-[6px] font-black text-white/80 uppercase tracking-tighter">Today</span>
-                    <span className="text-[11px] font-black text-white leading-tight">{categoryTotals[category].toFixed(2)}</span>
+                  <div className="flex flex-col items-center bg-slate-100 rounded-lg px-2 py-0.5 shadow-sm border border-slate-200 min-w-[45px]">
+                    <span className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Today</span>
+                    <span className="text-[10px] font-black text-slate-700 leading-tight">{categoryTotals[category].toFixed(2)}</span>
                   </div>
 
-                  {/* 4th: Target */}
+                  {/* 4th: MTD Ach */}
+                  <div className="flex flex-col items-center bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-0.5 min-w-[45px]">
+                    <span className="text-[6px] font-black text-emerald-400 uppercase tracking-tighter">MTD Ach</span>
+                    <span className="text-[10px] font-black text-emerald-700 leading-tight">{mtdCategoryTotals[category].toFixed(2)}</span>
+                  </div>
+
+                  {/* 5th: Brand Target */}
                   <div className="flex flex-col items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 min-w-[50px]">
-                    <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Target</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Brand Target</span>
+                    </div>
                     <input 
                       type="number" 
                       inputMode="decimal"
@@ -6433,12 +7114,6 @@ export default function App() {
                       className="w-10 text-center text-[11px] font-bold text-slate-600 bg-transparent focus:outline-none"
                       placeholder="0"
                     />
-                  </div>
-
-                  {/* 5th: MTD Sales */}
-                  <div className="flex flex-col items-center bg-emerald-50 border border-emerald-100 rounded-lg px-2 py-1 min-w-[55px]">
-                    <span className="text-[7px] font-black text-emerald-500 uppercase tracking-tighter">MTD Ach</span>
-                    <span className="text-[11px] font-bold text-emerald-700">{(mtdAchievement[category] || 0).toFixed(2)}</span>
                   </div>
                 </div>
               </div>
@@ -6476,6 +7151,36 @@ export default function App() {
               </div>
               </section>
             ))}
+            {/* MTD Target vs Achievement Summary */}
+            <section className="card-clean p-4 bg-white shadow-xl shadow-slate-200/40 mt-4">
+              <div className="flex items-center gap-2 mb-4">
+                <Target className="w-4 h-4 text-seablue" />
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest text-[10px]">MTD Target vs Achievement Summary</h3>
+              </div>
+              <div className="overflow-x-auto scrollbar-thin pb-2">
+                <div className="flex gap-4 min-w-max">
+                  {CATEGORIES.map(cat => {
+                    const ach = mtdCategoryTotals[cat] || 0;
+                    const target = order.targets[cat] || 0;
+                    const percent = target > 0 ? (ach / target) * 100 : 0;
+                    return (
+                      <div key={cat} className="flex flex-col p-3 rounded-2xl bg-slate-50 border border-slate-100 min-w-[140px]">
+                        <span className="text-[9px] font-black text-slate-400 uppercase mb-1">{cat}</span>
+                        <div className="flex items-end justify-between">
+                          <div className="flex flex-col">
+                            <span className="text-[12px] font-black text-seablue">{ach.toFixed(1)}</span>
+                            <span className="text-[8px] font-bold text-slate-400">Target: {target.toFixed(1)}</span>
+                          </div>
+                          <span className={`text-[10px] font-black ${percent >= 100 ? 'text-emerald-600' : percent >= 80 ? 'text-amber-500' : 'text-rose-500'}`}>
+                            {percent.toFixed(0)}%
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </section>
           </div>
         </>
       ) : (
@@ -6547,25 +7252,8 @@ export default function App() {
                         return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
                       }, 0);
                       const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
-                      return `${cat}: ${catTotal.toFixed(2)} ${label}`;
-                    }).join('\n');
-
-                    // Calculate MTD for this OB
-                    const currentMonth = lastSubmittedOrder.date.slice(0, 7);
-                    const obHistory = history.filter(h => h.ob_contact === lastSubmittedOrder.ob_contact && h.date.startsWith(currentMonth));
-                    
-                    const mtdBrandSales = CATEGORIES.map(cat => {
-                      const catSkus = SKUS.filter(s => s.category === cat);
-                      const mtdTotal = obHistory.reduce((sum, h) => {
-                        const hData = typeof h.order_data === 'string' ? JSON.parse(h.order_data) : h.order_data;
-                        const hCatTotal = catSkus.reduce((sSum, sku) => {
-                          const item = hData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                          const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
-                          return sSum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
-                        }, 0);
-                        return sum + hCatTotal;
-                      }, 0);
-                      return `${cat}: ${mtdTotal.toFixed(2)}`;
+                      const target = lastSubmittedOrder.targets?.[cat] || 0;
+                      return `${cat}: ${catTotal.toFixed(2)} / ${target.toFixed(2)} ${label} (Brand Target)`;
                     }).join('\n');
 
                     const summary = `Sales Summary\n` +
@@ -6573,14 +7261,13 @@ export default function App() {
                       `OB: ${lastSubmittedOrder.order_booker || lastSubmittedOrder.orderBooker}\n` +
                       `Town Name: ${lastSubmittedOrder.town}\n` +
                       `Route: ${lastSubmittedOrder.route}\n` +
-                      `Shops T/V/P: ${lastSubmittedOrder.total_shops || 50}/${lastSubmittedOrder.visited_shops}/${lastSubmittedOrder.productive_shops}\n` +
+                      `Shops T/V/P: ${lastSubmittedOrder.totalShops || 50}/${lastSubmittedOrder.visitedShops}/${lastSubmittedOrder.productiveShops}\n` +
                       `------------------\n` +
                       `SKU Details:\n${skuDetails}\n` +
                       `------------------\n` +
                       `${brandTotals}\n` +
                       `------------------\n` +
-                      `Total Achievement: ${totalAch.toFixed(2)}\n\n` +
-                      `MTD Sales Brand Wise:\n${mtdBrandSales}`;
+                      `Total Achievement: ${totalAch.toFixed(2)}`;
                     
                     const encodedMsg = encodeURIComponent(summary);
                     window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
