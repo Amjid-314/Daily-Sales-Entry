@@ -28,6 +28,7 @@ import {
   Loader2,
   History,
   ArrowLeft,
+  ArrowRight,
   Download,
   AlertTriangle,
   RefreshCw,
@@ -342,6 +343,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   const processedStats = useMemo(() => {
     let baseStats = stats;
     
+    const tsmContacts = new Set(hierarchy.map(h => (h.asm_tsm_contact || '').trim()).filter(Boolean));
+    
     // Role-based data filtering
     if (userRole === 'Director' && userName) {
       const normalizedName = userName.trim().toLowerCase();
@@ -378,6 +381,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
     return baseStats.map(s => {
       const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+      const isTSMEntry = tsmContacts.has(s.ob_contact) || (s.order_booker && s.tsm && s.order_booker.trim().toLowerCase() === s.tsm.trim().toLowerCase());
       const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
       
       let totalBags = 0;
@@ -418,6 +422,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         distributor: h?.distributor_name || s.distributor || 'Unassigned',
         ob_name: h?.ob_name || s.order_booker || 'Unassigned',
         month: s.date.slice(0, 7),
+        isTSMEntry,
         totalBags,
         brandSales,
         totalWeightKg,
@@ -571,7 +576,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
   const summary = useMemo(() => {
     const totalSales = monthStats.reduce((sum, s) => sum + s.totalBags, 0);
-    const uniqueOBs = new Set(monthStats.map(s => s.ob_contact)).size;
+    const uniqueOBs = new Set(monthStats.filter(s => !s.isTSMEntry).map(s => s.ob_contact)).size;
     const uniqueTSMs = new Set(monthStats.map(s => s.tsm)).size;
     
     const totalOBSalary = uniqueOBs * 50000;
@@ -580,13 +585,29 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     const costPerBag = totalSales > 0 ? totalSalaryCost / totalSales : 0;
 
     const brandTotals: Record<string, number> = {};
+    const brandActiveOBs: Record<string, number> = {};
+    const brandTonnage: Record<string, number> = {};
+
     brands.forEach(b => {
+      const brandStats = monthStats.filter(s => (s.brandSales[b] || 0) > 0);
       brandTotals[b] = monthStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0);
+      brandActiveOBs[b] = new Set(brandStats.filter(s => !s.isTSMEntry).map(s => s.ob_contact)).size;
+      
+      // Calculate tonnage for this brand
+      brandTonnage[b] = monthStats.reduce((sum, s) => {
+        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+        const catWeight = SKUS.filter(sku => sku.category === b).reduce((cSum, sku) => {
+          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return cSum + (packs * sku.weight_gm_per_pack);
+        }, 0);
+        return sum + (catWeight / 1000000);
+      }, 0);
     });
 
     const totalTonnage = monthStats.reduce((sum, s) => sum + (s.totalWeightKg || 0), 0) / 1000;
 
-    return { totalSales, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, brandTotals, totalTonnage };
+    return { totalSales, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, brandTotals, brandActiveOBs, brandTonnage, totalTonnage };
   }, [monthStats, brands]);
 
   const categoryStats = useMemo(() => {
@@ -838,9 +859,17 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               <Package className="w-24 h-24" />
             </div>
             <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">MTD Volume</div>
-            <div className="text-4xl font-black">{summary.totalSales.toFixed(0)}</div>
+            <div className="text-4xl font-black">{summary.totalTonnage.toFixed(1)} <span className="text-sm font-normal opacity-70">Tons</span></div>
             <div className="text-[9px] font-bold text-white/80 mt-2 uppercase tracking-tighter">
-              {summary.totalTonnage.toFixed(1)} Tons Distributed
+              {summary.totalSales.toFixed(0)} Total Bags
+            </div>
+            <div className="mt-4 space-y-1 border-t border-white/10 pt-2">
+              {brands.map(b => (
+                <div key={b} className="flex justify-between text-[8px] font-bold">
+                  <span className="opacity-70">{b}:</span>
+                  <span>{(summary.brandTonnage[b] || 0).toFixed(2)} Tons</span>
+                </div>
+              ))}
             </div>
           </div>
           <div className="card-clean p-5 bg-emerald-600 text-white shadow-xl shadow-emerald-100 relative overflow-hidden group">
@@ -851,6 +880,14 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
             <div className="text-4xl font-black">{summary.uniqueOBs}</div>
             <div className="text-[9px] font-bold text-white/80 mt-2 uppercase tracking-tighter">
               Across {summary.uniqueTSMs} TSM Teams
+            </div>
+            <div className="mt-4 space-y-1 border-t border-white/10 pt-2">
+              {brands.map(b => (
+                <div key={b} className="flex justify-between text-[8px] font-bold">
+                  <span className="opacity-70">{b}:</span>
+                  <span>{summary.brandActiveOBs[b] || 0} OBs</span>
+                </div>
+              ))}
             </div>
           </div>
         </div>
@@ -1450,7 +1487,6 @@ export const APP_TABS = [
   { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
   { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'profile', label: 'Profile', icon: User, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
   { id: 'help', label: 'Help', icon: HelpCircle, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
 ];
@@ -1576,11 +1612,53 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
           transition={{ delay: 0.1 }}
           className="card-clean p-5 bg-gradient-to-br from-emerald-600 to-emerald-800 text-white shadow-xl shadow-emerald-100"
         >
-          <div className="text-[9px] font-black uppercase tracking-widest opacity-70 mb-1">MTD Sales</div>
-          <div className="text-3xl font-black">{data.mtdSales.toFixed(1)}</div>
-          <div className="text-[8px] font-bold opacity-60 mt-2 uppercase">Month to Date</div>
+          <div className="text-[9px] font-black uppercase tracking-widest opacity-70 mb-1">MTD Volume</div>
+          <div className="text-3xl font-black">{data.mtdVolumeTons.toFixed(1)} <span className="text-sm font-normal opacity-70">Tons</span></div>
+          <div className="text-[8px] font-bold opacity-60 mt-2 uppercase">{data.mtdSales.toFixed(0)} Total Bags</div>
         </motion.div>
       </div>
+
+      {/* Brand-wise Active OBs & Volume */}
+      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
+        <div className="flex items-center gap-2 mb-6">
+          <Users className="w-4 h-4 text-seablue" />
+          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Active OBs & Volume (Brand-wise)</h3>
+        </div>
+        <div className="space-y-4">
+          <div className="grid grid-cols-3 gap-2 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b pb-2">
+            <div>Brand</div>
+            <div className="text-center">Active OBs</div>
+            <div className="text-right">MTD Volume (Tons)</div>
+          </div>
+          {CATEGORIES.map(cat => (
+            <div key={cat} className="grid grid-cols-3 gap-2 items-center">
+              <div className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[cat] }} />
+                <span className="text-[10px] font-bold text-slate-700">{cat}</span>
+              </div>
+              <div className="text-center">
+                <span className="text-[10px] font-black text-seablue bg-seablue/5 px-2 py-0.5 rounded-full">
+                  {data.activeOBsBrandWise[cat] || 0}
+                </span>
+              </div>
+              <div className="text-right text-[10px] font-black text-slate-600">
+                {(data.mtdVolumeBrandWise[cat] || 0).toFixed(2)}
+              </div>
+            </div>
+          ))}
+          <div className="grid grid-cols-3 gap-2 items-center pt-2 border-t border-dashed">
+            <div className="text-[10px] font-black text-slate-800">Total</div>
+            <div className="text-center">
+              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                {data.totalActiveOBs}
+              </span>
+            </div>
+            <div className="text-right text-[10px] font-black text-slate-800">
+              {data.mtdVolumeTons.toFixed(2)}
+            </div>
+          </div>
+        </div>
+      </section>
 
       {/* Sales Trend (Last 7 Days) */}
       <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
@@ -1773,129 +1851,54 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
   );
 };
 
-const UserProfileView = ({ user, onUpdate, apiFetch }: { user: any, onUpdate: (data: any) => void, apiFetch: any }) => {
-  const [formData, setFormData] = useState({
-    name: user?.name || '',
-    contact: user?.contact || '',
-    region: user?.region || '',
-    town: user?.town || '',
-    email: user?.email || '',
-    username: user?.username || ''
-  });
-  const [isUpdating, setIsUpdating] = useState(false);
-  const [message, setMessage] = useState<{ text: string, type: 'success' | 'error' } | null>(null);
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsUpdating(true);
-    try {
-      const res = await apiFetch('/api/user/profile', {
-        method: 'PUT',
-        body: JSON.stringify({
-          name: formData.name,
-          contact: formData.contact,
-          region: formData.region,
-          town: formData.town
-        })
-      });
-      if (res.ok) {
-        setMessage({ text: 'Profile updated successfully!', type: 'success' });
-        onUpdate({ ...user, ...formData });
-      } else {
-        throw new Error('Update failed');
-      }
-    } catch (err) {
-      setMessage({ text: 'Failed to update profile', type: 'error' });
-    } finally {
-      setIsUpdating(false);
-      setTimeout(() => setMessage(null), 3000);
-    }
-  };
-
+const IntroProfile = ({ user, onContinue }: { user: any, onContinue: () => void }) => {
   return (
-    <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">User Profile</h1>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">View and update your personal information</p>
-      </div>
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.9 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="glass-card p-8 rounded-[2.5rem] border border-white/60 shadow-2xl shadow-slate-200/50 max-w-sm w-full text-center space-y-6"
+      >
+        <div className="w-24 h-24 bg-seablue/10 rounded-full flex items-center justify-center mx-auto border-4 border-white shadow-lg">
+          <User className="w-12 h-12 text-seablue" />
+        </div>
+        
+        <div className="space-y-2">
+          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight leading-none">Welcome Back!</h2>
+          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Sales Intelligence Platform</p>
+        </div>
 
-      <form onSubmit={handleSubmit} className="card-clean bg-white p-6 space-y-4">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Full Name</label>
-            <input 
-              type="text" 
-              value={formData.name} 
-              onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-              className="input-clean w-full"
-              required
-            />
+        <div className="bg-slate-50/50 rounded-3xl p-6 border border-slate-100 space-y-4">
+          <div className="flex flex-col items-center">
+            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Full Name</span>
+            <span className="text-lg font-black text-seablue uppercase tracking-tight">{user?.name || 'User'}</span>
           </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Contact Number</label>
-            <input 
-              type="text" 
-              value={formData.contact} 
-              onChange={(e) => setFormData({ ...formData, contact: e.target.value })}
-              className="input-clean w-full"
-              required
-            />
+          
+          <div className="grid grid-cols-2 gap-4">
+            <div className="flex flex-col items-center">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Role</span>
+              <span className="text-[10px] font-black text-slate-700 uppercase bg-white px-3 py-1 rounded-full shadow-sm border border-slate-100">{user?.role || 'N/A'}</span>
+            </div>
+            <div className="flex flex-col items-center">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Region</span>
+              <span className="text-[10px] font-black text-slate-700 uppercase bg-white px-3 py-1 rounded-full shadow-sm border border-slate-100">{user?.region || 'N/A'}</span>
+            </div>
           </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Region</label>
-            <input 
-              type="text" 
-              value={formData.region} 
-              onChange={(e) => setFormData({ ...formData, region: e.target.value })}
-              className="input-clean w-full"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Town</label>
-            <input 
-              type="text" 
-              value={formData.town} 
-              onChange={(e) => setFormData({ ...formData, town: e.target.value })}
-              className="input-clean w-full"
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Email (Read-only)</label>
-            <input 
-              type="email" 
-              value={formData.email} 
-              className="input-clean w-full bg-slate-50"
-              readOnly
-            />
-          </div>
-          <div className="space-y-1">
-            <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Username (Read-only)</label>
-            <input 
-              type="text" 
-              value={formData.username} 
-              className="input-clean w-full bg-slate-50"
-              readOnly
-            />
+
+          <div className="flex flex-col items-center pt-2 border-t border-slate-100">
+            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Contact Number</span>
+            <span className="text-[11px] font-mono font-bold text-slate-600">{user?.contact || 'N/A'}</span>
           </div>
         </div>
 
-        {message && (
-          <div className={`p-3 rounded-xl text-xs font-bold uppercase tracking-widest ${message.type === 'success' ? 'bg-emerald-50 text-emerald-600' : 'bg-red-50 text-red-600'}`}>
-            {message.text}
-          </div>
-        )}
-
-        <div className="pt-4">
-          <button 
-            type="submit" 
-            disabled={isUpdating}
-            className="btn-seablue w-full py-3 flex items-center justify-center gap-2"
-          >
-            {isUpdating ? <Loader2 className="w-4 h-4 animate-spin" /> : <User className="w-4 h-4" />}
-            Update Profile
-          </button>
-        </div>
-      </form>
+        <button 
+          onClick={onContinue}
+          className="btn-seablue w-full py-4 rounded-2xl flex items-center justify-center gap-2 group"
+        >
+          <span className="text-sm font-black uppercase tracking-widest">Start Daily Entry</span>
+          <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
+        </button>
+      </motion.div>
     </div>
   );
 };
@@ -1935,31 +1938,34 @@ const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v:
   );
 };
 
+const isTSMEntry = (obName: string, tsmName: string) => {
+  if (!obName || !tsmName) return false;
+  return obName.trim().toLowerCase() === tsmName.trim().toLowerCase();
+};
+
 const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact }: any) => {
   const currentMonth = getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
 
   const filteredOBs = useMemo(() => {
+    let obs = [];
     if (userRole === 'Admin' || userRole === 'Super Admin') {
-      return obAssignments;
+      obs = obAssignments;
+    } else if (userRole === 'Director') {
+      obs = obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if (userRole === 'NSM') {
+      obs = obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if (userRole === 'RSM' || userRole === 'SC') {
+      obs = obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+      obs = obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if (userRole === 'OB') {
+      obs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
     }
-    if (userRole === 'Director') {
-      return obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    }
-    if (userRole === 'NSM') {
-      return obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    }
-    if (userRole === 'RSM' || userRole === 'SC') {
-      return obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    }
-    if ((userRole === 'TSM' || userRole === 'ASM')) {
-      return obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    }
-    if (userRole === 'OB') {
-      return obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
-    }
-    return [];
+    
+    // Exclude TSM entries from OB reports
+    return obs.filter((ob: any) => !isTSMEntry(ob.name, ob.tsm));
   }, [obAssignments, userRole, userRegion, userName, userContact]);
 
   const filteredTSMList = useMemo(() => {
@@ -2092,16 +2098,17 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filteredTSMList.map((tsm: string, idx: number) => {
-                const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm);
-                const tsmOrders = history.filter((h: any) => h.tsm === tsm && h.date.startsWith(currentMonth));
+                const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm && !isTSMEntry(ob.name, ob.tsm));
+                const tsmOrders = history.filter((h: any) => h.tsm === tsm && h.date.startsWith(currentMonth) && !isTSMEntry(h.order_booker, h.tsm));
                 const activeOBs = new Set(tsmOrders.map((h: any) => h.ob_contact)).size;
                 const totalSales = tsmOrders.reduce((sum: number, h: any) => {
                   const data = h.order_data || {};
-                  return sum + SKUS.reduce((s: number, sku: any) => {
+                  const bags = SKUS.reduce((s, sku) => {
                     const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                    const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                    const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
                     return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
                   }, 0);
+                  return sum + bags;
                 }, 0);
                 const avgProd = tsmOrders.length > 0 ? tsmOrders.reduce((sum: number, h: any) => sum + (h.visited_shops > 0 ? (h.productive_shops / h.visited_shops) * 100 : 0), 0) / tsmOrders.length : 0;
                 const score = (activeOBs / Math.max(1, tsmOBs.length) * 40) + (avgProd * 0.6);
@@ -2140,39 +2147,37 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
   const [targetView, setTargetView] = useState('Brand');
 
   const filteredOBs = useMemo(() => {
+    let obs = [];
     if (userRole === 'Admin' || userRole === 'Super Admin') {
-      return obAssignments;
+      obs = obAssignments;
+    } else if (userRole === 'Director') {
+      obs = obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if (userRole === 'NSM') {
+      obs = obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if (userRole === 'RSM' || userRole === 'SC') {
+      obs = obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+      obs = obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if (userRole === 'OB') {
+      obs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
     }
-    if (userRole === 'Director') {
-      return obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    }
-    if (userRole === 'NSM') {
-      return obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    }
-    if (userRole === 'RSM' || userRole === 'SC') {
-      return obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    }
-    if ((userRole === 'TSM' || userRole === 'ASM')) {
-      return obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    }
-    if (userRole === 'OB') {
-      return obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
-    }
-    return [];
+    
+    // Exclude TSM entries from OB reports
+    return obs.filter((ob: any) => !isTSMEntry(ob.name, ob.tsm));
   }, [obAssignments, userRole, userRegion, userName, userContact]);
   
   const routeAnalysisData = useMemo(() => {
     if (!selectedAnalysisOB || !selectedAnalysisRoute) return null;
     const obOrders = history.filter((h: any) => h.ob_contact === selectedAnalysisOB && h.route === selectedAnalysisRoute);
-    const last6 = obOrders.sort((a: any, b: any) => b.date.localeCompare(a.date)).slice(0, 6);
+    const last8 = obOrders.sort((a: any, b: any) => b.date.localeCompare(a.date)).slice(0, 8);
     
-    return last6.map((h: any) => {
+    return last8.map((h: any) => {
       const data = h.order_data || {};
       const brandSales: Record<string, number> = {};
       CATEGORIES.forEach((cat: string) => {
         brandSales[cat] = SKUS.filter((s: any) => s.category === cat).reduce((sum: number, sku: any) => {
           const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-          const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
           return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
         }, 0);
       });
@@ -2325,28 +2330,34 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                 let catAch = 0;
 
                 if (targetView === 'Brand') {
-                  catTarget = obAssignments.reduce((sum: number, ob: any) => sum + (ob.targets?.[cat] || 0), 0);
-                  catAch = history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((sum: number, h: any) => {
-                    const data = h.order_data || {};
-                    return sum + SKUS.filter((s: any) => s.category === cat).reduce((s: number, sku: any) => {
-                      const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                      const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                      return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                  catTarget = filteredOBs.reduce((sum: number, ob: any) => sum + (ob.targets?.[cat] || 0), 0);
+                  const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
+                  catAch = history
+                    .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
+                    .reduce((sum: number, h: any) => {
+                      const data = h.order_data || {};
+                      return sum + SKUS.filter((s: any) => s.category === cat).reduce((s: number, sku: any) => {
+                        const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                        return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                      }, 0);
                     }, 0);
-                  }, 0);
                 } else {
                   const brandsInGroup = BRAND_GROUPS[cat] || [];
-                  catTarget = obAssignments.reduce((sum: number, ob: any) => {
+                  catTarget = filteredOBs.reduce((sum: number, ob: any) => {
                     return sum + brandsInGroup.reduce((s, brand) => s + (ob.targets?.[brand] || 0), 0);
                   }, 0);
-                  catAch = history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((sum: number, h: any) => {
-                    const data = h.order_data || {};
-                    return sum + SKUS.filter((s: any) => brandsInGroup.includes(s.category)).reduce((s: number, sku: any) => {
-                      const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                      const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                      return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                  const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
+                  catAch = history
+                    .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
+                    .reduce((sum: number, h: any) => {
+                      const data = h.order_data || {};
+                      return sum + SKUS.filter((s: any) => brandsInGroup.includes(s.category)).reduce((s: number, sku: any) => {
+                        const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                        return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                      }, 0);
                     }, 0);
-                  }, 0);
                 }
 
                 const percent = catTarget > 0 ? (catAch / catTarget) * 100 : 0;
@@ -2375,7 +2386,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
             <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
               <History className="w-4 h-4" />
             </div>
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Route Analysis (Last 6 Visits)</h3>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Route Analysis (Last 8 Visits)</h3>
           </div>
           <div className="flex gap-2">
             <select 
@@ -2510,7 +2521,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
 };
 
 
-const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => {
+const Login = ({ onLogin, logo }: { onLogin: (token: string, user: any) => void, logo: string | null }) => {
   const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -2546,11 +2557,17 @@ const Login = ({ onLogin }: { onLogin: (token: string, user: any) => void }) => 
         className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 border border-slate-100"
       >
         <div className="flex flex-col items-center mb-10">
-          <div className="w-20 h-20 bg-seablue rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-seablue/20 rotate-3">
-            <Waves className="text-white w-10 h-10" />
+          <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-slate-200/20 overflow-hidden border border-slate-50">
+            {logo ? (
+              <img src={logo} alt="App Logo" className="w-full h-full object-contain p-2" />
+            ) : (
+              <div className="w-full h-full bg-seablue flex items-center justify-center">
+                <Waves className="text-white w-12 h-12" />
+              </div>
+            )}
           </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">SalesPulse</h1>
-          <p className="text-slate-400 text-sm mt-2 font-medium">Enterprise Sales Management</p>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">SalesPulse Pro</h1>
+          <p className="text-slate-400 text-xs mt-2 font-bold uppercase tracking-widest">Intelligent Sales Execution Platform</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-6">
@@ -2633,7 +2650,7 @@ const normalizeRole = (role: string): any => {
 };
 
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'profile' | 'help'>(() => {
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'intro' | 'help'>(() => {
     const saved = localStorage.getItem('user_data');
     if (saved) {
       try {
@@ -2682,7 +2699,7 @@ export default function App() {
     }
 
     if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(role)) {
-      setView('dashboard');
+      setView('intro');
     }
   };
 
@@ -2749,14 +2766,82 @@ export default function App() {
     const today = getPSTDate();
     const currentMonth = today.slice(0, 7);
     
+    const tsmContacts = new Set(hierarchy.map(h => (h.asm_tsm_contact || '').trim()).filter(Boolean));
+    
     const userStats = history.filter(s => {
-      if (user.role === 'OB') return s.ob_contact === user.contact;
-      if (user.role === 'TSM' || user.role === 'ASM') return s.tsm === user.name;
+      const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+      const normalizedRole = (user.role || '').toUpperCase();
+      const normalizedName = (user.name || '').trim().toLowerCase();
+      const normalizedContact = (user.contact || '').trim().toLowerCase();
+
+      if (normalizedRole === 'OB') return s.ob_contact === user.contact;
+      if (normalizedRole === 'TSM' || normalizedRole === 'ASM') {
+        const tsm = (h?.asm_tsm_name || s.tsm || '').trim().toLowerCase();
+        return tsm === normalizedName;
+      }
+      if (normalizedRole === 'RSM' || normalizedRole === 'SC') {
+        const rsmName = (h?.rsm_name || '').trim().toLowerCase();
+        const scName = (h?.sc_name || '').trim().toLowerCase();
+        return rsmName === normalizedName || scName === normalizedName;
+      }
+      if (normalizedRole === 'NSM') {
+        const nsmName = (h?.nsm_name || '').trim().toLowerCase();
+        return nsmName === normalizedName;
+      }
+      if (normalizedRole === 'DIRECTOR') {
+        const directorName = (h?.director_sales || '').trim().toLowerCase();
+        return directorName === normalizedName;
+      }
       return true;
     });
 
+    const calculateTotalWeightTons = (order: any) => {
+      const items = order.order_data || order.items;
+      if (!items) return 0;
+      const grams = Object.keys(items).reduce((sum, skuId) => {
+        const sku = SKUS.find(s => s.id === skuId);
+        if (!sku) return sum;
+        const item = items[skuId];
+        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+        return sum + (packs * sku.weight_gm_per_pack);
+      }, 0);
+      return grams / 1000000;
+    };
+
     const todaySales = userStats.filter(s => s.date === today).reduce((sum, s) => sum + calculateTotalBags(s), 0);
     const mtdSales = userStats.filter(s => s.date && s.date.startsWith(currentMonth)).reduce((sum, s) => sum + calculateTotalBags(s), 0);
+    const mtdVolumeTons = userStats.filter(s => s.date && s.date.startsWith(currentMonth)).reduce((sum, s) => sum + calculateTotalWeightTons(s), 0);
+
+    const mtdVolumeBrandWise: Record<string, number> = {};
+    const activeOBsBrandWise: Record<string, number> = {};
+
+    CATEGORIES.forEach(cat => {
+      const catStats = userStats.filter(s => s.date && s.date.startsWith(currentMonth));
+      mtdVolumeBrandWise[cat] = catStats.reduce((sum, s) => {
+        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+        const catWeight = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
+          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return cSum + (packs * sku.weight_gm_per_pack);
+        }, 0);
+        return sum + (catWeight / 1000000);
+      }, 0);
+
+      const activeOBs = new Set(catStats.filter(s => {
+        // Exclude TSM entries from OB count
+        if (tsmContacts.has(s.ob_contact)) return false;
+        
+        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+        const catAch = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
+          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          return cSum + Number(item.ctn || 0) + Number(item.dzn || 0) + Number(item.pks || 0);
+        }, 0);
+        return catAch > 0;
+      }).map(s => s.ob_contact));
+      activeOBsBrandWise[cat] = activeOBs.size;
+    });
+
+    const totalActiveOBs = new Set(userStats.filter(s => s.date && s.date.startsWith(currentMonth) && !tsmContacts.has(s.ob_contact)).map(s => s.ob_contact)).size;
 
     const now = getPSTDate();
     const year = parseInt(now.slice(0, 4));
@@ -2877,7 +2962,7 @@ export default function App() {
       return { day: dayName, sales };
     });
 
-    return { todaySales, mtdSales, brandPerformance, weakestRoutes, last7DaysSales, obPerformance, last8Visits };
+    return { todaySales, mtdSales, mtdVolumeTons, mtdVolumeBrandWise, activeOBsBrandWise, totalActiveOBs, brandPerformance, weakestRoutes, last7DaysSales, obPerformance, last8Visits };
   }, [user, history, obAssignments, hierarchy, appConfig]);
 
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
@@ -3597,8 +3682,9 @@ export default function App() {
 
   useEffect(() => {
     if (!token || token === 'null') return;
-    if (view === 'national' || view === 'dashboard' || view === 'reports') {
+    if (view === 'national' || view === 'dashboard' || view === 'reports' || view === 'stats') {
       fetchNationalData();
+      fetchHistory(true);
     }
   }, [view, token]);
 
@@ -4397,7 +4483,11 @@ export default function App() {
   
 
   if (!token || token === 'null') {
-    return <Login onLogin={handleLogin} />;
+    return <Login onLogin={handleLogin} logo={appLogo} />;
+  }
+
+  if (view === 'intro') {
+    return <IntroProfile user={user} onContinue={() => setView('entry')} />;
   }
 
   if (view === 'dashboard') {
@@ -6289,35 +6379,12 @@ export default function App() {
               <div className="border-l-4 border-rose-500 pl-4">
                 <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">5. Logout</h2>
                 <p className="text-sm text-slate-600">
-                  To log out, go to the <strong>Profile</strong> tab and click the <strong>"Logout"</strong> button.
+                  To log out, use the <strong>Logout</strong> button in the navigation bar.
                 </p>
               </div>
             </div>
           </div>
         </main>
-      </div>
-    );
-  }
-
-  if (view === 'profile') {
-    return (
-      <div className="min-h-screen bg-slate-50 pb-20">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
-        <div className="max-w-4xl mx-auto pt-6">
-          <div className="px-4 pb-10">
-            <div className="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-white">
-              <h2 className="text-sm font-black text-slate-800 uppercase tracking-widest mb-6 border-b pb-2">Edit Profile Settings</h2>
-              <UserProfileView 
-                user={user} 
-                apiFetch={apiFetch}
-                onUpdate={(updatedUser) => {
-                  setUser(updatedUser);
-                  localStorage.setItem('user_data', JSON.stringify(updatedUser));
-                }} 
-              />
-            </div>
-          </div>
-        </div>
       </div>
     );
   }
@@ -6893,7 +6960,7 @@ export default function App() {
   }
 
   if (!token || token === 'null') {
-    return <Login onLogin={handleLogin} />;
+    return <Login onLogin={handleLogin} logo={appLogo} />;
   }
 
   return (
