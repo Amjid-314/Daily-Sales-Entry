@@ -61,7 +61,8 @@ import {
   Mail,
   Key,
   User,
-  HelpCircle
+  HelpCircle,
+  Database
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
 
@@ -729,7 +730,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       const obContacts = Array.from(obStatsByTsm[tsm]);
       const achievements = obContacts.map(contact => {
         const obSales = obOnlyStats.filter(s => s.ob_contact === contact).reduce((sum, s) => sum + s.totalBags, 0);
-        const obTarget = hierarchy.filter(h => h.ob_contact === contact).reduce((sum, h) => sum + (Number(h.target_ctn) || 0), 0);
+        const obTarget = hierarchy.filter(h => h.ob_id === contact).reduce((sum, h) => sum + (Number(h.target_ctn) || 0), 0);
         return obTarget > 0 ? (obSales / obTarget) * 100 : 0;
       });
       
@@ -1077,7 +1078,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               <option value="SKU">SKU Wise</option>
             </select>
           </div>
-          <div className="h-[300px]">
+          <div style={{ height: achievementView === 'SKU' ? `${Math.max(300, Object.keys(summary.skuTotals).length * 40)}px` : '300px' }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart 
                 data={
@@ -1519,7 +1520,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                 </PieChart>
               </ResponsiveContainer>
             </div>
-            <div className="max-h-[250px] overflow-y-auto space-y-2 pr-2">
+            <div className="space-y-2 pr-2">
               {categoryStats.map(cat => (
                 <div key={cat.category} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
                   <div className="flex justify-between items-center mb-2">
@@ -2021,7 +2022,7 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
           <div className="grid grid-cols-3 gap-2 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b pb-2">
             <div>Brand</div>
             <div className="text-center">Active OBs</div>
-            <div className="text-right">MTD Volume (Tons)</div>
+            <div className="text-right">MTD Volume</div>
           </div>
           {CATEGORIES.map(cat => (
             <div key={cat} className="grid grid-cols-3 gap-2 items-center">
@@ -2035,7 +2036,7 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
                 </span>
               </div>
               <div className="text-right text-[10px] font-black text-slate-600">
-                {(data.mtdVolumeBrandWise[cat] || 0).toFixed(2)}
+                {(data.mtdVolumeBrandWise[cat] || 0).toFixed(2)} Tons & {Math.round(data.mtdSalesBrandWise[cat] || 0)} Bags
               </div>
             </div>
           ))}
@@ -3230,6 +3231,7 @@ export default function App() {
     const mtdVolumeTons = userStats.filter(s => s.date && s.date.startsWith(currentMonth)).reduce((sum, s) => sum + calculateTotalWeightTons(s), 0);
 
     const mtdVolumeBrandWise: Record<string, number> = {};
+    const mtdSalesBrandWise: Record<string, number> = {};
     const activeOBsBrandWise: Record<string, number> = {};
 
     CATEGORIES.forEach(cat => {
@@ -3242,6 +3244,16 @@ export default function App() {
           return cSum + (packs * sku.weight_gm_per_pack);
         }, 0);
         return sum + (catWeight / 1000000);
+      }, 0);
+
+      mtdSalesBrandWise[cat] = catStats.reduce((sum, s) => {
+        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+        const catSales = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
+          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return cSum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+        }, 0);
+        return sum + catSales;
       }, 0);
 
       const activeOBs = new Set(catStats.filter(s => {
@@ -3399,7 +3411,7 @@ export default function App() {
       return { day: dayName, sales };
     });
 
-    return { todaySales, mtdSales, mtdVolumeTons, mtdVolumeBrandWise, activeOBsBrandWise, totalActiveOBs, brandPerformance, weakestRoutes, last7DaysSales, obPerformance, last8Visits, totalWorkingDays, workingDaysPassed, remainingWorkingDays };
+    return { todaySales, mtdSales, mtdVolumeTons, mtdVolumeBrandWise, mtdSalesBrandWise, activeOBsBrandWise, totalActiveOBs, brandPerformance, weakestRoutes, last7DaysSales, obPerformance, last8Visits, totalWorkingDays, workingDaysPassed, remainingWorkingDays };
   }, [user, history, obAssignments, hierarchy, appConfig]);
 
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
@@ -5790,6 +5802,23 @@ export default function App() {
                   >
                     <Settings className="w-4 h-4" />
                     Google Sheets Config
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      try {
+                        setMessage({ text: 'Starting full backup...', type: 'info' });
+                        const res = await apiFetch('/api/admin/backup', { method: 'POST' });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'Backup failed');
+                        setMessage({ text: data.message, type: 'success' });
+                      } catch (err: any) {
+                        setMessage({ text: err.message, type: 'error' });
+                      }
+                    }}
+                    className="flex items-center gap-2 px-4 py-2 bg-blue-500 hover:bg-blue-600 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all shadow-lg shadow-blue-500/20"
+                  >
+                    <Database className="w-4 h-4" />
+                    Full Backup
                   </button>
                   <button 
                     onClick={syncEverything}

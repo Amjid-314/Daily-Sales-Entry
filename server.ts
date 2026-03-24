@@ -7,6 +7,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import cron from "node-cron";
 import fs from "fs";
+import archiver from "archiver";
 import { exec } from "child_process";
 
 const db = new Database("orders.db");
@@ -1381,6 +1382,28 @@ async function startServer() {
     const dbBackupPath = path.join(backupDir, `orders_${date}.db`);
     if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, dbBackupPath);
 
+    const appBackupPath = path.join(backupDir, `app_backup_${date}.zip`);
+    
+    // Create a zip archive of the app
+    const output = fs.createWriteStream(appBackupPath);
+    const archive = archiver('zip', { zlib: { level: 9 } });
+    
+    archive.pipe(output);
+    
+    // Append files from the current directory, ignoring node_modules, .git, dist, backups
+    archive.glob('**/*', {
+      cwd: process.cwd(),
+      ignore: ['node_modules/**', '.git/**', 'dist/**', 'backups/**', 'orders.db-journal']
+    });
+    
+    await archive.finalize();
+
+    // Wait for the output stream to finish writing
+    await new Promise<void>((resolve, reject) => {
+      output.on('close', resolve);
+      output.on('error', reject);
+    });
+
     try {
       const client = await getGoogleSheetsClient();
       if (client && client.auth) {
@@ -1392,15 +1415,35 @@ async function startServer() {
         });
         const folderId = folderResponse.data.id;
 
+        // Upload DB
         await drive.files.create({
           requestBody: { name: `orders_${date}.db`, parents: [folderId!] },
           media: { mimeType: 'application/x-sqlite3', body: fs.createReadStream(dbBackupPath) }
         });
+
+        // Upload App Zip
+        await drive.files.create({
+          requestBody: { name: `app_backup_${date}.zip`, parents: [folderId!] },
+          media: { mimeType: 'application/zip', body: fs.createReadStream(appBackupPath) }
+        });
+        console.log(`Backup completed successfully for ${date}`);
+      } else {
+        console.log(`Local backup completed for ${date}, but Google Drive upload skipped (no auth).`);
       }
     } catch (err) {
       console.error("Backup Upload Error:", err);
     }
   }
+
+  app.post("/api/admin/backup", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+    try {
+      await performFullBackup();
+      res.json({ message: "Backup completed successfully!" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Backup failed." });
+    }
+  });
 
   // Auth Routes
   app.post("/api/auth/login", async (req, res) => {
@@ -1679,7 +1722,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM'), (req, res) => {
+  app.post("/api/admin/targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), (req, res) => {
     const { obContact, brandName, targetCtn, month } = req.body;
     const contact = obContact || req.body.ob_contact;
     const brand = brandName || req.body.brand_name;
@@ -1695,7 +1738,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/targets/bulk", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM'), (req, res) => {
+  app.post("/api/admin/targets/bulk", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), (req, res) => {
     const { targets, month } = req.body;
     const targetMonth = month || new Date().toISOString().slice(0, 7);
     
@@ -1781,7 +1824,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/targets/:ob_contact", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+  app.get("/api/admin/targets/:ob_contact", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req, res) => {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     try {
       const targets = db.prepare("SELECT * FROM brand_targets WHERE ob_contact = ? AND month = ?").all(req.params.ob_contact, month);
