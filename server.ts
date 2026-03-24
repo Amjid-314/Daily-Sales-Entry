@@ -2411,6 +2411,18 @@ async function startServer() {
       
       // 1. Get hierarchy to determine visibility
       const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const brandTargets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(currentMonth) as any[];
+      
+      const enrichedHierarchy = hierarchy.map(h => {
+        const obTargets = brandTargets.filter(bt => bt.ob_contact === h.ob_id);
+        const targets: Record<string, number> = {};
+        obTargets.forEach(bt => {
+          const key = `target_${bt.brand_name.toLowerCase().replace(/\s+/g, '_')}`;
+          targets[key] = bt.target_ctn;
+        });
+        return { ...h, ...targets };
+      });
       
       if (!isAdmin && visibleOBIds.length === 0) {
         return res.json({ stats: [], hierarchy: [], timeInfo: calculateTimeGone() });
@@ -2432,7 +2444,7 @@ async function startServer() {
 
       res.json({
         stats,
-        hierarchy: isAdmin ? hierarchy : hierarchy.filter(h => visibleOBIds.includes(h.ob_id)),
+        hierarchy: isAdmin ? enrichedHierarchy : enrichedHierarchy.filter(h => visibleOBIds.includes(h.ob_id)),
         timeInfo
       });
     } catch (err) {

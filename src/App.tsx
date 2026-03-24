@@ -25,6 +25,7 @@ import {
   Trash2, 
   CheckCircle2, 
   AlertCircle,
+  Scale,
   Loader2,
   History,
   ArrowLeft,
@@ -303,7 +304,7 @@ const TSMDashboard = ({ stats, hierarchy, isSyncing, onRefresh, userName, holida
   );
 };
 
-const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string }) => {
+const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string }) => {
   const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'RSM' | 'SC' | 'TSM' | 'Town' | 'Distributor' | 'OB' | 'Route'>(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return 'National';
     if (userRole === 'RSM' || userRole === 'SC') return 'Region';
@@ -313,6 +314,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   const [filterValue, setFilterValue] = useState<string>('');
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [targetView, setTargetView] = useState('Brand');
+  const [contributionView, setContributionView] = useState<'Brand' | 'Category' | 'SKU'>('Brand');
+  const [achievementView, setAchievementView] = useState<'Brand' | 'Category' | 'SKU'>('Brand');
   const [productFilter, setProductFilter] = useState<string>('All');
   const [heatmapView, setHeatmapView] = useState('Total');
 
@@ -386,9 +389,13 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       
       let totalBags = 0;
       let brandSales: Record<string, number> = {};
+      let brandTonnage: Record<string, number> = {};
       let totalWeightKg = 0;
       
       skus.forEach(sku => {
+        // Ignore "New DWB" SKU for now as per user request
+        if (sku.id === 'dwb-new') return;
+
         const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
         const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton || 0)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen || 0)) + Number(item.pks || 0);
         const ctns = Number(sku.unitsPerCarton || 0) > 0 ? packs / Number(sku.unitsPerCarton) : 0;
@@ -404,7 +411,16 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         
         if (matchesFilter) {
           totalBags += ctns;
-          totalWeightKg += (packs * (Number(sku.weight_gm_per_pack) || 0)) / 1000;
+          const weightKg = (packs * (Number(sku.weight_gm_per_pack) || 0)) / 1000;
+          
+          // Ignore "Match" tonnage for now as per user request
+          if (sku.category !== 'Match') {
+            totalWeightKg += weightKg;
+            brandTonnage[sku.category] = (brandTonnage[sku.category] || 0) + (weightKg / 1000);
+          } else {
+            brandTonnage[sku.category] = 0;
+          }
+          
           brandSales[sku.category] = (brandSales[sku.category] || 0) + ctns;
         }
       });
@@ -425,6 +441,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         isTSMEntry,
         totalBags,
         brandSales,
+        brandTonnage,
         totalWeightKg,
         visitEfficiency,
         isFakeVisit
@@ -583,32 +600,42 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     const totalTSMSalary = uniqueTSMs * 70000;
     const totalSalaryCost = totalOBSalary + totalTSMSalary;
     const costPerBag = totalSales > 0 ? totalSalaryCost / totalSales : 0;
+    const totalTonnage = monthStats.reduce((sum, s) => sum + (s.totalWeightKg || 0), 0) / 1000;
+    const costPerKg = totalTonnage > 0 ? totalSalaryCost / (totalTonnage * 1000) : 0;
 
     const brandTotals: Record<string, number> = {};
     const brandActiveOBs: Record<string, number> = {};
     const brandTonnage: Record<string, number> = {};
+    const skuTotals: Record<string, number> = {};
+
+    monthStats.forEach(s => {
+      const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+      skus.forEach(sku => {
+        if (sku.id === 'dwb-new') return;
+        const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+        const ctns = sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0;
+        
+        let prefix = '';
+        if (sku.category === 'DWB') prefix = 'D - ';
+        if (sku.category === 'Match') prefix = 'M - ';
+        const displayName = `${prefix}${sku.name}`;
+        
+        skuTotals[displayName] = (skuTotals[displayName] || 0) + ctns;
+      });
+    });
 
     brands.forEach(b => {
       const brandStats = monthStats.filter(s => (s.brandSales[b] || 0) > 0);
       brandTotals[b] = monthStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0);
       brandActiveOBs[b] = new Set(brandStats.filter(s => !s.isTSMEntry).map(s => s.ob_contact)).size;
       
-      // Calculate tonnage for this brand
-      brandTonnage[b] = monthStats.reduce((sum, s) => {
-        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
-        const catWeight = SKUS.filter(sku => sku.category === b).reduce((cSum, sku) => {
-          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-          return cSum + (packs * sku.weight_gm_per_pack);
-        }, 0);
-        return sum + (catWeight / 1000000);
-      }, 0);
+      // Calculate tonnage for this brand using pre-calculated values from processedStats
+      brandTonnage[b] = monthStats.reduce((sum, s) => sum + (s.brandTonnage[b] || 0), 0);
     });
 
-    const totalTonnage = monthStats.reduce((sum, s) => sum + (s.totalWeightKg || 0), 0) / 1000;
-
-    return { totalSales, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, brandTotals, brandActiveOBs, brandTonnage, totalTonnage };
-  }, [monthStats, brands]);
+    return { totalSales, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, totalTonnage, skuTotals };
+  }, [monthStats, brands, skus]);
 
   const categoryStats = useMemo(() => {
     const cats = { A: { count: 0, sales: 0 }, B: { count: 0, sales: 0 }, C: { count: 0, sales: 0 }, D: { count: 0, sales: 0 } };
@@ -673,7 +700,10 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     const tsms: Record<string, any> = {};
     const obStatsByTsm: Record<string, Set<string>> = {};
     
-    monthStats.forEach(s => {
+    // Filter out TSM entries for sales calculation
+    const obOnlyStats = monthStats.filter(s => !s.isTSMEntry);
+    
+    obOnlyStats.forEach(s => {
       if (!s.tsm) return;
       if (!tsms[s.tsm]) {
         tsms[s.tsm] = {
@@ -681,7 +711,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           totalSales: 0,
           totalTarget: 0,
           activeOBs: 0,
-          totalOBAchievement: 0
+          averageOBAchievement: 0,
+          averageOBSales: 0
         };
         obStatsByTsm[s.tsm] = new Set();
       }
@@ -693,11 +724,16 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     Object.keys(tsms).forEach(tsm => {
       const activeOBs = obStatsByTsm[tsm].size;
       tsms[tsm].activeOBs = activeOBs;
+      tsms[tsm].averageOBSales = activeOBs > 0 ? tsms[tsm].totalSales / activeOBs : 0;
       
-      // We don't have obAnalysis here, so we will just calculate average achievement based on total target of TSM
-      const tsmTarget = hierarchy.filter(h => h.role === 'TSM' && h.name === tsm).reduce((sum, h) => sum + (Number(h.target_ctn) || 0), 0);
-      tsms[tsm].totalTarget = tsmTarget;
-      tsms[tsm].averageOBAchievement = tsmTarget > 0 ? (tsms[tsm].totalSales / tsmTarget) * 100 : 0;
+      const obContacts = Array.from(obStatsByTsm[tsm]);
+      const achievements = obContacts.map(contact => {
+        const obSales = obOnlyStats.filter(s => s.ob_contact === contact).reduce((sum, s) => sum + s.totalBags, 0);
+        const obTarget = hierarchy.filter(h => h.ob_contact === contact).reduce((sum, h) => sum + (Number(h.target_ctn) || 0), 0);
+        return obTarget > 0 ? (obSales / obTarget) * 100 : 0;
+      });
+      
+      tsms[tsm].averageOBAchievement = achievements.length > 0 ? achievements.reduce((a, b) => a + b, 0) / achievements.length : 0;
     });
 
     return Object.values(tsms)
@@ -715,14 +751,27 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                   filterLevel === 'Town' ? s.town : 'Other';
       
       if (!groups[key]) {
-        groups[key] = { name: key, obCount: new Set(), totalSales: 0, brandSales: {} };
-        brands.forEach(cat => groups[key].brandSales[cat] = 0);
+        groups[key] = { 
+          name: key, 
+          obCount: new Set(), 
+          totalSales: 0, 
+          totalTonnage: 0,
+          brandSales: {},
+          brandTonnage: {}
+        };
+        brands.forEach(cat => {
+          groups[key].brandSales[cat] = 0;
+          groups[key].brandTonnage[cat] = 0;
+        });
       }
       
       groups[key].obCount.add(s.ob_contact);
       groups[key].totalSales += s.totalBags;
+      groups[key].totalTonnage += s.totalWeightKg / 1000; // Tons
+      
       brands.forEach(cat => {
         groups[key].brandSales[cat] += (s.brandSales[cat] || 0);
+        groups[key].brandTonnage[cat] += (s.brandTonnage[cat] || 0);
       });
     });
 
@@ -749,14 +798,15 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           <div className="flex flex-wrap gap-2">
             <button 
               onClick={() => {
-                const headers = ['Date', 'Month', 'Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Route', 'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type', ...CATEGORIES, 'Total Bags'];
+                const headers = ['Date', 'Month', 'Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Route', 'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type', ...CATEGORIES.flatMap(cat => [`${cat} (Bags)`, `${cat} (Tons)`]), 'Total Bags', 'Total Tonnage (T)'];
                 const rows = monthStats.map(s => {
                   const h = hierarchy.find(h => h.ob_id === s.ob_contact);
                   return [
                     s.date, s.month, h?.director_sales || '', h?.nsm_name || '', h?.rsm_name || '', h?.sc_name || '', s.tsm, s.town, s.distributor, s.ob_name, s.ob_contact, s.route,
                     s.total_shops, s.visited_shops, s.productive_shops, s.visit_type,
-                    ...CATEGORIES.map(cat => s.brandSales[cat] || 0),
-                    s.totalBags.toFixed(2)
+                    ...CATEGORIES.flatMap(cat => [(s.brandSales[cat] || 0).toFixed(2), (s.brandTonnage[cat] || 0).toFixed(3)]),
+                    s.totalBags.toFixed(2),
+                    (s.totalWeightKg / 1000).toFixed(3)
                   ];
                 });
                 const csv = Papa.unparse([headers, ...rows]);
@@ -780,6 +830,12 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
               {isSyncing ? 'Syncing...' : 'Sync'}
             </button>
+            {lastSync && (
+              <div className="flex flex-col justify-center">
+                <span className="text-[8px] font-black text-slate-400 uppercase leading-none">Last Sync</span>
+                <span className="text-[9px] font-bold text-slate-500">{new Date(lastSync).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+              </div>
+            )}
             <input 
               type="month" 
               value={selectedMonth} 
@@ -859,15 +915,15 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               <Package className="w-24 h-24" />
             </div>
             <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">MTD Volume</div>
-            <div className="text-4xl font-black">{summary.totalTonnage.toFixed(1)} <span className="text-sm font-normal opacity-70">Tons</span></div>
+            <div className="text-4xl font-black">{Math.round(summary.totalTonnage)} <span className="text-sm font-normal opacity-70">Tons</span></div>
             <div className="text-[9px] font-bold text-white/80 mt-2 uppercase tracking-tighter">
-              {summary.totalSales.toFixed(0)} Total Bags
+              {Math.round(summary.totalSales)} Total Bags
             </div>
             <div className="mt-4 space-y-1 border-t border-white/10 pt-2">
               {brands.map(b => (
                 <div key={b} className="flex justify-between text-[8px] font-bold">
                   <span className="opacity-70">{b}:</span>
-                  <span>{(summary.brandTonnage[b] || 0).toFixed(2)} Tons</span>
+                  <span>{Math.round(summary.brandTonnage[b] || 0)} Tons & {Math.round(summary.brandTotals[b] || 0)} Bags</span>
                 </div>
               ))}
             </div>
@@ -921,10 +977,11 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
           <div>
             <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost Factor</div>
-            <div className="text-3xl font-black text-indigo-600">Rs.{summary.costPerBag.toFixed(0)}</div>
+            <div className="text-2xl font-black text-indigo-600">Rs.{Math.round(summary.costPerBag)}/Bag</div>
+            <div className="text-2xl font-black text-indigo-600 mt-1">Rs.{Math.round(summary.costPerKg)}/Kg</div>
           </div>
           <div className="text-[9px] font-bold text-slate-400 mt-2 uppercase tracking-widest">
-            Per Bag Distribution Cost
+            Distribution Cost Analysis
           </div>
         </div>
       </div>
@@ -933,14 +990,31 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-clean p-6 bg-white border border-slate-100">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Category Contribution</h3>
-            <Package className="w-4 h-4 text-slate-300" />
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Brand Contribution</h3>
+            <select 
+              value={contributionView}
+              onChange={(e) => setContributionView(e.target.value as any)}
+              className="text-[10px] font-black text-seablue uppercase bg-slate-50 px-2 py-1 rounded border-none focus:ring-0"
+            >
+              <option value="Brand">Brand Wise</option>
+              <option value="Category">Category Wise</option>
+              <option value="SKU">SKU Wise</option>
+            </select>
           </div>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
-                  data={Object.entries(summary.brandTotals).map(([name, value]) => ({ name, value }))}
+                  data={
+                    contributionView === 'SKU' 
+                      ? Object.entries(summary.skuTotals).map(([name, value]) => ({ name, value }))
+                      : contributionView === 'Category'
+                      ? BRAND_GROUP_NAMES.map(group => ({
+                          name: group,
+                          value: BRAND_GROUPS[group].reduce((sum, brand) => sum + (summary.brandTotals[brand] || 0), 0)
+                        }))
+                      : Object.entries(summary.brandTotals).map(([name, value]) => ({ name, value }))
+                  }
                   cx="50%"
                   cy="50%"
                   innerRadius={60}
@@ -948,15 +1022,43 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                   paddingAngle={5}
                   dataKey="value"
                 >
-                  {Object.entries(summary.brandTotals).map(([name], index) => (
-                    <Cell key={`cell-${index}`} fill={CATEGORY_COLORS[name] || ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'][index % 6]} />
+                  {(contributionView === 'SKU' 
+                    ? Object.entries(summary.skuTotals)
+                    : contributionView === 'Category'
+                    ? BRAND_GROUP_NAMES.map(g => [g])
+                    : Object.entries(summary.brandTotals)
+                  ).map((entry, index) => (
+                    <Cell 
+                      key={`cell-${index}`} 
+                      fill={
+                        contributionView === 'Category' 
+                          ? ['#0ea5e9', '#22c55e', '#1e3a8a'][index % 3]
+                          : CATEGORY_COLORS[entry[0]] || ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'][index % 6]
+                      } 
+                    />
                   ))}
                 </Pie>
                 <Tooltip 
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                  itemStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      const total = payload[0].value;
+                      const overallTotal = contributionView === 'SKU' 
+                        ? Object.values(summary.skuTotals).reduce((a: number, b: number) => a + b, 0)
+                        : summary.totalSales;
+                      const percentage = ((total / overallTotal) * 100).toFixed(1);
+                      return (
+                        <div className="bg-white p-3 rounded-xl shadow-xl border border-slate-100">
+                          <p className="text-[10px] font-black text-slate-400 uppercase mb-1">{data.name}</p>
+                          <p className="text-sm font-black text-slate-700">{Math.round(total).toLocaleString()} Bags</p>
+                          <p className="text-[10px] font-bold text-emerald-600">{percentage}% Contribution</p>
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
                 />
-                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
+                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase' }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -964,21 +1066,65 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
         <div className="card-clean p-6 bg-white border border-slate-100">
           <div className="flex items-center justify-between mb-6">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Category Achievement (MTD)</h3>
-            <Target className="w-4 h-4 text-slate-300" />
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Brand Target vs Achievement</h3>
+            <select 
+              value={achievementView}
+              onChange={(e) => setAchievementView(e.target.value as any)}
+              className="text-[10px] font-black text-seablue uppercase bg-slate-50 px-2 py-1 rounded border-none focus:ring-0"
+            >
+              <option value="Brand">Brand Wise</option>
+              <option value="Category">Category Wise</option>
+              <option value="SKU">SKU Wise</option>
+            </select>
           </div>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart 
-                data={CATEGORIES.map(cat => {
-                  const achievement = summary.brandTotals[cat] || 0;
-                  // Aggregating targets from hierarchy
-                  const target = hierarchy.reduce((sum, h) => {
-                    const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
-                    return sum + (Number(h[targetKey]) || 0);
-                  }, 0) || 1000;
-                  return { name: cat, achievement, target };
-                })}
+                data={
+                  achievementView === 'Category'
+                    ? BRAND_GROUP_NAMES.map(group => {
+                        const achievement = BRAND_GROUPS[group].reduce((sum, brand) => sum + (summary.brandTotals[brand] || 0), 0);
+                        const target = hierarchy.reduce((sum, h) => {
+                          return sum + BRAND_GROUPS[group].reduce((bSum, brand) => {
+                            const targetKey = `target_${brand.toLowerCase().replace(/\s+/g, '_')}`;
+                            return bSum + (Number(h[targetKey]) || 0);
+                          }, 0);
+                        }, 0);
+                        return { name: group, achievement, target: target || 1 };
+                      })
+                    : achievementView === 'SKU'
+                    ? Object.entries(summary.skuTotals).map(([name, value]) => {
+                        const sku = skus.find(s => {
+                          let prefix = '';
+                          if (s.category === 'DWB') prefix = 'D - ';
+                          if (s.category === 'Match') prefix = 'M - ';
+                          return `${prefix}${s.name}` === name;
+                        });
+                        const target = sku ? hierarchy.reduce((sum, h) => {
+                          const targetKey = `target_${sku.category.toLowerCase().replace(/\s+/g, '_')}`;
+                          const brandTarget = Number(h[targetKey]) || 0;
+                          // Simple heuristic: distribute brand target among its SKUs equally for now
+                          const skusInBrand = skus.filter(s => s.category === sku.category).length;
+                          return sum + (brandTarget / (skusInBrand || 1));
+                        }, 0) : 0;
+                        return { name, achievement: value as number, target: target || 0 };
+                      }).sort((a, b) => (b.achievement as number) - (a.achievement as number))
+                    : [
+                        ...CATEGORIES.map(cat => {
+                          const achievement = summary.brandTotals[cat] || 0;
+                          const target = hierarchy.reduce((sum, h) => {
+                            const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+                            return sum + (Number(h[targetKey]) || 0);
+                          }, 0);
+                          return { name: cat, achievement, target: target || 1 };
+                        }),
+                        {
+                          name: 'Total',
+                          achievement: Object.values(summary.brandTotals).reduce((a: number, b: any) => a + (Number(b) || 0), 0),
+                          target: hierarchy.reduce((sum, h) => sum + (Number(h.target_ctn) || 0), 0) || 1
+                        }
+                      ]
+                }
                 layout="vertical"
                 margin={{ left: 20, right: 20 }}
               >
@@ -989,22 +1135,122 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                   type="category" 
                   axisLine={false} 
                   tickLine={false} 
-                  tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }}
+                  tick={{ fontSize: 8, fontWeight: 'bold', fill: '#64748b' }}
                   width={80}
                 />
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
-                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  content={({ active, payload }) => {
+                    if (active && payload && payload.length) {
+                      const data = payload[0].payload;
+                      const ach = data.achievement;
+                      const tar = data.target;
+                      const perc = tar > 0 ? ((ach / tar) * 100).toFixed(1) : '0';
+                      return (
+                        <div className="bg-white p-3 rounded-xl shadow-xl border border-slate-100">
+                          <p className="text-[10px] font-black text-slate-400 uppercase mb-1">{data.name}</p>
+                          <p className="text-xs font-black text-slate-700">Ach: {Math.round(ach).toLocaleString()}</p>
+                          {tar > 0 && <p className="text-xs font-bold text-slate-400">Tar: {Math.round(tar).toLocaleString()}</p>}
+                          {tar > 0 && <p className="text-[10px] font-black text-emerald-600 mt-1">{perc}% Achievement</p>}
+                        </div>
+                      );
+                    }
+                    return null;
+                  }}
                 />
                 <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', paddingBottom: '10px' }} />
-                <Bar dataKey="achievement" radius={[0, 4, 4, 0]} barSize={15} name="Ach">
-                  {CATEGORIES.map((cat, index) => (
-                    <Cell key={`cell-ach-${index}`} fill={CATEGORY_COLORS[cat] || "#0ea5e9"} />
+                <Bar dataKey="achievement" radius={[0, 4, 4, 0]} barSize={12} name="Ach">
+                  {(achievementView === 'Category'
+                    ? BRAND_GROUP_NAMES.map(g => ({ name: g }))
+                    : achievementView === 'SKU'
+                    ? Object.entries(summary.skuTotals).map(([name]) => ({ name })).sort((a, b) => (summary.skuTotals[b.name] || 0) - (summary.skuTotals[a.name] || 0))
+                    : [...CATEGORIES.map(cat => ({ name: cat })), { name: 'Total' }]
+                  ).map((entry, index) => (
+                    <Cell 
+                      key={`cell-ach-${index}`} 
+                      fill={
+                        entry.name === 'Total' ? '#1e3a8a' :
+                        achievementView === 'Category' ? ['#0ea5e9', '#22c55e', '#1e3a8a'][index % 3] :
+                        CATEGORY_COLORS[entry.name] || ['#0ea5e9', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899'][index % 6]
+                      } 
+                    />
                   ))}
                 </Bar>
-                <Bar dataKey="target" fill="#e2e8f0" radius={[0, 4, 4, 0]} barSize={15} name="Tar" />
+                {achievementView !== 'SKU' && <Bar dataKey="target" fill="#e2e8f0" radius={[0, 4, 4, 0]} barSize={12} name="Tar" />}
               </BarChart>
             </ResponsiveContainer>
+          </div>
+
+          <div className="mt-6 overflow-x-auto border-t border-slate-50 pt-4">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-50/50 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                  <th className="px-4 py-2">{achievementView} Name</th>
+                  <th className="px-4 py-2 text-right">Target</th>
+                  <th className="px-4 py-2 text-right">Ach</th>
+                  <th className="px-4 py-2 text-right">Ach %</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {(achievementView === 'Category'
+                  ? BRAND_GROUP_NAMES.map(group => {
+                      const achievement = BRAND_GROUPS[group].reduce((sum, brand) => sum + (summary.brandTotals[brand] || 0), 0);
+                      const target = hierarchy.reduce((sum, h) => {
+                        return sum + BRAND_GROUPS[group].reduce((bSum, brand) => {
+                          const targetKey = `target_${brand.toLowerCase().replace(/\s+/g, '_')}`;
+                          return bSum + (Number(h[targetKey]) || 0);
+                        }, 0);
+                      }, 0);
+                      return { name: group, achievement, target: target || 1 };
+                    })
+                  : achievementView === 'SKU'
+                  ? Object.entries(summary.skuTotals).map(([name, value]) => {
+                      const sku = skus.find(s => {
+                        let prefix = '';
+                        if (s.category === 'DWB') prefix = 'D - ';
+                        if (s.category === 'Match') prefix = 'M - ';
+                        return `${prefix}${s.name}` === name;
+                      });
+                      const target = sku ? hierarchy.reduce((sum, h) => {
+                        const targetKey = `target_${sku.category.toLowerCase().replace(/\s+/g, '_')}`;
+                        const brandTarget = Number(h[targetKey]) || 0;
+                        const skusInBrand = skus.filter(s => s.category === sku.category).length;
+                        return sum + (brandTarget / (skusInBrand || 1));
+                      }, 0) : 0;
+                      return { name, achievement: value as number, target: target || 0 };
+                    }).sort((a, b) => (b.achievement as number) - (a.achievement as number))
+                  : [
+                      ...CATEGORIES.map(cat => {
+                        const achievement = summary.brandTotals[cat] || 0;
+                        const target = hierarchy.reduce((sum, h) => {
+                          const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+                          return sum + (Number(h[targetKey]) || 0);
+                        }, 0);
+                        return { name: cat, achievement, target: target || 1 };
+                      }),
+                      {
+                        name: 'Total',
+                        achievement: Object.values(summary.brandTotals).reduce((a: number, b: any) => a + (Number(b) || 0), 0),
+                        target: hierarchy.reduce((sum, h) => sum + (Number(h.target_ctn) || 0), 0) || 1
+                      }
+                    ]
+                ).map((item, idx) => {
+                  const perc = item.target > 0 ? (item.achievement / item.target) * 100 : 0;
+                  return (
+                    <tr key={idx} className="hover:bg-slate-50/30">
+                      <td className="px-4 py-2 text-[10px] font-bold text-slate-700">{item.name}</td>
+                      <td className="px-4 py-2 text-right text-[10px] font-mono text-slate-500">{Math.round(item.target).toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right text-[10px] font-black text-seablue font-mono">{Math.round(item.achievement).toLocaleString()}</td>
+                      <td className="px-4 py-2 text-right">
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${perc >= 100 ? 'bg-emerald-100 text-emerald-700' : perc >= 80 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                          {Math.round(perc)}%
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
 
@@ -1015,7 +1261,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           </div>
           <div className="h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={categoryWiseSales.filter(g => g.name !== 'National').sort((a, b) => b.totalSales - a.totalSales).slice(0, 10)}>
+              <BarChart data={tsmPerformance.slice(0, 10)}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis 
                   dataKey="name" 
@@ -1031,6 +1277,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                 <Tooltip 
                   cursor={{ fill: '#f8fafc' }}
                   contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
+                  formatter={(value: any) => [Math.round(value).toLocaleString(), 'Sales (Ctns)']}
                 />
                 <Bar dataKey="totalSales" fill="#0ea5e9" radius={[4, 4, 0, 0]} barSize={20} />
               </BarChart>
@@ -1052,7 +1299,9 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                 <th className="px-4 py-3">TSM Name</th>
                 <th className="px-4 py-3 text-right">Active OBs</th>
                 <th className="px-4 py-3 text-right">Total Sales (Ctns)</th>
-                <th className="px-4 py-3 text-right">Avg OB Achievement</th>
+                <th className="px-4 py-3 text-right">Avg OB Sales</th>
+                <th className="px-4 py-3 text-right">Avg OB Ach%</th>
+                <th className="px-4 py-3 text-right">Contribution%</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -1060,15 +1309,19 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                 <tr key={idx} className="hover:bg-slate-50/50">
                   <td className="px-4 py-3 font-bold text-slate-700 text-xs">{tsm.name}</td>
                   <td className="px-4 py-3 text-right text-slate-500 font-mono text-xs">{tsm.activeOBs}</td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-700 font-mono text-xs">{tsm.totalSales.toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-bold text-slate-700 font-mono text-xs">{Math.round(tsm.totalSales).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-bold text-seablue font-mono text-xs">{Math.round(tsm.averageOBSales).toLocaleString()}</td>
                   <td className="px-4 py-3 text-right">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black tracking-widest ${
                       tsm.averageOBAchievement >= 100 ? 'bg-emerald-100 text-emerald-700' :
                       tsm.averageOBAchievement >= 80 ? 'bg-amber-100 text-amber-700' :
                       'bg-rose-100 text-rose-700'
                     }`}>
-                      {tsm.averageOBAchievement.toFixed(1)}%
+                      {Math.round(tsm.averageOBAchievement)}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-right text-slate-500 font-bold text-xs">
+                    {summary.totalSales > 0 ? ((tsm.totalSales / summary.totalSales) * 100).toFixed(1) : 0}%
                   </td>
                 </tr>
               ))}
@@ -1185,8 +1438,22 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
             <DollarSign className="w-3 h-3" />
             <p className="text-[8px] font-black uppercase tracking-widest">Cost Per Bag</p>
           </div>
-          <h2 className="text-xl font-black text-rose-600">Rs. {summary.costPerBag.toFixed(1)}</h2>
+          <h2 className="text-xl font-black text-rose-600">Rs. {Math.round(summary.costPerBag)}</h2>
         </div>
+        <div className="card-clean p-4 bg-white border-l-4 border-indigo-500">
+          <div className="flex items-center gap-2 text-slate-400 mb-1">
+            <Scale className="w-3 h-3" />
+            <p className="text-[8px] font-black uppercase tracking-widest">Cost Per Kg</p>
+          </div>
+          <h2 className="text-xl font-black text-indigo-600">Rs. {Math.round(summary.costPerKg)}</h2>
+        </div>
+      </div>
+
+      <div className="bg-amber-50 border border-amber-100 p-2 rounded-lg flex items-center gap-2">
+        <AlertCircle className="w-3 h-3 text-amber-600" />
+        <p className="text-[9px] font-bold text-amber-700 uppercase tracking-tight">
+          Note: "Match" Tonnage and "New DWB" SKU are excluded from all tonnage and cost calculations as per policy.
+        </p>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1212,28 +1479,63 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         </div>
 
         <div className="card-clean p-6 bg-white space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Category Distribution</h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={categoryStats}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  paddingAngle={5}
-                  dataKey="count"
-                  nameKey="category"
-                >
-                  {categoryStats.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={['#10b981', '#0ea5e9', '#f59e0b', '#ef4444'][index % 4]} />
-                  ))}
-                </Pie>
-                <Tooltip />
-                <Legend iconType="circle" />
-              </PieChart>
-            </ResponsiveContainer>
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">OB Categories</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="h-[250px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={categoryStats}
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={60}
+                    outerRadius={80}
+                    paddingAngle={5}
+                    dataKey="count"
+                    nameKey="category"
+                  >
+                    {categoryStats.map((entry, index) => (
+                      <Cell key={`cell-${index}`} fill={['#10b981', '#0ea5e9', '#f59e0b', '#ef4444'][index % 4]} />
+                    ))}
+                  </Pie>
+                  <Tooltip 
+                    content={({ active, payload }) => {
+                      if (active && payload && payload.length) {
+                        const data = payload[0].payload;
+                        const total = categoryStats.reduce((a, b) => a + b.count, 0);
+                        const percentage = ((data.count / total) * 100).toFixed(1);
+                        return (
+                          <div className="bg-white p-3 rounded-xl shadow-xl border border-slate-100">
+                            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Category {data.category}</p>
+                            <p className="text-sm font-black text-slate-700">{data.count} OBs</p>
+                            <p className="text-[10px] font-bold text-emerald-600">{percentage}% of Force</p>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
+                </PieChart>
+              </ResponsiveContainer>
+            </div>
+            <div className="max-h-[250px] overflow-y-auto space-y-2 pr-2">
+              {categoryStats.map(cat => (
+                <div key={cat.category} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
+                  <div className="flex justify-between items-center mb-2">
+                    <span className="text-xs font-black text-slate-700">Category {cat.category}</span>
+                    <span className="text-[10px] font-bold text-slate-400">{cat.count} OBs</span>
+                  </div>
+                  <div className="flex flex-wrap gap-1">
+                    {obPerformance.filter(ob => ob.category === cat.category).map(ob => (
+                      <span key={ob.ob_contact} className="text-[8px] font-bold bg-white px-1.5 py-0.5 rounded border border-slate-200 text-slate-600">
+                        {ob.name}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       </div>
@@ -1247,13 +1549,23 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
             <table className="w-full text-left min-w-[800px]">
               <thead>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">{filterLevel}</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center">OBs</th>
+                  <th rowSpan={2} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">{filterLevel}</th>
+                  <th rowSpan={2} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center">OBs</th>
                   {brands.map(cat => (
-                    <th key={cat} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">{cat}</th>
+                    <th key={cat} colSpan={2} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center border-l border-slate-100">{cat}</th>
                   ))}
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Total</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Avg/OB</th>
+                  <th colSpan={2} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center border-l border-slate-100">Total</th>
+                  <th rowSpan={2} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Avg/OB</th>
+                </tr>
+                <tr className="border-b border-slate-100 bg-slate-50/50">
+                  {brands.map(cat => (
+                    <React.Fragment key={cat}>
+                      <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right border-l border-slate-100">Bags</th>
+                      <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right">Tons</th>
+                    </React.Fragment>
+                  ))}
+                  <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right border-l border-slate-100">Bags</th>
+                  <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right">Tons</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -1264,12 +1576,22 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                     </td>
                     <td className="px-6 py-4 text-xs font-bold text-slate-500 text-center">{row.obCount}</td>
                     {brands.map(cat => (
-                      <td key={cat} className="px-6 py-4 text-xs font-bold text-slate-600 text-right">
-                        {(row.brandSales[cat] || 0).toFixed(1)}
-                      </td>
+                      <React.Fragment key={cat}>
+                        <td className="px-6 py-4 text-right border-l border-slate-50">
+                          <span className="text-xs font-bold text-slate-600">{Math.round(row.brandSales[cat] || 0)}</span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <span className="text-[10px] font-bold text-slate-400">{Math.round(row.brandTonnage[cat] || 0)}</span>
+                        </td>
+                      </React.Fragment>
                     ))}
-                    <td className="px-6 py-4 text-xs font-black text-seablue text-right">{row.totalSales.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-xs font-bold text-emerald-600 text-right">{row.avgSales.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-right border-l border-slate-50">
+                      <span className="text-xs font-black text-seablue">{Math.round(row.totalSales)}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-[10px] font-bold text-slate-400">{Math.round(row.totalTonnage)}</span>
+                    </td>
+                    <td className="px-6 py-4 text-xs font-bold text-emerald-600 text-right">{Math.round(row.avgSales)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1280,12 +1602,28 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                     {categoryWiseSales.reduce((sum, r) => sum + r.obCount, 0)}
                   </td>
                   {brands.map(cat => (
-                    <td key={cat} className="px-6 py-4 text-xs text-right text-slate-600">
-                      {categoryWiseSales.reduce((sum, r) => sum + (r.brandSales[cat] || 0), 0).toFixed(1)}
-                    </td>
+                    <React.Fragment key={cat}>
+                      <td className="px-6 py-4 text-right border-l border-slate-100">
+                        <span className="text-xs text-slate-600">
+                          {Math.round(categoryWiseSales.reduce((sum, r) => sum + (r.brandSales[cat] || 0), 0))}
+                        </span>
+                      </td>
+                      <td className="px-6 py-4 text-right">
+                        <span className="text-[10px] text-slate-400">
+                          {Math.round(categoryWiseSales.reduce((sum, r) => sum + (r.brandTonnage[cat] || 0), 0))}
+                        </span>
+                      </td>
+                    </React.Fragment>
                   ))}
-                  <td className="px-6 py-4 text-xs text-right text-seablue">
-                    {categoryWiseSales.reduce((sum, r) => sum + r.totalSales, 0).toFixed(1)}
+                  <td className="px-6 py-4 text-right border-l border-slate-100">
+                    <span className="text-xs text-seablue">
+                      {Math.round(categoryWiseSales.reduce((sum, r) => sum + r.totalSales, 0))}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <span className="text-[10px] text-slate-400">
+                      {Math.round(categoryWiseSales.reduce((sum, r) => sum + r.totalTonnage, 0))}
+                    </span>
                   </td>
                   <td className="px-6 py-4 text-xs text-right text-emerald-600">
                     {(categoryWiseSales.reduce((sum, r) => sum + r.totalSales, 0) / Math.max(1, categoryWiseSales.reduce((sum, r) => sum + r.obCount, 0))).toFixed(1)}
@@ -1307,7 +1645,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               <thead className="sticky top-0 bg-white z-10">
                 <tr className="border-b border-slate-100">
                   <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town / TSM</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">TSM</th>
                   <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Total Sales</th>
                 </tr>
               </thead>
@@ -1318,10 +1657,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                       <span className="text-slate-300 mr-2">{idx + 1}.</span>
                       {ob.name}
                     </td>
-                    <td className="px-6 py-4">
-                      <p className="text-[10px] font-bold text-slate-500">{ob.town}</p>
-                      <p className="text-[8px] text-slate-400 uppercase tracking-widest">{ob.tsm}</p>
-                    </td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.town}</td>
+                    <td className="px-6 py-4 text-[10px] font-black text-seablue uppercase tracking-widest">{ob.tsm}</td>
                     <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{ob.totalSales.toFixed(1)}</td>
                   </tr>
                 ))}
@@ -1543,6 +1880,16 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
             <Target className="w-4 h-4 text-seablue" />
             <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand Performance</h3>
           </div>
+          <div className="flex gap-2">
+            <div className="text-right">
+              <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Days Gone</div>
+              <div className="text-[10px] font-black text-slate-700">{data.workingDaysPassed} / {data.totalWorkingDays}</div>
+            </div>
+            <div className="text-right">
+              <div className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Remaining</div>
+              <div className="text-[10px] font-black text-amber-600">{data.remainingWorkingDays} Days</div>
+            </div>
+          </div>
         </div>
         <div className="space-y-6">
           {data.brandPerformance.map((bp: any, idx: number) => (
@@ -1567,6 +1914,9 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
                       {bp.percentage.toFixed(0)}%
                     </span>
                   </div>
+                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
+                    {bp.achTons.toFixed(2)} Tons
+                  </div>
                 </div>
               </div>
               
@@ -1580,14 +1930,18 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-2 mt-2">
+              <div className="grid grid-cols-3 gap-2 mt-2">
                 <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
-                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg Daily Sales</div>
+                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg Daily</div>
                   <div className="text-[10px] font-black text-slate-700">{bp.avgDailySales.toFixed(1)}</div>
                 </div>
                 <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100">
-                  <div className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-1">Today Target (RPD)</div>
+                  <div className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-1">Target (RPD)</div>
                   <div className="text-[10px] font-black text-amber-600">{bp.rpd.toFixed(1)}</div>
+                </div>
+                <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
+                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Remaining</div>
+                  <div className="text-[10px] font-black text-slate-700">{bp.remainingTarget.toFixed(1)}</div>
                 </div>
               </div>
             </motion.div>
@@ -1617,6 +1971,45 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
           <div className="text-[8px] font-bold opacity-60 mt-2 uppercase">{data.mtdSales.toFixed(0)} Total Bags</div>
         </motion.div>
       </div>
+
+      {/* Last 8 Visits Brand Wise Sales */}
+      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-3">
+          <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+            <History className="w-4 h-4" />
+          </div>
+          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Last 8 Visits (Brand-wise)</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                <th className="px-6 py-4 whitespace-nowrap">Date / Route</th>
+                {CATEGORIES.map(cat => (
+                  <th key={cat} className="px-4 py-4 text-right whitespace-nowrap">{cat}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {data.last8Visits.map((v: any, idx: number) => (
+                <tr key={idx} className="group hover:bg-slate-50/80 transition-all duration-200">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-xs font-black text-slate-700">{v.date}</div>
+                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{v.route}</div>
+                  </td>
+                  {CATEGORIES.map(cat => (
+                    <td key={cat} className="px-4 py-4 text-right whitespace-nowrap">
+                      <span className={`text-xs font-black ${v.brands[cat] > 0 ? 'text-seablue' : 'text-slate-200'}`}>
+                        {(v.brands[cat] || 0).toFixed(1)}
+                      </span>
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </section>
 
       {/* Brand-wise Active OBs & Volume */}
       <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
@@ -1943,7 +2336,7 @@ const isTSMEntry = (obName: string, tsmName: string) => {
   return obName.trim().toLowerCase() === tsmName.trim().toLowerCase();
 };
 
-const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact }: any) => {
+const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing }: any) => {
   const currentMonth = getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
@@ -2002,8 +2395,20 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
         animate={{ opacity: 1, y: 0 }}
         className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50"
       >
-        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Operational Stats</h1>
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Submission Status & Activity Tracking</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Operational Stats</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Submission Status & Activity Tracking</p>
+          </div>
+          <button 
+            onClick={onRefresh}
+            disabled={isSyncing}
+            className="flex items-center gap-2 bg-seablue text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/90 transition-all shadow-lg shadow-seablue/20 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing...' : 'Sync'}
+          </button>
+        </div>
       </motion.div>
 
       {/* OB Submission Status Report */}
@@ -2137,7 +2542,7 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
   );
 };
 
-const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact }: any) => {
+const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing }: any) => {
   const currentMonth = getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
@@ -2197,8 +2602,20 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
         animate={{ opacity: 1, y: 0 }}
         className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50"
       >
-        <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Performance Reports</h1>
-        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Detailed Analysis & Sales Matrix</p>
+        <div className="flex justify-between items-center">
+          <div>
+            <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Performance Reports</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Detailed Analysis & Sales Matrix</p>
+          </div>
+          <button 
+            onClick={onRefresh}
+            disabled={isSyncing}
+            className="flex items-center gap-2 bg-seablue text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/90 transition-all shadow-lg shadow-seablue/20 disabled:opacity-50"
+          >
+            <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
+            {isSyncing ? 'Syncing...' : 'Sync'}
+          </button>
+        </div>
       </motion.div>
 
       {/* OB Date-wise Sales Matrix (MTD) */}
@@ -2861,6 +3278,16 @@ export default function App() {
         }, 0);
         return sum + catAch;
       }, 0);
+
+      const achTons = userStats.filter(s => s.date.startsWith(currentMonth)).reduce((sum, s) => {
+        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
+        const catWeight = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
+          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return cSum + (packs * sku.weight_gm_per_pack);
+        }, 0);
+        return sum + (catWeight / 1000000);
+      }, 0);
       
       // Get real target from obAssignments
       let target = 0;
@@ -2884,7 +3311,17 @@ export default function App() {
       const avgDailySales = workingDaysPassed > 0 ? ach / workingDaysPassed : 0;
       const todayTarget = rpd;
 
-      return { category: cat, achievement: ach, target: target || 1, percentage: (target || 1) > 0 ? (ach / (target || 1)) * 100 : 0, rpd, avgDailySales, todayTarget };
+      return { 
+        category: cat, 
+        achievement: ach, 
+        achTons,
+        target: target || 1, 
+        percentage: (target || 1) > 0 ? (ach / (target || 1)) * 100 : 0, 
+        rpd, 
+        avgDailySales, 
+        todayTarget, 
+        remainingTarget 
+      };
     }).sort((a, b) => a.percentage - b.percentage);
 
     // OB Performance for TSM/ASM
@@ -2962,7 +3399,7 @@ export default function App() {
       return { day: dayName, sales };
     });
 
-    return { todaySales, mtdSales, mtdVolumeTons, mtdVolumeBrandWise, activeOBsBrandWise, totalActiveOBs, brandPerformance, weakestRoutes, last7DaysSales, obPerformance, last8Visits };
+    return { todaySales, mtdSales, mtdVolumeTons, mtdVolumeBrandWise, activeOBsBrandWise, totalActiveOBs, brandPerformance, weakestRoutes, last7DaysSales, obPerformance, last8Visits, totalWorkingDays, workingDaysPassed, remainingWorkingDays };
   }, [user, history, obAssignments, hierarchy, appConfig]);
 
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
@@ -4543,6 +4980,7 @@ export default function App() {
                   userContact={userContact}
                   timeGone={timeGone.percentage}
                   holidays={appConfig.holidays || ''}
+                  lastSync={appConfig.last_sync_at}
                 />
               )
             )}
@@ -5324,13 +5762,15 @@ export default function App() {
                 obAssignments={obAssignments} 
                 tsmList={tsmList} 
                 appConfig={appConfig} 
-                getPSTDate={() => new Date().toISOString().split('T')[0]} 
+                getPSTDate={getPSTDate} 
                 SKUS={SKUS} 
                 CATEGORIES={CATEGORIES} 
                 userRole={userRole} 
                 userName={userName} 
                 userRegion={userRegion}
                 userContact={userContact}
+                onRefresh={syncEverything}
+                isSyncing={isSyncingGlobal}
               />
             </div>
           )}
@@ -5419,13 +5859,15 @@ export default function App() {
             obAssignments={hierarchy} 
             tsmList={tsmList} 
             appConfig={appConfig} 
-            getPSTDate={() => new Date().toISOString().split('T')[0]} 
+            getPSTDate={getPSTDate} 
             SKUS={SKUS} 
             CATEGORIES={CATEGORIES} 
             userRole={userRole}
             userName={userName}
             userRegion={userRegion}
             userContact={userContact}
+            onRefresh={syncEverything}
+            isSyncing={isSyncingGlobal}
           />
         )}
       </div>
@@ -5449,13 +5891,15 @@ export default function App() {
             obAssignments={obAssignments} 
             tsmList={tsmList} 
             appConfig={appConfig} 
-            getPSTDate={() => new Date().toISOString().split('T')[0]} 
+            getPSTDate={getPSTDate} 
             SKUS={SKUS} 
             CATEGORIES={CATEGORIES} 
             userRole={userRole} 
             userName={userName} 
             userRegion={userRegion}
             userContact={userContact}
+            onRefresh={syncEverything}
+            isSyncing={isSyncingGlobal}
           />
         )}
       </div>
@@ -6922,6 +7366,7 @@ export default function App() {
                                       const summary = `*Sales Summary*\n` +
                                         `*${h.date}*\n` +
                                         `*OB:* ${h.order_booker}\n` +
+                                        `*Town:* ${h.town}\n` +
                                         `*Route:* ${h.route}\n` +
                                         `*Shops T/V/P:* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
                                         `------------------\n` +
@@ -6929,12 +7374,13 @@ export default function App() {
                                         `------------------\n` +
                                         CATEGORIES.map(cat => {
                                           const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
-                                          return `*${cat}:* ${totals[cat].toFixed(2)} ${label}`;
-                                        }).join('\n') +
+                                          const mtd = mtdBrandSales.split('\n').find(l => l.startsWith(cat))?.split(': ')[1] || '0.00';
+                                          return `*${cat}:* ${totals[cat].toFixed(2)} ${label}\nMTD: ${mtd}`;
+                                        }).join('\n\n') +
                                         `\n------------------\n` +
-                                        `*Total Achievement:* ${totalAch.toFixed(2)}\n\n` +
-                                        `*MTD Sales Brand Wise:*\n${mtdBrandSales}\n` +
-                                        `*Total MTD:* ${mtdTotal.toFixed(2)}`;
+                                        `*Total Today:* ${totalAch.toFixed(2)} Bags\n` +
+                                        `*Total MTD:* ${mtdTotal.toFixed(2)} Bags\n` +
+                                        `*Total Target:* ${h.target_ctn || 0} Bags`;
                                       const encodedMsg = encodeURIComponent(summary);
                                       window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
                                     }}
