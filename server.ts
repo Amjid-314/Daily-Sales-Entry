@@ -7,7 +7,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import cron from "node-cron";
 import fs from "fs";
-import archiver from "archiver";
+import crypto from "crypto";
 import { exec } from "child_process";
 
 const db = new Database("orders.db");
@@ -71,6 +71,11 @@ const SKUS = [
 function calculateAchievement(orderData: any) {
   const totals: Record<string, number> = {};
   CATEGORIES.forEach(cat => {
+    // Skip "Match" from achievement calculations
+    if (cat === 'Match') {
+      totals[cat] = 0;
+      return;
+    }
     totals[cat] = SKUS
       .filter(sku => sku.category === cat)
       .reduce((sum, sku) => {
@@ -1373,77 +1378,137 @@ async function startServer() {
     await performFullBackup();
   });
 
-  async function performFullBackup() {
-    const date = new Date().toISOString().split('T')[0];
-    const backupDir = path.join(process.cwd(), 'backups', date);
-    if (!fs.existsSync(backupDir)) fs.mkdirSync(backupDir, { recursive: true });
-
-    const dbPath = path.join(process.cwd(), 'orders.db');
-    const dbBackupPath = path.join(backupDir, `orders_${date}.db`);
-    if (fs.existsSync(dbPath)) fs.copyFileSync(dbPath, dbBackupPath);
-
-    const appBackupPath = path.join(backupDir, `app_backup_${date}.zip`);
+  async function performFullBackup(retryCount = 0): Promise<boolean> {
+    const dateStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
+    const backupFolderName = `SalesPulse_Backup_${dateStr}`;
     
-    // Create a zip archive of the app
-    const output = fs.createWriteStream(appBackupPath);
-    const archive = archiver('zip', { zlib: { level: 9 } });
-    
-    archive.pipe(output);
-    
-    // Append files from the current directory, ignoring node_modules, .git, dist, backups
-    archive.glob('**/*', {
-      cwd: process.cwd(),
-      ignore: ['node_modules/**', '.git/**', 'dist/**', 'backups/**', 'orders.db-journal']
-    });
-    
-    await archive.finalize();
-
-    // Wait for the output stream to finish writing
-    await new Promise<void>((resolve, reject) => {
-      output.on('close', resolve);
-      output.on('error', reject);
-    });
-
     try {
       const client = await getGoogleSheetsClient();
-      if (client && client.auth) {
-        const drive = google.drive({ version: 'v3', auth: client.auth });
-        
-        const folderResponse = await drive.files.create({
-          requestBody: { name: `SalesPulse_Backups_${date}`, mimeType: 'application/vnd.google-apps.folder' },
+      if (!client || !client.auth || !client.spreadsheetId) {
+        throw new Error("Google Sheets client not initialized");
+      }
+      
+      const drive = google.drive({ version: 'v3', auth: client.auth });
+      
+      // 1. Detect parent folder of the spreadsheet
+      const sheetInfo = await drive.files.get({
+        fileId: client.spreadsheetId,
+        fields: 'parents'
+      });
+      
+      const parentFolderId = sheetInfo.data.parents?.[0];
+      if (!parentFolderId) throw new Error("Could not find parent folder of the spreadsheet");
+      
+      // 2. Create/Find SalesPulse_Backups folder in the same parent
+      let mainBackupFolderId: string;
+      const existingFolders = await drive.files.list({
+        q: `name = 'SalesPulse_Backups' and '${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+        fields: 'files(id)'
+      });
+      
+      if (existingFolders.data.files && existingFolders.data.files.length > 0) {
+        mainBackupFolderId = existingFolders.data.files[0].id!;
+      } else {
+        const folder = await drive.files.create({
+          requestBody: { name: 'SalesPulse_Backups', parents: [parentFolderId], mimeType: 'application/vnd.google-apps.folder' },
           fields: 'id'
         });
-        const folderId = folderResponse.data.id;
-
-        // Upload DB
-        await drive.files.create({
-          requestBody: { name: `orders_${date}.db`, parents: [folderId!] },
-          media: { mimeType: 'application/x-sqlite3', body: fs.createReadStream(dbBackupPath) }
-        });
-
-        // Upload App Zip
-        await drive.files.create({
-          requestBody: { name: `app_backup_${date}.zip`, parents: [folderId!] },
-          media: { mimeType: 'application/zip', body: fs.createReadStream(appBackupPath) }
-        });
-        console.log(`Backup completed successfully for ${date}`);
-      } else {
-        console.log(`Local backup completed for ${date}, but Google Drive upload skipped (no auth).`);
+        mainBackupFolderId = folder.data.id!;
       }
-    } catch (err) {
-      console.error("Backup Upload Error:", err);
+      
+      // 3. Create daily backup folder
+      const dailyFolder = await drive.files.create({
+        requestBody: { name: backupFolderName, parents: [mainBackupFolderId], mimeType: 'application/vnd.google-apps.folder' },
+        fields: 'id'
+      });
+      const dailyFolderId = dailyFolder.data.id!;
+      
+      // 4. Create subfolders
+      const subfolders = ['App_Backup', 'Data_Backup', 'Config_Backup'];
+      const subfolderIds: Record<string, string> = {};
+      for (const sub of subfolders) {
+        const f = await drive.files.create({
+          requestBody: { name: sub, parents: [dailyFolderId], mimeType: 'application/vnd.google-apps.folder' },
+          fields: 'id'
+        });
+        subfolderIds[sub] = f.data.id!;
+      }
+      
+      // 5. Perform Backups
+      
+      // A. App Backup (Key source files)
+      const appFiles = ['server.ts', 'package.json', 'metadata.json', 'src/App.tsx', 'vite.config.ts'];
+      for (const file of appFiles) {
+        if (fs.existsSync(file)) {
+          await drive.files.create({
+            requestBody: { name: path.basename(file), parents: [subfolderIds['App_Backup']] },
+            media: { body: fs.createReadStream(file) }
+          });
+        }
+      }
+      
+      // B. Data Backup (JSON & CSV)
+      const tables = ['submitted_orders', 'users', 'national_hierarchy', 'distributors'];
+      for (const table of tables) {
+        const data = db.prepare(`SELECT * FROM ${table}`).all();
+        
+        // JSON
+        const jsonContent = JSON.stringify(data, null, 2);
+        await drive.files.create({
+          requestBody: { name: `${table}.json`, parents: [subfolderIds['Data_Backup']] },
+          media: { mimeType: 'application/json', body: jsonContent }
+        });
+        
+        // CSV (Simple implementation)
+        if (data.length > 0) {
+          const headers = Object.keys(data[0] as any);
+          const csvRows = [
+            headers.join(','),
+            ...data.map((row: any) => headers.map(h => `"${String(row[h]).replace(/"/g, '""')}"`).join(','))
+          ];
+          const csvContent = csvRows.join('\n');
+          await drive.files.create({
+            requestBody: { name: `${table}.csv`, parents: [subfolderIds['Data_Backup']] },
+            media: { mimeType: 'text/csv', body: csvContent }
+          });
+        }
+      }
+      
+      // C. Config Backup (Encrypted)
+      const configData = db.prepare("SELECT * FROM app_config").all();
+      const encryptionKey = crypto.createHash('sha256').update(JWT_SECRET).digest();
+      const iv = crypto.randomBytes(16);
+      const cipher = crypto.createCipheriv('aes-256-cbc', encryptionKey, iv);
+      
+      let encrypted = cipher.update(JSON.stringify(configData), 'utf8', 'hex');
+      encrypted += cipher.final('hex');
+      
+      const backupConfig = {
+        iv: iv.toString('hex'),
+        data: encrypted,
+        roles: ['Admin', 'Super Admin', 'Director', 'NSM', 'RSM', 'SC', 'TSM', 'ASM', 'OB'],
+        timestamp: new Date().toISOString()
+      };
+      
+      await drive.files.create({
+        requestBody: { name: 'config_encrypted.json', parents: [subfolderIds['Config_Backup']] },
+        media: { mimeType: 'application/json', body: JSON.stringify(backupConfig, null, 2) }
+      });
+      
+      logAction("SYSTEM", "Backup System", "Admin", "BACKUP_SUCCESS", { folder: backupFolderName });
+      console.log(`Backup completed successfully: ${backupFolderName}`);
+      return true;
+    } catch (err: any) {
+      console.error("Backup Error:", err);
+      logAction("SYSTEM", "Backup System", "Admin", "BACKUP_FAILED", { error: err.message, retry: retryCount });
+      
+      if (retryCount < 3) {
+        console.log(`Retrying backup in 10 minutes... (Attempt ${retryCount + 1})`);
+        setTimeout(() => performFullBackup(retryCount + 1), 10 * 60 * 1000);
+      }
+      return false;
     }
   }
-
-  app.post("/api/admin/backup", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
-    try {
-      await performFullBackup();
-      res.json({ message: "Backup completed successfully!" });
-    } catch (err) {
-      console.error(err);
-      res.status(500).json({ error: "Backup failed." });
-    }
-  });
 
   // Auth Routes
   app.post("/api/auth/login", async (req, res) => {
@@ -1722,7 +1787,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), (req, res) => {
+  app.post("/api/admin/targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM'), (req, res) => {
     const { obContact, brandName, targetCtn, month } = req.body;
     const contact = obContact || req.body.ob_contact;
     const brand = brandName || req.body.brand_name;
@@ -1738,15 +1803,15 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/targets/bulk", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'), (req, res) => {
+  app.post("/api/admin/targets/bulk", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM'), (req, res) => {
     const { targets, month } = req.body;
-    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const defaultMonth = month || new Date().toISOString().slice(0, 7);
     
     try {
       const insert = db.prepare("INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn, month) VALUES (?, ?, ?, ?)");
       const transaction = db.transaction((data) => {
         for (const t of data) {
-          insert.run(t.ob_contact, t.brand_name, t.target_ctn, targetMonth);
+          insert.run(t.ob_contact, t.brand_name, t.target_ctn, t.month || defaultMonth);
         }
       });
       transaction(targets);
@@ -1824,7 +1889,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/targets/:ob_contact", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req, res) => {
+  app.get("/api/admin/targets/:ob_contact", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     try {
       const targets = db.prepare("SELECT * FROM brand_targets WHERE ob_contact = ? AND month = ?").all(req.params.ob_contact, month);
@@ -2439,8 +2504,22 @@ async function startServer() {
   app.get("/api/admin/hierarchy", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req: any, res) => {
     try {
       const visibleOBIds = getVisibleOBIds(req.user);
-      const rows = db.prepare(`SELECT * FROM national_hierarchy WHERE ob_id IN (${visibleOBIds.map(() => '?').join(',')})`).all(...visibleOBIds);
-      res.json(rows);
+      if (visibleOBIds.length === 0) return res.json([]);
+      
+      const hierarchy = db.prepare(`SELECT * FROM national_hierarchy WHERE ob_id IN (${visibleOBIds.map(() => '?').join(',')})`).all(...visibleOBIds);
+      const brandTargets = db.prepare(`SELECT * FROM brand_targets`).all();
+
+      const enrichedHierarchy = hierarchy.map(h => {
+        const obTargets = brandTargets.filter(bt => bt.ob_contact === h.ob_id);
+        const targets: Record<string, number> = {};
+        obTargets.forEach(bt => {
+          const key = `target_${bt.brand_name.toLowerCase().replace(/\s+/g, '_')}`;
+          targets[key] = bt.target_ctn;
+        });
+        return { ...h, ...targets };
+      });
+
+      res.json(enrichedHierarchy);
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -2451,11 +2530,11 @@ async function startServer() {
       const { role } = req.user;
       const isAdmin = role === 'Admin' || role === 'Super Admin' || role === 'Director';
       const visibleOBIds = getVisibleOBIds(req.user);
+      const requestedMonth = req.query.month || new Date().toISOString().slice(0, 7);
       
       // 1. Get hierarchy to determine visibility
       const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const brandTargets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(currentMonth) as any[];
+      const brandTargets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(requestedMonth) as any[];
       
       const enrichedHierarchy = hierarchy.map(h => {
         const obTargets = brandTargets.filter(bt => bt.ob_contact === h.ob_id);
@@ -3476,7 +3555,36 @@ async function startServer() {
     }
   });
 
-  app.listen(PORT, "0.0.0.0", () => {
+  // Manual Backup Trigger
+app.post('/api/admin/run-backup', authenticateToken, authorizeRoles('Super Admin', 'Admin'), async (req, res) => {
+  try {
+    const result = await performFullBackup();
+    if (result) {
+      res.json({ success: true, message: 'Backup completed successfully' });
+    } else {
+      res.status(500).json({ error: 'Backup failed after retries' });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Get Backup Audit Logs
+app.get('/api/admin/backup-logs', authenticateToken, authorizeRoles('Super Admin', 'Admin'), (req, res) => {
+  try {
+    const logs = db.prepare(`
+      SELECT * FROM audit_logs 
+      WHERE action LIKE 'BACKUP_%' 
+      ORDER BY timestamp DESC 
+      LIMIT 50
+    `).all();
+    res.json(logs);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }
