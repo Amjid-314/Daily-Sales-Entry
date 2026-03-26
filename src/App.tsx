@@ -498,7 +498,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
   const filterOptions = useMemo(() => {
     const options: Record<string, string[]> = {
-      Region: ['North', 'Central Punjab (FSD)', 'South Punjab (Multan)', 'Rawalpindi', 'Lahore', 'Sindh', 'Karachi', 'Direct'],
+      Region: ['Lahore', 'Rawalpindi', 'North', 'Central Punjab (FSD)', 'South Punjab (Multan)', 'Sindh', 'Karachi', 'Direct'],
       SC: Array.from(new Set(processedStats.map(s => s.sc))).filter(Boolean).sort() as string[],
       'ASM/TSM': Array.from(new Set(processedStats.map(s => s.tsm))).filter(Boolean).sort() as string[],
       Supervisor: Array.from(new Set(processedStats.map(s => s.supervisor))).filter(Boolean).sort() as string[],
@@ -2936,7 +2936,8 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
         visited: h.visited_shops,
         productive: h.productive_shops,
         totalSales,
-        brandSales
+        brandSales,
+        visit_type: h.visit_type
       };
     });
   }, [history, selectedAnalysisOB, selectedAnalysisRoute, CATEGORIES, SKUS]);
@@ -3078,8 +3079,11 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                         }
                       }, 0);
                       total += daySales;
+                      const hasRR = dayOrders.some((h: any) => h.visit_type === 'RR');
+                      const hasNormal = dayOrders.some((h: any) => h.visit_type !== 'RR' && h.visit_type !== 'Absent');
+                      const cellBg = hasRR ? 'bg-yellow-100' : (hasNormal ? 'bg-green-50' : '');
                       return (
-                        <td key={`${ob.contact}-${day}-${dIdx}`} className={`px-2 py-3 text-center text-[10px] border-r border-slate-100/30 font-mono ${daySales > 0 ? 'font-black text-seablue' : 'text-slate-200'}`}>
+                        <td key={`${ob.contact}-${day}-${dIdx}`} className={`px-2 py-3 text-center text-[10px] border-r border-slate-100/30 font-mono ${cellBg} ${daySales > 0 ? 'font-black text-seablue' : 'text-slate-200'}`}>
                           {daySales > 0 ? daySales.toFixed(1) : '-'}
                         </td>
                       );
@@ -3285,7 +3289,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {routeAnalysisData.map((h: any) => (
-                  <tr key={h.date} className="group hover:bg-slate-50/80 transition-all">
+                  <tr key={h.date} className={`group hover:bg-slate-50/80 transition-all ${h.visit_type === 'RR' ? 'bg-yellow-100' : 'bg-green-50'}`}>
                     <td className="px-6 py-4 text-xs font-black text-slate-700 font-mono whitespace-nowrap">{h.date}</td>
                     <td className="px-6 py-4 text-center text-xs text-slate-500 font-bold whitespace-nowrap">{h.visited}</td>
                     <td className="px-6 py-4 text-center whitespace-nowrap">
@@ -4105,7 +4109,7 @@ export default function App() {
           targets: {},
           items: {},
           categoryProductiveShops: {},
-          visitType: 'A'
+          visitType: ''
         }));
         fetchTargetsForOB(String(value));
       } else {
@@ -7797,94 +7801,6 @@ export default function App() {
             </div>
           ) : (
             <>
-              <div className="card-clean p-4">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-4">
-                  <h3 className="text-sm font-black text-seablue uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
-                  <div className="flex items-center gap-2">
-                    <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
-                    <select 
-                      className="input-clean text-[10px] py-1 px-2"
-                      value={matrixView}
-                      onChange={(e) => setMatrixView(e.target.value as any)}
-                    >
-                      <option value="Total">Total Bags/Ctns</option>
-                      <optgroup label="Category-wise">
-                        {BRAND_GROUP_NAMES.map(cat => <option key={`cat_${cat}`} value={`cat_${cat}`}>{cat}</option>)}
-                      </optgroup>
-                      <optgroup label="Brand-wise">
-                        {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                      </optgroup>
-                    </select>
-                  </div>
-                </div>
-                <div className="overflow-x-auto -mx-4 sm:mx-0">
-                  <div className="min-w-[600px] px-4 sm:px-0">
-                    <table className="w-full text-left border-collapse text-[9px]">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200">
-                          <th className="px-1 py-2 font-black text-slate-400 uppercase sticky left-0 bg-slate-50 z-10 border-r border-slate-200 w-14 sm:w-24 truncate text-[6px] sm:text-[8px] whitespace-nowrap">OB Name</th>
-                          {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                            <th key={day} className="px-0.5 py-2 font-black text-slate-600 text-center border-r border-slate-100 min-w-[14px] sm:min-w-[24px] text-[5px] sm:text-[8px] whitespace-nowrap">{day}</th>
-                          ))}
-                          <th className="px-1 py-2 font-black text-seablue text-right sticky right-0 bg-slate-50 z-10 border-l border-slate-200 w-8 sm:w-16 text-[6px] sm:text-[8px] whitespace-nowrap">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {obAssignments.filter(ob => !historyFilters.tsm || ob.tsm === historyFilters.tsm).map(ob => {
-                          const obOrders = history.filter(h => h.ob_contact === ob.contact && h.date.startsWith(new Date().toISOString().slice(0, 7)));
-                          let obTotal = 0;
-                          return (
-                            <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-1 py-2 font-bold text-slate-700 sticky left-0 bg-white z-10 border-r border-slate-200 shadow-[2px_0_5px_-2px_rgba(0,0,0,0.05)] truncate w-14 sm:w-24 text-[6px] sm:text-[8px] whitespace-nowrap" title={ob.name}>{ob.name}</td>
-                              {Array.from({ length: 31 }, (_, i) => {
-                                const day = (i + 1).toString().padStart(2, '0');
-                                const dateStr = `${new Date().toISOString().slice(0, 7)}-${day}`;
-                                const dayOrder = obOrders.find(o => o.date === dateStr);
-                                
-                                let daySales = 0;
-                                if (dayOrder) {
-                                  const items = dayOrder.order_data || {};
-                                  if (matrixView === 'Total') {
-                                    daySales = SKUS.reduce((sum, sku) => {
-                                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                      const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                                      return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                                    }, 0);
-                                  } else if (matrixView.startsWith('cat_')) {
-                                    const categoryName = matrixView.replace('cat_', '');
-                                    const brandsInGroup = BRAND_GROUPS[categoryName] || [];
-                                    daySales = SKUS.filter(s => brandsInGroup.includes(s.category)).reduce((sum, sku) => {
-                                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                      const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                                      return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                                    }, 0);
-                                  } else {
-                                    daySales = SKUS.filter(s => s.category === matrixView).reduce((sum, sku) => {
-                                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                      const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                                      return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                                    }, 0);
-                                  }
-                                }
-                                
-                                obTotal += daySales;
-                                return (
-                                  <td key={day} className={`px-0.5 py-2 text-center border-r border-slate-100 text-[5px] sm:text-[8px] ${daySales > 0 ? 'bg-emerald-50 font-bold text-emerald-700' : 'text-slate-300'}`}>
-                                    {daySales > 0 ? daySales.toFixed(1) : '-'}
-                                  </td>
-                                );
-                              })}
-                              <td className="px-1 py-2 font-black text-seablue text-right sticky right-0 bg-white z-10 border-l border-slate-200 shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.05)] w-8 sm:w-16 text-[6px] sm:text-[8px]">{obTotal.toFixed(1)}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-                <div className="mt-2 text-[8px] text-slate-400 italic">* Matrix shows {matrixView === 'Total' ? 'total bags/cartons' : matrixView + ' sales'} per day for the current month. Scroll horizontally to see all dates.</div>
-              </div>
-
               <div className="space-y-4">
                 {groupedHistory.map(group => (
                   <div key={group.obName} className="card-clean overflow-hidden">

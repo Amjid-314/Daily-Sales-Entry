@@ -186,6 +186,13 @@ db.exec(`
     target_ctn REAL DEFAULT 0
   );
 
+  -- Region Renaming (Data Correction)
+  UPDATE submitted_orders SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+  UPDATE ob_assignments SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+  UPDATE distributors SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+  UPDATE national_hierarchy SET territory_region = 'North' WHERE territory_region IN ('Zone North', 'Region KPK', 'KPK');
+  UPDATE users SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+
   -- Cleanup duplicates before adding index
   DELETE FROM submitted_orders 
   WHERE id NOT IN (
