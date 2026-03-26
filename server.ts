@@ -444,6 +444,15 @@ async function startServer() {
       key TEXT PRIMARY KEY,
       value TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS pending_commands (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      command TEXT,
+      status TEXT DEFAULT 'pending',
+      error TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   // Migration: Ensure brand_targets has correct UNIQUE constraint and month column
@@ -1373,8 +1382,8 @@ async function startServer() {
   }
 
   // Daily Backup Cron (9:00 AM)
-  cron.schedule('0 9 * * *', async () => {
-    console.log("Starting daily backup...");
+  cron.schedule('0 17 * * *', async () => {
+    console.log("Starting daily backup at 9:00 AM PST (17:00 UTC)...");
     await performFullBackup();
   });
 
@@ -1390,14 +1399,8 @@ async function startServer() {
       
       const drive = google.drive({ version: 'v3', auth: client.auth });
       
-      // 1. Detect parent folder of the spreadsheet
-      const sheetInfo = await drive.files.get({
-        fileId: client.spreadsheetId,
-        fields: 'parents'
-      });
-      
-      const parentFolderId = sheetInfo.data.parents?.[0];
-      if (!parentFolderId) throw new Error("Could not find parent folder of the spreadsheet");
+      // Use specific folder ID provided by user
+      const parentFolderId = '1obtuVTe100g6jrvS6ST8-KVUtXYvQVDY';
       
       // 2. Create/Find SalesPulse_Backups folder in the same parent
       let mainBackupFolderId: string;
@@ -2396,10 +2399,10 @@ async function startServer() {
   });
 
   app.post("/api/admin/bulk-upload", authenticateToken, (req, res) => {
-    const { team, clearExisting } = req.body;
+    const { team, clearExisting, month } = req.body;
     if (!Array.isArray(team)) return res.status(400).json({ error: "Invalid data" });
 
-    const currentMonth = new Date().toISOString().slice(0, 7);
+    const currentMonth = month || new Date().toISOString().slice(0, 7);
 
     const transaction = db.transaction(() => {
       if (clearExisting) {
@@ -3480,41 +3483,6 @@ async function startServer() {
     res.status(404).json({ error: `API route ${req.method} ${req.url} not found` });
   });
 
-  // Global Error Handler
-  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-    console.error("Global Error:", err);
-    res.status(500).json({ error: err.message || "Internal Server Error" });
-  });
-
-  // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
-    const vite = await createViteServer({
-      server: { middlewareMode: true },
-      appType: "spa",
-    });
-    app.use(vite.middlewares);
-    
-    // Fallback to index.html for SPA in dev mode
-    app.get("*", async (req, res, next) => {
-      const url = req.originalUrl;
-      try {
-        const templatePath = path.resolve("index.html");
-        const fs = await import("fs");
-        let template = fs.readFileSync(templatePath, "utf-8");
-        template = await vite.transformIndexHtml(url, template);
-        res.status(200).set({ "Content-Type": "text/html" }).end(template);
-      } catch (e) {
-        vite.ssrFixStacktrace(e as Error);
-        next(e);
-      }
-    });
-  } else {
-    app.use(express.static("dist"));
-    app.get("*", (req, res) => {
-      res.sendFile(path.resolve("dist/index.html"));
-    });
-  }
-
   app.get("/api/stocks/export", (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM stock_reports ORDER BY date DESC, submitted_at DESC").all() as any[];
@@ -3556,35 +3524,80 @@ async function startServer() {
   });
 
   // Manual Backup Trigger
-app.post('/api/admin/run-backup', authenticateToken, authorizeRoles('Super Admin', 'Admin'), async (req, res) => {
-  try {
-    const result = await performFullBackup();
-    if (result) {
-      res.json({ success: true, message: 'Backup completed successfully' });
-    } else {
-      res.status(500).json({ error: 'Backup failed after retries' });
+  app.post('/api/admin/run-backup', authenticateToken, authorizeRoles('Super Admin', 'Admin'), async (req, res) => {
+    try {
+      const result = await performFullBackup();
+      if (result) {
+        res.json({ success: true, message: 'Backup completed successfully' });
+      } else {
+        res.status(500).json({ error: 'Backup failed after retries' });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
     }
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  });
 
-// Get Backup Audit Logs
-app.get('/api/admin/backup-logs', authenticateToken, authorizeRoles('Super Admin', 'Admin'), (req, res) => {
-  try {
-    const logs = db.prepare(`
-      SELECT * FROM audit_logs 
-      WHERE action LIKE 'BACKUP_%' 
-      ORDER BY timestamp DESC 
-      LIMIT 50
-    `).all();
-    res.json(logs);
-  } catch (err: any) {
-    res.status(500).json({ error: err.message });
-  }
-});
+  // Get Backup Audit Logs
+  app.get('/api/admin/backup-logs', authenticateToken, authorizeRoles('Super Admin', 'Admin'), (req, res) => {
+    try {
+      const logs = db.prepare(`
+        SELECT * FROM audit_logs 
+        WHERE action LIKE 'BACKUP_%' 
+        ORDER BY timestamp DESC 
+        LIMIT 50
+      `).all();
+      res.json(logs);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
 
-app.listen(PORT, "0.0.0.0", () => {
+  // Pending Commands API
+  app.get('/api/admin/pending-commands', authenticateToken, authorizeRoles('Super Admin', 'Admin'), (req, res) => {
+    try {
+      const commands = db.prepare("SELECT * FROM pending_commands ORDER BY created_at DESC").all();
+      res.json(commands);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Global Error Handler
+  app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+    console.error("Global Error:", err);
+    res.status(500).json({ error: err.message || "Internal Server Error" });
+  });
+
+  // Vite middleware for development
+  if (process.env.NODE_ENV !== "production") {
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+    
+    // Fallback to index.html for SPA in dev mode
+    app.get("*", async (req, res, next) => {
+      const url = req.originalUrl;
+      try {
+        const templatePath = path.resolve("index.html");
+        const fs = await import("fs");
+        let template = fs.readFileSync(templatePath, "utf-8");
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ "Content-Type": "text/html" }).end(template);
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
+  } else {
+    app.use(express.static("dist"));
+    app.get("*", (req, res) => {
+      res.sendFile(path.resolve("dist/index.html"));
+    });
+  }
+
+  app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
   });
 }

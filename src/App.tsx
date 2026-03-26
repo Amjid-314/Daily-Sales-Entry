@@ -996,18 +996,27 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
             <div className="absolute -right-4 -bottom-4 opacity-10 group-hover:scale-110 transition-transform duration-500">
               <Package className="w-24 h-24" />
             </div>
-            <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">MTD Volume (Tons)</div>
-            <div className="text-5xl font-black tracking-tighter">{summary.totalTonnage.toFixed(1)} <span className="text-sm font-normal opacity-70">Tons</span></div>
+            <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">MTD Volume</div>
+            <div className="text-5xl font-black tracking-tighter">
+              {summary.totalTonnage.toFixed(1)} <span className="text-sm font-normal opacity-70">T</span>
+              <span className="mx-2 text-white/30">|</span>
+              {Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70">B</span>
+            </div>
             <div className="text-[10px] font-black text-white/80 mt-2 uppercase tracking-tight">
-              {Math.round(summary.totalSales).toLocaleString()} Total Bags
+              Total Sales Performance
             </div>
             <div className="mt-6 grid grid-cols-2 gap-x-4 gap-y-3 border-t border-white/10 pt-4">
               {BRAND_GROUP_NAMES.map(group => (
                 <div key={group} className="flex flex-col">
                   <span className="text-[9px] font-black text-white/60 uppercase tracking-widest leading-none mb-1">{group}</span>
-                  <span className="text-sm font-black text-white">
-                    {BRAND_GROUPS[group].reduce((sum, brand) => sum + (summary.brandTonnage[brand] || 0), 0).toFixed(1)} <span className="text-[10px] font-normal opacity-70">Tons</span>
-                  </span>
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-sm font-black text-white">
+                      {BRAND_GROUPS[group].reduce((sum, brand) => sum + (summary.brandTonnage[brand] || 0), 0).toFixed(1)}<span className="text-[8px] opacity-70">T</span>
+                    </span>
+                    <span className="text-[10px] font-bold text-white/50">
+                      ({Math.round(BRAND_GROUPS[group].reduce((sum, brand) => sum + (summary.brandTotals[brand] || 0), 0))}<span className="text-[8px]">B</span>)
+                    </span>
+                  </div>
                 </div>
               ))}
             </div>
@@ -1546,30 +1555,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         </div>
       </div>
 
-      {/* Critical Alerts Panel */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="card-clean p-4 bg-white border-l-4 border-rose-500">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Critical Alerts</h3>
-            <AlertTriangle className="w-4 h-4 text-rose-500" />
-          </div>
-          <div className="space-y-2 max-h-[200px] overflow-y-auto pr-2">
-            {obPerformance.filter(ob => ob.isIrregular).map((ob, idx) => (
-              <div key={`${idx}-${ob.ob_contact || ob.name}`} className="flex items-center justify-between p-2 bg-rose-50 rounded-lg">
-                <span className="text-[10px] font-bold text-rose-700">{ob.name}</span>
-                <span className="text-[8px] font-black bg-rose-200 text-rose-800 px-2 py-0.5 rounded uppercase">Irregular</span>
-              </div>
-            ))}
-            {monthStats.filter(s => s.isFakeVisit).map((s, idx) => (
-              <div key={`fake-${idx}-${s.ob_contact}`} className="flex items-center justify-between p-2 bg-orange-50 rounded-lg">
-                <span className="text-[10px] font-bold text-orange-700">{s.ob_name}</span>
-                <span className="text-[8px] font-black bg-orange-200 text-orange-800 px-2 py-0.5 rounded uppercase">Fake Visit?</span>
-              </div>
-            ))}
-            {obPerformance.length === 0 && <p className="text-[10px] text-slate-400 text-center py-4">No critical alerts</p>}
-          </div>
-        </div>
-
+      {/* Top Performers Panel */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         <div className="card-clean p-4 bg-white border-l-4 border-seablue">
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Top Performers</h3>
