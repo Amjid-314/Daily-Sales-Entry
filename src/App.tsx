@@ -4764,7 +4764,27 @@ export default function App() {
       const res = await apiFetch(`/api/national/stats`);
       if (res.ok) {
         const data = await res.json();
-        setNationalStats(data.stats || []);
+        const parsedStats = (data.stats || []).map((h: any) => {
+          const orderData = typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {});
+          const categoryProductiveData = typeof h.category_productive_data === 'string' ? JSON.parse(h.category_productive_data) : (h.category_productive_data || {});
+          
+          // Calculate total cartons for TSMDashboard
+          let totalCartons = 0;
+          SKUS.forEach(sku => {
+            const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+            const ctns = sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0;
+            totalCartons += ctns;
+          });
+
+          return {
+            ...h,
+            order_data: orderData,
+            category_productive_data: categoryProductiveData,
+            cartons: totalCartons
+          };
+        });
+        setNationalStats(parsedStats);
         setHierarchy(data.hierarchy || []);
       }
     } catch (err) {
@@ -4854,6 +4874,7 @@ export default function App() {
       }
     }
     fetchHistory();
+    fetchNationalData();
   }, [view, userRole, token]);
 
   useEffect(() => {
@@ -6251,7 +6272,7 @@ export default function App() {
               </div>
               
               <ReportsView 
-                history={history} 
+                history={nationalStats} 
                 obAssignments={obAssignments} 
                 tsmList={tsmList} 
                 appConfig={appConfig} 

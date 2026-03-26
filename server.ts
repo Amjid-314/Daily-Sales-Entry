@@ -1396,6 +1396,7 @@ async function startServer() {
   async function performFullBackup(retryCount = 0): Promise<boolean> {
     const dateStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
     const backupFolderName = `SalesPulse_Backup_${dateStr}`;
+    console.log(`[BACKUP] Starting backup: ${backupFolderName} (Attempt ${retryCount + 1})`);
     
     try {
       const client = await getGoogleSheetsClient();
@@ -1404,6 +1405,7 @@ async function startServer() {
       }
       
       const drive = google.drive({ version: 'v3', auth: client.auth });
+      console.log(`[BACKUP] Drive client initialized.`);
       
       // Use specific folder ID provided by user
       const parentFolderId = '1obtuVTe100g6jrvS6ST8-KVUtXYvQVDY';
@@ -1412,6 +1414,7 @@ async function startServer() {
       let mainBackupFolderId: string;
       
       try {
+        console.log(`[BACKUP] Searching for 'SalesPulse_Backups' in parent folder: ${parentFolderId}`);
         // Try to find in the specific parent folder first
         const existingFolders = await drive.files.list({
           q: `name = 'SalesPulse_Backups' and '${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
@@ -1420,15 +1423,18 @@ async function startServer() {
         
         if (existingFolders.data.files && existingFolders.data.files.length > 0) {
           mainBackupFolderId = existingFolders.data.files[0].id!;
+          console.log(`[BACKUP] Found existing main backup folder: ${mainBackupFolderId}`);
         } else {
+          console.log(`[BACKUP] Creating new 'SalesPulse_Backups' folder in parent: ${parentFolderId}`);
           const folder = await drive.files.create({
             requestBody: { name: 'SalesPulse_Backups', parents: [parentFolderId], mimeType: 'application/vnd.google-apps.folder' },
             fields: 'id'
           });
           mainBackupFolderId = folder.data.id!;
+          console.log(`[BACKUP] Created main backup folder: ${mainBackupFolderId}`);
         }
       } catch (folderErr: any) {
-        console.warn("Could not access parent folder, falling back to root directory:", folderErr.message);
+        console.warn("[BACKUP] Could not access parent folder, falling back to root directory:", folderErr.message);
         
         // Fallback to root directory
         const existingFolders = await drive.files.list({
@@ -1438,12 +1444,15 @@ async function startServer() {
         
         if (existingFolders.data.files && existingFolders.data.files.length > 0) {
           mainBackupFolderId = existingFolders.data.files[0].id!;
+          console.log(`[BACKUP] Found existing main backup folder in root: ${mainBackupFolderId}`);
         } else {
+          console.log(`[BACKUP] Creating new 'SalesPulse_Backups' folder in root`);
           const folder = await drive.files.create({
             requestBody: { name: 'SalesPulse_Backups', mimeType: 'application/vnd.google-apps.folder' },
             fields: 'id'
           });
           mainBackupFolderId = folder.data.id!;
+          console.log(`[BACKUP] Created main backup folder in root: ${mainBackupFolderId}`);
           
           // Share with Super Admins
           try {
@@ -1455,16 +1464,17 @@ async function startServer() {
                   requestBody: { type: 'user', role: 'writer', emailAddress: admin.email },
                   sendNotificationEmail: true
                 });
-                console.log(`Shared backup folder with admin: ${admin.email}`);
+                console.log(`[BACKUP] Shared backup folder with admin: ${admin.email}`);
               }
             }
           } catch (shareErr: any) {
-            console.error("Failed to share backup folder:", shareErr.message);
+            console.error("[BACKUP] Failed to share backup folder:", shareErr.message);
           }
         }
       }
       
       // 3. Create daily backup folder
+      console.log(`[BACKUP] Creating daily folder: ${backupFolderName}`);
       const dailyFolder = await drive.files.create({
         requestBody: { name: backupFolderName, parents: [mainBackupFolderId], mimeType: 'application/vnd.google-apps.folder' },
         fields: 'id'
@@ -1475,6 +1485,7 @@ async function startServer() {
       const subfolders = ['App_Backup', 'Data_Backup', 'Config_Backup'];
       const subfolderIds: Record<string, string> = {};
       for (const sub of subfolders) {
+        console.log(`[BACKUP] Creating subfolder: ${sub}`);
         const f = await drive.files.create({
           requestBody: { name: sub, parents: [dailyFolderId], mimeType: 'application/vnd.google-apps.folder' },
           fields: 'id'
@@ -1483,11 +1494,13 @@ async function startServer() {
       }
       
       // 5. Perform Backups
+      console.log(`[BACKUP] Starting file uploads...`);
       
       // A. App Backup (Key source files)
       const appFiles = ['server.ts', 'package.json', 'metadata.json', 'src/App.tsx', 'vite.config.ts'];
       for (const file of appFiles) {
         if (fs.existsSync(file)) {
+          console.log(`[BACKUP] Uploading app file: ${file}`);
           await drive.files.create({
             requestBody: { name: path.basename(file), parents: [subfolderIds['App_Backup']] },
             media: { body: fs.createReadStream(file) }
@@ -1498,6 +1511,7 @@ async function startServer() {
       // B. Data Backup (JSON & CSV)
       const tables = ['submitted_orders', 'users', 'national_hierarchy', 'distributors'];
       for (const table of tables) {
+        console.log(`[BACKUP] Backing up table: ${table}`);
         const data = db.prepare(`SELECT * FROM ${table}`).all();
         
         // JSON
@@ -1523,6 +1537,7 @@ async function startServer() {
       }
       
       // C. Config Backup (Encrypted)
+      console.log(`[BACKUP] Backing up encrypted config...`);
       const configData = db.prepare("SELECT * FROM app_config").all();
       const encryptionKey = crypto.createHash('sha256').update(JWT_SECRET).digest();
       const iv = crypto.randomBytes(16);
@@ -1544,14 +1559,14 @@ async function startServer() {
       });
       
       logAction("SYSTEM", "Backup System", "Admin", "BACKUP_SUCCESS", { folder: backupFolderName });
-      console.log(`Backup completed successfully: ${backupFolderName}`);
+      console.log(`[BACKUP] Backup completed successfully: ${backupFolderName}`);
       return true;
     } catch (err: any) {
-      console.error("Backup Error:", err);
+      console.error("[BACKUP] Critical Error:", err);
       logAction("SYSTEM", "Backup System", "Admin", "BACKUP_FAILED", { error: err.message, retry: retryCount });
       
       if (retryCount < 3) {
-        console.log(`Retrying backup in 10 minutes... (Attempt ${retryCount + 1})`);
+        console.log(`[BACKUP] Retrying in 10 minutes... (Attempt ${retryCount + 1})`);
         setTimeout(() => performFullBackup(retryCount + 1), 10 * 60 * 1000);
       }
       return false;
