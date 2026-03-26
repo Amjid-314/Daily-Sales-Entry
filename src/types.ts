@@ -35,7 +35,7 @@ export interface OrderState {
   categoryProductiveShops: Record<string, number>; // Brand-wise productive shops
   items: Record<string, OrderItem>;
   targets: Record<string, number>;
-  visitType: 'A' | 'V' | 'RR' | 'Absent';
+  visitType: 'A' | 'V' | 'RR' | 'Absent' | '';
   latitude?: number;
   longitude?: number;
   accuracy?: number;

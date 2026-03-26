@@ -176,6 +176,7 @@ db.exec(`
     rsm_name TEXT,
     sc_name TEXT,
     asm_tsm_name TEXT,
+    supervisor_name TEXT,
     town_name TEXT,
     distributor_name TEXT,
     distributor_code TEXT,
@@ -363,6 +364,7 @@ async function startServer() {
       town TEXT,
       distributor TEXT,
       tsm TEXT,
+      supervisor TEXT,
       zone TEXT,
       region TEXT,
       nsm TEXT,
@@ -375,7 +377,7 @@ async function startServer() {
   `);
 
   // Migration: Ensure all columns exist in ob_assignments
-  const obCols = ["contact", "tsm", "total_shops", "town", "distributor", "routes", "zone", "region", "nsm", "rsm", "sc", "director"];
+  const obCols = ["contact", "tsm", "supervisor", "total_shops", "town", "distributor", "routes", "zone", "region", "nsm", "rsm", "sc", "director"];
   obCols.forEach(col => {
     try { db.exec(`ALTER TABLE ob_assignments ADD COLUMN ${col} ${col === 'total_shops' ? 'INTEGER DEFAULT 50' : 'TEXT'}`); } catch (e) {}
   });
@@ -396,6 +398,10 @@ async function startServer() {
       db.exec(`ALTER TABLE submitted_orders ADD COLUMN ${col} ${type}`); 
     } catch (e) {}
   });
+  
+  try {
+    db.exec("ALTER TABLE national_hierarchy ADD COLUMN supervisor_name TEXT");
+  } catch (e) {}
   
   // Force update all existing OBs to 50 shops as per user request
   try {
@@ -791,7 +797,7 @@ async function startServer() {
         const auth = new google.auth.JWT({
           email: clientEmail,
           key: privateKey,
-          scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive.file']
+          scopes: ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
         });
         const sheets = google.sheets({ version: 'v4', auth });
         return { sheets, spreadsheetId, auth };
@@ -1381,9 +1387,9 @@ async function startServer() {
       .run("amjid.admin", "amjid.bisconni@gmail.com", hashedPass, "Super Admin", "Muhammad Amjid");
   }
 
-  // Daily Backup Cron (9:00 AM)
-  cron.schedule('0 17 * * *', async () => {
-    console.log("Starting daily backup at 9:00 AM PST (17:00 UTC)...");
+  // Daily Backup Cron (9:00 AM PKT / 4:00 AM UTC)
+  cron.schedule('0 4 * * *', async () => {
+    console.log("Starting daily backup at 9:00 AM PKT (4:00 AM UTC)...");
     await performFullBackup();
   });
 
@@ -1402,21 +1408,60 @@ async function startServer() {
       // Use specific folder ID provided by user
       const parentFolderId = '1obtuVTe100g6jrvS6ST8-KVUtXYvQVDY';
       
-      // 2. Create/Find SalesPulse_Backups folder in the same parent
+      // 2. Create/Find SalesPulse_Backups folder
       let mainBackupFolderId: string;
-      const existingFolders = await drive.files.list({
-        q: `name = 'SalesPulse_Backups' and '${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-        fields: 'files(id)'
-      });
       
-      if (existingFolders.data.files && existingFolders.data.files.length > 0) {
-        mainBackupFolderId = existingFolders.data.files[0].id!;
-      } else {
-        const folder = await drive.files.create({
-          requestBody: { name: 'SalesPulse_Backups', parents: [parentFolderId], mimeType: 'application/vnd.google-apps.folder' },
-          fields: 'id'
+      try {
+        // Try to find in the specific parent folder first
+        const existingFolders = await drive.files.list({
+          q: `name = 'SalesPulse_Backups' and '${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          fields: 'files(id)'
         });
-        mainBackupFolderId = folder.data.id!;
+        
+        if (existingFolders.data.files && existingFolders.data.files.length > 0) {
+          mainBackupFolderId = existingFolders.data.files[0].id!;
+        } else {
+          const folder = await drive.files.create({
+            requestBody: { name: 'SalesPulse_Backups', parents: [parentFolderId], mimeType: 'application/vnd.google-apps.folder' },
+            fields: 'id'
+          });
+          mainBackupFolderId = folder.data.id!;
+        }
+      } catch (folderErr: any) {
+        console.warn("Could not access parent folder, falling back to root directory:", folderErr.message);
+        
+        // Fallback to root directory
+        const existingFolders = await drive.files.list({
+          q: `name = 'SalesPulse_Backups' and 'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
+          fields: 'files(id)'
+        });
+        
+        if (existingFolders.data.files && existingFolders.data.files.length > 0) {
+          mainBackupFolderId = existingFolders.data.files[0].id!;
+        } else {
+          const folder = await drive.files.create({
+            requestBody: { name: 'SalesPulse_Backups', mimeType: 'application/vnd.google-apps.folder' },
+            fields: 'id'
+          });
+          mainBackupFolderId = folder.data.id!;
+          
+          // Share with Super Admins
+          try {
+            const admins = db.prepare("SELECT email FROM users WHERE role = 'Super Admin' AND email IS NOT NULL").all() as any[];
+            for (const admin of admins) {
+              if (admin.email) {
+                await drive.permissions.create({
+                  fileId: mainBackupFolderId,
+                  requestBody: { type: 'user', role: 'writer', emailAddress: admin.email },
+                  sendNotificationEmail: true
+                });
+                console.log(`Shared backup folder with admin: ${admin.email}`);
+              }
+            }
+          } catch (shareErr: any) {
+            console.error("Failed to share backup folder:", shareErr.message);
+          }
+        }
       }
       
       // 3. Create daily backup folder
