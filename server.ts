@@ -1805,13 +1805,13 @@ async function startServer() {
 
   app.post("/api/admin/targets/bulk", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM'), (req, res) => {
     const { targets, month } = req.body;
-    const defaultMonth = month || new Date().toISOString().slice(0, 7);
+    const targetMonth = month || new Date().toISOString().slice(0, 7);
     
     try {
       const insert = db.prepare("INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn, month) VALUES (?, ?, ?, ?)");
       const transaction = db.transaction((data) => {
         for (const t of data) {
-          insert.run(t.ob_contact, t.brand_name, t.target_ctn, t.month || defaultMonth);
+          insert.run(t.ob_contact, t.brand_name, t.target_ctn, targetMonth);
         }
       });
       transaction(targets);
@@ -2530,11 +2530,11 @@ async function startServer() {
       const { role } = req.user;
       const isAdmin = role === 'Admin' || role === 'Super Admin' || role === 'Director';
       const visibleOBIds = getVisibleOBIds(req.user);
-      const requestedMonth = req.query.month || new Date().toISOString().slice(0, 7);
       
       // 1. Get hierarchy to determine visibility
       const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
-      const brandTargets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(requestedMonth) as any[];
+      const currentMonth = new Date().toISOString().slice(0, 7);
+      const brandTargets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(currentMonth) as any[];
       
       const enrichedHierarchy = hierarchy.map(h => {
         const obTargets = brandTargets.filter(bt => bt.ob_contact === h.ob_id);
