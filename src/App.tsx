@@ -19,6 +19,19 @@ import {
   Legend
 } from 'recharts';
 import { AIChatBot } from './components/AIChatBot';
+import { Login } from './components/Login';
+import { MainNav } from './components/MainNav';
+import { IntroProfile } from './components/IntroProfile';
+import { StatsView } from './components/StatsView';
+import { ReportsView } from './components/ReportsView';
+import { HistoryView } from './components/HistoryView';
+import { DailyStatusView } from './components/DailyStatusView';
+import { NationalDashboard } from './components/NationalDashboard';
+import { TSMDashboard } from './components/TSMDashboard';
+import { PostLoginDashboard } from './components/PostLoginDashboard';
+import { Calendar as CalendarComponent } from './components/Calendar';
+import { EntryForm } from './components/EntryForm';
+import { SubmissionModals } from './components/SubmissionModals';
 import { 
   Save, 
   Send, 
@@ -65,17 +78,10 @@ import {
   HelpCircle
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
+import { normalizeRole, calculateTotalBags, getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry } from './lib/utils';
 
 const STORAGE_KEY = 'ob_order_draft';
 const LOGO_STORAGE_KEY = 'app_logo_base64';
-
-const getPSTDate = () => {
-  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
-};
-
-const getPSTTimestamp = () => {
-  return new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
-};
 
 const WhatsAppIcon = () => (
   <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
@@ -83,225 +89,6 @@ const WhatsAppIcon = () => (
   </svg>
 );
 
-const getWorkingDays = (year: number, month: number, holidaysStr: string, dayLimit?: number) => {
-  const totalDays = new Date(year, month + 1, 0).getDate();
-  const limit = dayLimit || totalDays;
-  const holidays = holidaysStr.split(',').map(h => h.trim()).filter(h => h);
-  
-  let workingDays = 0;
-  for (let d = 1; d <= limit; d++) {
-    const date = new Date(year, month, d);
-    const dateStr = [
-      date.getFullYear(),
-      String(date.getMonth() + 1).padStart(2, '0'),
-      String(date.getDate()).padStart(2, '0')
-    ].join('-');
-    const isSunday = date.getDay() === 0;
-    const isHoliday = holidays.includes(dateStr);
-    if (!isSunday && !isHoliday) workingDays++;
-  }
-  return workingDays;
-};
-
-const TSMDashboard = ({ stats, hierarchy, isSyncing, onRefresh, userName, holidays, selectedMonth, setSelectedMonth }: { stats: any[], hierarchy: any[], isSyncing?: boolean, onRefresh?: () => void, userName?: string | null, holidays: string, selectedMonth: string, setSelectedMonth: (m: string) => void }) => {
-  const currentMonthStats = useMemo(() => {
-    return stats.filter(s => s.date.startsWith(selectedMonth));
-  }, [stats, selectedMonth]);
-
-  const totalTarget = useMemo(() => {
-    return hierarchy.reduce((sum, h) => sum + (parseFloat(h.target_ctn) || 0), 0);
-  }, [hierarchy]);
-
-  const totalCartonsSold = useMemo(() => {
-    return currentMonthStats.reduce((sum, s) => sum + (parseFloat(s.cartons) || 0), 0);
-  }, [currentMonthStats]);
-
-  const achievementPercentage = totalTarget > 0 ? (totalCartonsSold / totalTarget) * 100 : 0;
-
-  const workingDaysSoFar = useMemo(() => {
-    const [year, month] = selectedMonth.split('-').map(Number);
-    const startDate = new Date(year, month - 1, 1);
-    const endDate = new Date(year, month, 0);
-    const today = new Date();
-    const actualEndDate = endDate > today ? today : endDate;
-    
-    let workingDays = 0;
-    const holidayList = (holidays || '').split(',').map(d => d.trim());
-
-    for (let d = new Date(startDate); d <= actualEndDate; d.setDate(d.getDate() + 1)) {
-      const dateStr = d.toISOString().split('T')[0];
-      const isSunday = d.getDay() === 0;
-      const isHoliday = holidayList.includes(dateStr);
-      if (!isSunday && !isHoliday) workingDays++;
-    }
-    return workingDays || 1;
-  }, [selectedMonth, holidays]);
-
-  const obPerformance = useMemo(() => {
-    return hierarchy.map(h => {
-      const obStats = currentMonthStats.filter(s => s.ob_contact === h.ob_id);
-      const cartonsSold = obStats.reduce((sum, s) => sum + (parseFloat(s.cartons) || 0), 0);
-      const target = parseFloat(h.target_ctn) || 0;
-      const achievement = target > 0 ? (cartonsSold / target) * 100 : 0;
-      
-      const uniqueDays = new Set(obStats.map(s => s.date)).size;
-      const submissionConsistency = (uniqueDays / workingDaysSoFar) * 100;
-
-      const routeStats = obStats.reduce((acc, s) => {
-        const route = s.route_name || 'Unknown';
-        if (!acc[route]) acc[route] = 0;
-        acc[route] += (parseFloat(s.cartons) || 0);
-        return acc;
-      }, {} as Record<string, number>);
-
-      const weakRoutes = Object.entries(routeStats)
-        .filter(([_, cartons]: [string, number]) => cartons < 10)
-        .map(([route]) => route);
-
-      return {
-        ...h,
-        cartonsSold,
-        target,
-        achievement,
-        submissionConsistency,
-        weakRoutes
-      };
-    }).sort((a, b) => b.achievement - a.achievement);
-  }, [hierarchy, currentMonthStats, workingDaysSoFar]);
-
-  return (
-    <div className="p-4 md:p-6 lg:p-8 max-w-7xl mx-auto space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-        <div>
-          <h1 className="text-2xl font-black text-seablue uppercase tracking-widest">TSM Dashboard</h1>
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Overview for {userName}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <input 
-            type="month" 
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="border border-slate-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-seablue text-slate-600 font-bold"
-          />
-          {onRefresh && (
-            <button 
-              onClick={onRefresh}
-              disabled={isSyncing}
-              className="p-2 bg-white border border-slate-200 rounded-lg hover:bg-slate-50 disabled:opacity-50"
-            >
-              <RefreshCw className={`w-5 h-5 text-slate-600 ${isSyncing ? 'animate-spin' : ''}`} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Cartons Sold</h3>
-            <Package className="w-5 h-5 text-seablue" />
-          </div>
-          <p className="text-3xl font-black text-slate-800">{totalCartonsSold.toLocaleString()}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Target</h3>
-            <TrendingUp className="w-5 h-5 text-emerald-600" />
-          </div>
-          <p className="text-3xl font-black text-slate-800">{totalTarget.toLocaleString()}</p>
-        </div>
-        <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-sm">
-          <div className="flex items-center justify-between mb-2">
-            <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Achievement</h3>
-            <TrendingUp className="w-5 h-5 text-amber-500" />
-          </div>
-          <p className="text-3xl font-black text-slate-800">{achievementPercentage.toFixed(1)}%</p>
-          <div className="w-full bg-slate-100 rounded-full h-2 mt-3">
-            <div 
-              className={`h-2 rounded-full ${achievementPercentage >= 100 ? 'bg-emerald-500' : achievementPercentage >= 80 ? 'bg-amber-500' : 'bg-rose-500'}`}
-              style={{ width: `${Math.min(achievementPercentage, 100)}%` }}
-            />
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-        <div className="p-4 border-b border-slate-200 bg-slate-50">
-          <h2 className="text-xs font-black text-seablue uppercase tracking-widest">OB Performance & Consistency</h2>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 text-[10px] font-black uppercase tracking-widest">
-              <tr>
-                <th className="px-4 py-3">OB Name</th>
-                <th className="px-4 py-3">Town</th>
-                <th className="px-4 py-3 text-right">Target</th>
-                <th className="px-4 py-3 text-right">Sold</th>
-                <th className="px-4 py-3 text-right">Achievement</th>
-                <th className="px-4 py-3 text-right">Consistency</th>
-                <th className="px-4 py-3">Weak Routes (&lt;10 Ctn)</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {obPerformance.map((ob, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/50">
-                  <td className="px-4 py-3 font-bold text-slate-700 text-xs">{ob.ob_name || ob.ob_id}</td>
-                  <td className="px-4 py-3 text-slate-500 text-xs font-bold">{ob.town_name || '-'}</td>
-                  <td className="px-4 py-3 text-right text-slate-500 font-mono text-xs">{ob.target.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-700 font-mono text-xs">{ob.cartonsSold.toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-black tracking-widest ${
-                      ob.achievement >= 100 ? 'bg-emerald-100 text-emerald-800' : 
-                      ob.achievement >= 80 ? 'bg-amber-100 text-amber-800' : 
-                      'bg-rose-100 text-rose-800'
-                    }`}>
-                      {ob.achievement.toFixed(1)}%
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-right">
-                    <div className="flex items-center justify-end gap-2">
-                      <span className={`text-xs font-bold ${ob.submissionConsistency < 70 ? 'text-rose-600' : 'text-slate-600'}`}>
-                        {ob.submissionConsistency.toFixed(0)}%
-                      </span>
-                      {ob.submissionConsistency < 70 && (
-                        <AlertTriangle className="w-4 h-4 text-rose-500" title="Low submission consistency" />
-                      )}
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">
-                    {ob.weakRoutes.length > 0 ? (
-                      <div className="flex flex-wrap gap-1">
-                        {ob.weakRoutes.slice(0, 2).map((route: string, i: number) => (
-                          <span key={i} className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[10px] font-bold border border-slate-200">
-                            {route}
-                          </span>
-                        ))}
-                        {ob.weakRoutes.length > 2 && (
-                          <span className="px-1.5 py-0.5 bg-slate-100 text-slate-500 rounded text-[10px] font-bold border border-slate-200">
-                            +{ob.weakRoutes.length - 2} more
-                          </span>
-                        )}
-                      </div>
-                    ) : (
-                      <span className="text-slate-400 text-xs font-bold">-</span>
-                    )}
-                  </td>
-                </tr>
-              ))}
-              {obPerformance.length === 0 && (
-                <tr>
-                  <td colSpan={7} className="px-4 py-8 text-center text-slate-500 text-xs font-bold uppercase tracking-widest">
-                    No OBs found for your purview.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-};
 
 const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void }) => {
   const filteredOBs = useMemo(() => {
@@ -2460,98 +2247,6 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
   );
 };
 
-const IntroProfile = ({ user, onContinue }: { user: any, onContinue: () => void }) => {
-  return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-      <motion.div 
-        initial={{ opacity: 0, scale: 0.9 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="glass-card p-8 rounded-[2.5rem] border border-white/60 shadow-2xl shadow-slate-200/50 max-w-sm w-full text-center space-y-6"
-      >
-        <div className="w-24 h-24 bg-seablue/10 rounded-full flex items-center justify-center mx-auto border-4 border-white shadow-lg">
-          <User className="w-12 h-12 text-seablue" />
-        </div>
-        
-        <div className="space-y-2">
-          <h2 className="text-2xl font-black text-slate-800 uppercase tracking-tight leading-none">Welcome Back!</h2>
-          <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Sales Intelligence Platform</p>
-        </div>
-
-        <div className="bg-slate-50/50 rounded-3xl p-6 border border-slate-100 space-y-4">
-          <div className="flex flex-col items-center">
-            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Full Name</span>
-            <span className="text-lg font-black text-seablue uppercase tracking-tight">{user?.name || 'User'}</span>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div className="flex flex-col items-center">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Role</span>
-              <span className="text-[10px] font-black text-slate-700 uppercase bg-white px-3 py-1 rounded-full shadow-sm border border-slate-100">{user?.role || 'N/A'}</span>
-            </div>
-            <div className="flex flex-col items-center">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Region</span>
-              <span className="text-[10px] font-black text-slate-700 uppercase bg-white px-3 py-1 rounded-full shadow-sm border border-slate-100">{user?.region || 'N/A'}</span>
-            </div>
-          </div>
-
-          <div className="flex flex-col items-center pt-2 border-t border-slate-100">
-            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Contact Number</span>
-            <span className="text-[11px] font-mono font-bold text-slate-600">{user?.contact || 'N/A'}</span>
-          </div>
-        </div>
-
-        <button 
-          onClick={onContinue}
-          className="btn-seablue w-full py-4 rounded-2xl flex items-center justify-center gap-2 group"
-        >
-          <span className="text-sm font-black uppercase tracking-widest">Start Daily Entry</span>
-          <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-        </button>
-      </motion.div>
-    </div>
-  );
-};
-
-const MainNav = ({ view, setView, role, onLogout }: { view: string, setView: (v: any) => void, role: string | null, onLogout: () => void }) => {
-  const visibleTabs = APP_TABS.filter(tab => !role || tab.roles.includes(role));
-
-  return (
-    <nav className="bg-white border-b border-slate-100 px-4 h-14 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar gap-2">
-      {visibleTabs.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => setView(tab.id as any)}
-          className={`relative py-2 px-1 flex flex-col items-center gap-1 transition-all min-w-[56px] ${
-            view === tab.id ? 'text-seablue' : 'text-slate-400 hover:text-slate-600'
-          }`}
-        >
-          <tab.icon className={`w-5 h-5 transition-transform ${view === tab.id ? 'scale-110' : ''}`} />
-          <span className={`text-[9px] font-black uppercase tracking-tight ${view === tab.id ? 'opacity-100' : 'opacity-60'}`}>{tab.label}</span>
-          {view === tab.id && (
-            <motion.div 
-              layoutId="nav-indicator" 
-              className="absolute -bottom-[1px] h-0.5 w-full bg-seablue rounded-full" 
-              transition={{ type: "spring", stiffness: 380, damping: 30 }}
-            />
-          )}
-        </button>
-      ))}
-      <button 
-        onClick={onLogout} 
-        className="py-2 px-1 flex flex-col items-center gap-1 text-slate-400 hover:text-rose-500 transition-all min-w-[56px]"
-      >
-        <EyeOff className="w-5 h-5" />
-        <span className="text-[9px] font-black uppercase tracking-tight opacity-60">Logout</span>
-      </button>
-    </nav>
-  );
-};
-
-const isTSMEntry = (obName: string, tsmName: string) => {
-  if (!obName || !tsmName) return false;
-  return obName.trim().toLowerCase() === tsmName.trim().toLowerCase();
-};
-
 const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing, selectedMonth, setSelectedMonth }: any) => {
   const currentMonth = selectedMonth || getPSTDate().slice(0, 7);
   const today = getPSTDate();
@@ -2874,14 +2569,14 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
     return obs.filter((ob: any) => !isTSMEntry(ob.name, ob.tsm) && !ob.name.toLowerCase().includes('test'));
   }, [obAssignments, userRole, userRegion, userName, userContact]);
 
-  const monthStats = useMemo(() => {
+  const reportsMonthStats = useMemo(() => {
     return history.filter((h: any) => h.date.startsWith(currentMonth));
   }, [history, currentMonth]);
 
   const alerts = useMemo(() => {
     const list: any[] = [];
     filteredOBs.forEach((ob: any) => {
-      const obStats = monthStats.filter((s: any) => s.ob_contact === ob.contact);
+      const obStats = reportsMonthStats.filter((s: any) => s.ob_contact === ob.contact);
       const visited = obStats.reduce((sum: number, s: any) => sum + s.visited_shops, 0);
       const productive = obStats.reduce((sum: number, s: any) => sum + s.productive_shops, 0);
       const productivity = visited > 0 ? (productive / visited) * 100 : 0;
@@ -2911,7 +2606,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
       }
     });
     return list;
-  }, [filteredOBs, monthStats, getPSTDate]);
+  }, [filteredOBs, reportsMonthStats, getPSTDate]);
 
   const routeAnalysisData = useMemo(() => {
     if (!selectedAnalysisOB || !selectedAnalysisRoute) return null;
@@ -3042,7 +2737,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filteredOBs.map((ob: any, idx: number) => {
-                const obStats = monthStats.filter((h: any) => h.ob_contact === ob.contact);
+                const obStats = reportsMonthStats.filter((h: any) => h.ob_contact === ob.contact);
                 let total = 0;
                 return (
                   <tr key={ob.contact || `ob-matrix-${idx}`} className="group hover:bg-slate-50/80 transition-all">
@@ -4334,6 +4029,12 @@ export default function App() {
     }
 
     setIsConfirming(false);
+    if (!order.visitType) {
+      setMessage({ text: 'Please select a Visit Type (A, V, RR, or Absent)', type: 'error' });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+
     setIsSubmitting(true);
     
     let currentLoc = location;
@@ -4392,6 +4093,8 @@ export default function App() {
         // Auto-sync to Google Sheets
         syncGoogle();
         fetchHistory(true);
+        fetchAdminData();
+        fetchNationalData();
         if (order.obContact) {
           fetchMTDForOB(order.obContact, order.date);
         }
@@ -7836,7 +7539,7 @@ export default function App() {
                             const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
 
                             return (
-                              <tr key={h.id} className={`hover:bg-slate-50/50 transition-colors group ${h.visit_type === 'RR' ? 'bg-amber-50' : ''}`}>
+                              <tr key={h.id} className={`hover:bg-slate-50/50 transition-colors group ${h.visit_type === 'RR' ? 'bg-yellow-100' : (h.visit_type !== 'Absent' ? 'bg-green-50' : '')}`}>
                                 <td className="px-4 py-3 text-[10px] font-bold text-slate-700">{h.date}</td>
                                 <td className="px-4 py-3 text-[10px] font-medium text-slate-600">{h.route}</td>
                                 <td className="px-4 py-3 text-center text-[10px] text-slate-500">{h.total_shops}/{h.visited_shops}/{h.productive_shops}</td>

@@ -10,7 +10,6 @@ import fs from "fs";
 import crypto from "crypto";
 import { exec } from "child_process";
 
-const db = new Database("orders.db");
 const JWT_SECRET = process.env.JWT_SECRET || "salespulse-secret-key-2026";
 const ADMIN_EMAIL = "amjid.bisconni@gmail.com";
 
@@ -91,66 +90,95 @@ function calculateAchievement(orderData: any) {
   return totals;
 }
 
-// Initialize database
-db.exec(`
-  CREATE TABLE IF NOT EXISTS drafts (
-    id TEXT PRIMARY KEY,
-    data TEXT,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
+const DB_PATH = "orders.db";
+let db: Database.Database;
 
-  CREATE TABLE IF NOT EXISTS stock_reports (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT,
-    tsm TEXT,
-    town TEXT,
-    distributor TEXT,
-    stock_data TEXT,
-    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-
-  CREATE TABLE IF NOT EXISTS submitted_orders (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    date TEXT,
-    tsm TEXT,
-    town TEXT,
-    distributor TEXT,
-    order_booker TEXT,
-    ob_contact TEXT,
-    route TEXT,
-    zone TEXT,
-    region TEXT,
-    nsm TEXT,
-    rsm TEXT,
-    sc TEXT,
-    director TEXT,
-    total_shops INTEGER,
-    visited_shops INTEGER,
-    productive_shops INTEGER,
-    category_productive_data TEXT,
-    order_data TEXT,
-    targets_data TEXT,
-    latitude REAL,
-    longitude REAL,
-    accuracy REAL,
-    visit_type TEXT DEFAULT 'A',
-    submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
-  );
-  `);
-
-  // Remove duplicate orders (keep the latest one based on id)
+function initDB() {
   try {
+    db = new Database(DB_PATH);
+    // Initialize database
     db.exec(`
-      DELETE FROM submitted_orders 
-      WHERE id NOT IN (
-        SELECT MAX(id) 
-        FROM submitted_orders 
-        GROUP BY ob_contact, date
-      )
+      CREATE TABLE IF NOT EXISTS drafts (
+        id TEXT PRIMARY KEY,
+        data TEXT,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS stock_reports (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        tsm TEXT,
+        town TEXT,
+        distributor TEXT,
+        stock_data TEXT,
+        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS submitted_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        tsm TEXT,
+        town TEXT,
+        distributor TEXT,
+        order_booker TEXT,
+        ob_contact TEXT,
+        route TEXT,
+        zone TEXT,
+        region TEXT,
+        nsm TEXT,
+        rsm TEXT,
+        sc TEXT,
+        director TEXT,
+        total_shops INTEGER,
+        visited_shops INTEGER,
+        productive_shops INTEGER,
+        category_productive_data TEXT,
+        order_data TEXT,
+        targets_data TEXT,
+        latitude REAL,
+        longitude REAL,
+        accuracy REAL,
+        visit_type TEXT DEFAULT 'A',
+        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
-  } catch (e) {
-    console.error("Error removing duplicates:", e);
+
+    // Remove duplicate orders (keep the latest one based on id)
+    try {
+      db.exec(`
+        DELETE FROM submitted_orders 
+        WHERE id NOT IN (
+          SELECT MAX(id) 
+          FROM submitted_orders 
+          GROUP BY ob_contact, date
+        )
+      `);
+    } catch (e) {
+      console.error("Error cleaning duplicates:", e);
+    }
+  } catch (err: any) {
+    if (err.code === 'SQLITE_CORRUPT') {
+      console.error("CRITICAL: Database is malformed. Attempting recovery by renaming corrupted file.");
+      const corruptPath = `${DB_PATH}.corrupt.${Date.now()}`;
+      try {
+        if (fs.existsSync(DB_PATH)) {
+          fs.renameSync(DB_PATH, corruptPath);
+          console.log(`Corrupted database moved to ${corruptPath}`);
+          initDB(); // Retry initialization
+        } else {
+          throw err;
+        }
+      } catch (renameErr) {
+        console.error("Failed to rename corrupted database:", renameErr);
+        throw err;
+      }
+    } else {
+      throw err;
+    }
   }
+}
+
+initDB();
 
   // Add unique index for sync consistency
   try {
@@ -185,13 +213,6 @@ db.exec(`
     territory_region TEXT,
     target_ctn REAL DEFAULT 0
   );
-
-  -- Region Renaming (Data Correction)
-  UPDATE submitted_orders SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
-  UPDATE ob_assignments SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
-  UPDATE distributors SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
-  UPDATE national_hierarchy SET territory_region = 'North' WHERE territory_region IN ('Zone North', 'Region KPK', 'KPK');
-  UPDATE users SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
 
   -- Cleanup duplicates before adding index
   DELETE FROM submitted_orders 
@@ -382,6 +403,19 @@ async function startServer() {
       routes TEXT -- JSON array of routes
     );
   `);
+
+  // Region Renaming (Data Correction) - Run after all tables are guaranteed to exist
+  try {
+    db.exec(`
+      UPDATE submitted_orders SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+      UPDATE ob_assignments SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+      UPDATE distributors SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+      UPDATE national_hierarchy SET territory_region = 'North' WHERE territory_region IN ('Zone North', 'Region KPK', 'KPK');
+      UPDATE users SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+    `);
+  } catch (e) {
+    console.error("Error during region renaming:", e);
+  }
 
   // Migration: Ensure all columns exist in ob_assignments
   const obCols = ["contact", "tsm", "supervisor", "total_shops", "town", "distributor", "routes", "zone", "region", "nsm", "rsm", "sc", "director"];
@@ -3664,8 +3698,18 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+  });
+
+  server.on('error', (e: any) => {
+    if (e.code === 'EADDRINUSE') {
+      console.error(`Port ${PORT} is already in use. This might be a transient issue during restart.`);
+      // In this environment, we shouldn't exit, but let the platform handle it.
+      // However, logging it clearly helps.
+    } else {
+      console.error("Server Error:", e);
+    }
   });
 }
 
