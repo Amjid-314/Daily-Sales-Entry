@@ -52,7 +52,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
               </div>
             )}
           </div>
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">SalesPulse Pro</h1>
+          <h1 className="text-3xl font-black text-slate-900 tracking-tight">SalesPulse</h1>
           <p className="text-slate-400 text-xs mt-2 font-bold uppercase tracking-widest">Intelligent Sales Execution Platform</p>
         </div>
 

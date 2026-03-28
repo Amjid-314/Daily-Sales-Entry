@@ -2781,6 +2781,14 @@ async function startServer() {
           return null;
         };
 
+        const rawRegion = getVal(['Region', 'region', 'territory', 'territory/region'])?.toString().trim() || '';
+        const mapRegion = (r: string) => {
+          if (!r) return r;
+          const lower = r.toLowerCase();
+          if (lower === 'zone north' || lower === 'region kpk' || lower === 'kpk') return 'North';
+          return r;
+        };
+
         return {
           name: getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name'])?.toString().trim() || '',
           contact: getVal(['ID', 'OB ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id'])?.toString().trim() || '',
@@ -2789,7 +2797,7 @@ async function startServer() {
           distributor_code: getVal(['Distributor Code', 'distributor_code', 'dist_code'])?.toString().trim() || '',
           tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm'])?.toString().trim() || '',
           zone: getVal(['Zone', 'zone'])?.toString().trim() || '',
-          region: getVal(['Region', 'region', 'territory', 'territory/region'])?.toString().trim() || '',
+          region: mapRegion(rawRegion),
           nsm: getVal(['NSM', 'nsm', 'nsm name'])?.toString().trim() || '',
           rsm: getVal(['RSM', 'rsm', 'rsm name'])?.toString().trim() || '',
           sc: getVal(['SC', 'sc', 'sc name'])?.toString().trim() || '',
@@ -2919,13 +2927,21 @@ async function startServer() {
           return null;
         };
 
+        const rawRegion = getVal(['Region', 'region'])?.toString().trim() || '';
+        const mapRegion = (r: string) => {
+          if (!r) return r;
+          const lower = r.toLowerCase();
+          if (lower === 'zone north' || lower === 'region kpk' || lower === 'kpk') return 'North';
+          return r;
+        };
+
         return {
           username: (getVal(['Username', 'username']) || '').toLowerCase(),
           email: getVal(['Email', 'email']),
           role: getVal(['Role', 'role']),
           name: getVal(['Name', 'name']),
           contact: getVal(['Contact', 'contact']),
-          region: getVal(['Region', 'region']),
+          region: mapRegion(rawRegion),
           town: getVal(['Town', 'town'])
         };
       }).filter(u => u.username);
@@ -3069,7 +3085,14 @@ async function startServer() {
           });
 
           const zone = getVal(['Zone']) || '';
-          const region = getVal(['Region']) || '';
+          const rawRegion = getVal(['Region'])?.toString().trim() || '';
+          const mapRegion = (r: string) => {
+            if (!r) return r;
+            const lower = r.toLowerCase();
+            if (lower === 'zone north' || lower === 'region kpk' || lower === 'kpk') return 'North';
+            return r;
+          };
+          const region = mapRegion(rawRegion);
           const submittedAt = getVal(['Submitted At']) || new Date().toISOString();
           const lat = getVal(['Latitude']) || null;
           const lng = getVal(['Longitude']) || null;
@@ -3330,67 +3353,12 @@ async function startServer() {
       }
       const { sheets, spreadsheetId } = client;
 
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: "Team_Targets!A1:L1000",
-      });
+      const result = await pullTeamData(sheets, spreadsheetId);
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
+      }
 
-      const rows = response.data.values;
-      if (!rows || rows.length < 2) return res.status(400).json({ error: "No data found in 'Team_Targets' sheet" });
-
-      const headers = rows[0];
-      const dataRows = rows.slice(1);
-
-      const team = dataRows.map(row => {
-        const getVal = (headerNames: string[]) => {
-          for (const name of headerNames) {
-            const idx = headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
-            if (idx > -1 && row[idx] !== undefined) return row[idx];
-          }
-          return null;
-        };
-
-        return {
-          name: getVal(['Name', 'name', 'ob name', 'ob_name']),
-          contact: getVal(['ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id']),
-          town: getVal(['Town', 'town', 'town name']),
-          distributor: getVal(['Distributor', 'distributor', 'distributor name']),
-          tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm']),
-          total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
-          routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
-          targets: {
-            "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow'])) || 0,
-            "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action'])) || 0,
-            "Vero": parseFloat(getVal(['Vero Target', 'vero_target', 'vero'])) || 0,
-            "DWB": parseFloat(getVal(['DWB Target', 'dwb_target', 'dwb'])) || 0,
-            "Match": parseFloat(getVal(['Match Target', 'match_target', 'match'])) || 0
-          }
-        };
-      }).filter(t => t.name && t.contact);
-
-      // Reuse bulk upload logic
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const transaction = db.transaction(() => {
-        for (const item of team) {
-          db.prepare(`
-            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(contact) DO UPDATE SET
-              name=excluded.name, town=excluded.town, distributor=excluded.distributor, tsm=excluded.tsm, total_shops=excluded.total_shops, routes=excluded.routes
-          `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.total_shops, JSON.stringify(item.routes));
-
-          for (const [brand, target] of Object.entries(item.targets)) {
-            db.prepare(`
-              INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
-              VALUES (?, ?, ?, ?)
-              ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET target_ctn=excluded.target_ctn
-            `).run(item.contact, brand, target, currentMonth);
-          }
-        }
-      });
-      transaction();
-
-      res.json({ success: true, message: `Imported ${team.length} team members from Google Sheets` });
+      res.json({ success: true, message: `Imported ${result.count} team members from Google Sheets` });
     } catch (err: any) {
       console.error("Team Import Error:", err);
       let errorMessage = err.message;
@@ -3409,71 +3377,12 @@ async function startServer() {
       }
       const { sheets, spreadsheetId } = client;
 
-      // Import OB Assignments and Targets from a sheet named "Team_Data"
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: "Team_Data!A1:L1000", // Include headers
-      });
-
-      const rows = response.data.values;
-      if (!rows || rows.length < 2) {
-        return res.status(400).json({ error: "No data found in 'Team_Data' sheet." });
+      const result = await pullTeamData(sheets, spreadsheetId);
+      if (!result.success) {
+        return res.status(400).json({ error: result.message });
       }
 
-      const headers = rows[0];
-      const dataRows = rows.slice(1);
-
-      const team = dataRows.map(row => {
-        const getVal = (headerNames: string[]) => {
-          for (const name of headerNames) {
-            const idx = headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
-            if (idx > -1 && row[idx] !== undefined) return row[idx];
-          }
-          return null;
-        };
-
-        return {
-          name: getVal(['Name', 'name', 'ob name', 'ob_name']),
-          contact: getVal(['ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id']),
-          town: getVal(['Town', 'town', 'town name']),
-          distributor: getVal(['Distributor', 'distributor', 'distributor name']),
-          tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm']),
-          total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
-          routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
-          targets: {
-            "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite_glow_target', 'kite glow'])) || 0,
-            "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq_action_target', 'burq action'])) || 0,
-            "Vero": parseFloat(getVal(['Vero Target', 'vero_target', 'vero'])) || 0,
-            "DWB": parseFloat(getVal(['DWB Target', 'dwb_target', 'dwb'])) || 0,
-            "Match": parseFloat(getVal(['Match Target', 'match_target', 'match'])) || 0
-          }
-        };
-      }).filter(t => t.name && t.contact);
-
-      const transaction = db.transaction(() => {
-        // Use INSERT OR REPLACE instead of DELETE to prevent data loss if sync fails partially
-        const currentMonth = new Date().toISOString().slice(0, 7);
-        
-        for (const item of team) {
-          db.prepare(`
-            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, total_shops, routes)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(contact) DO UPDATE SET
-              name=excluded.name, town=excluded.town, distributor=excluded.distributor, tsm=excluded.tsm, total_shops=excluded.total_shops, routes=excluded.routes
-          `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.total_shops, JSON.stringify(item.routes));
-
-          for (const [brand, target] of Object.entries(item.targets)) {
-            db.prepare(`
-              INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
-              VALUES (?, ?, ?, ?)
-              ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET target_ctn=excluded.target_ctn
-            `).run(item.contact, brand, target, currentMonth);
-          }
-        }
-      });
-      transaction();
-
-      res.json({ success: true, message: `Imported ${team.length} team members from 'Team_Data' sheet` });
+      res.json({ success: true, message: `Imported ${result.count} team members from 'Team_Data' sheet` });
     } catch (err: any) {
       console.error("Import Error:", err);
       res.status(500).json({ error: err.message });
@@ -3518,8 +3427,16 @@ async function startServer() {
         `);
 
         for (const row of rows) {
-          const [date, director, nsm, rsm, tsm, town, distributor, obName, obContact, route, zone, region, tShops, vShops, pShops, visitTypeLabel] = row;
+          const [date, director, nsm, rsm, tsm, town, distributor, obName, obContact, route, zone, rawRegion, tShops, vShops, pShops, visitTypeLabel] = row;
           if (!date || !obContact) continue;
+
+          const mapRegion = (r: string) => {
+            if (!r) return r;
+            const lower = r.toLowerCase();
+            if (lower === 'zone north' || lower === 'region kpk' || lower === 'kpk') return 'North';
+            return r;
+          };
+          const region = mapRegion(rawRegion);
 
           let visitType = 'A';
           if (visitTypeLabel === 'Absent') visitType = 'Absent';
