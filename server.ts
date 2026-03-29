@@ -734,11 +734,11 @@ async function startServer() {
   function getVisibleOBIds(user: any): string[] {
     const { role, name, contact, region } = user;
     const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
+    const assignments = db.prepare("SELECT * FROM ob_assignments").all() as any[];
     const trimmedName = (name || '').trim().toLowerCase();
     const trimmedRegion = (region || '').trim().toLowerCase();
 
     if (role === 'Admin' || role === 'Super Admin' || role === 'Director') {
-      const assignments = db.prepare("SELECT contact FROM ob_assignments").all() as any[];
       const submissions = db.prepare("SELECT DISTINCT ob_contact FROM submitted_orders").all() as any[];
       const allOBs = new Set([
         ...hierarchy.map(h => h.ob_id), 
@@ -746,20 +746,37 @@ async function startServer() {
         ...submissions.map(s => s.ob_contact)
       ]);
       return Array.from(allOBs).filter(id => id);
-    } else if (role === 'NSM') {
-      return hierarchy.filter(h => (h.nsm_name || '').trim().toLowerCase() === trimmedName).map(h => h.ob_id);
+    } 
+    
+    let visibleIds: string[] = [];
+    
+    if (role === 'NSM') {
+      const ids = hierarchy.filter(h => trimmedName && (h.nsm_name || '').trim().toLowerCase().includes(trimmedName)).map(h => h.ob_id);
+      const assignmentIds = assignments.filter(a => trimmedName && (a.nsm || '').trim().toLowerCase().includes(trimmedName)).map(a => a.contact);
+      visibleIds = [...ids, ...assignmentIds];
     } else if (role === 'RSM' || role === 'SC') {
-      return hierarchy.filter(h => 
-        (h.rsm_name || '').trim().toLowerCase() === trimmedName || 
-        (h.sc_name || '').trim().toLowerCase() === trimmedName || 
-        (h.territory_region || '').trim().toLowerCase() === trimmedRegion
+      const ids = hierarchy.filter(h => 
+        (trimmedName && (h.rsm_name || '').trim().toLowerCase().includes(trimmedName)) || 
+        (trimmedName && (h.sc_name || '').trim().toLowerCase().includes(trimmedName)) || 
+        (trimmedRegion && (h.territory_region || '').trim().toLowerCase().includes(trimmedRegion))
       ).map(h => h.ob_id);
+      const assignmentIds = assignments.filter(a => 
+        (trimmedName && (a.rsm || '').trim().toLowerCase().includes(trimmedName)) || 
+        (trimmedName && (a.sc || '').trim().toLowerCase().includes(trimmedName)) || 
+        (trimmedRegion && (a.region || '').trim().toLowerCase().includes(trimmedRegion))
+      ).map(a => a.contact);
+      visibleIds = [...ids, ...assignmentIds];
     } else if (role === 'TSM' || role === 'ASM') {
-      return hierarchy.filter(h => (h.asm_tsm_name || '').trim().toLowerCase() === trimmedName).map(h => h.ob_id);
+      const ids = hierarchy.filter(h => trimmedName && (h.asm_tsm_name || '').trim().toLowerCase().includes(trimmedName)).map(h => h.ob_id);
+      const assignmentIds = assignments.filter(a => trimmedName && (a.tsm || '').trim().toLowerCase().includes(trimmedName)).map(a => a.contact);
+      visibleIds = [...ids, ...assignmentIds];
     } else if (role === 'OB') {
-      return [contact];
+      visibleIds = [contact];
     }
-    return [];
+
+    if (contact) visibleIds.push(contact);
+    
+    return Array.from(new Set(visibleIds)).filter(id => id && id !== 'undefined' && id !== 'null');
   }
 
   function getVisibleDistributors(user: any): string[] {
@@ -773,15 +790,15 @@ async function startServer() {
       const allDists = new Set([...dists.map(d => d.name), ...hierarchyDists.map(h => h.distributor_name)]);
       return Array.from(allDists).filter(d => d);
     } else if (role === 'NSM') {
-      const hierarchy = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(nsm_name)) = ?").all(trimmedName) as any[];
+      const hierarchy = trimmedName ? db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(nsm_name)) LIKE ?").all(`%${trimmedName}%`) as any[] : [];
       return hierarchy.map(h => h.distributor_name);
     } else if (role === 'RSM' || role === 'SC') {
-      const hierarchy = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(rsm_name)) = ? OR LOWER(TRIM(sc_name)) = ? OR LOWER(TRIM(territory_region)) = ?").all(trimmedName, trimmedName, trimmedRegion) as any[];
-      const dists = db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(region)) = ?").all(trimmedRegion) as any[];
+      const hierarchy = (trimmedName || trimmedRegion) ? db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE (LOWER(TRIM(rsm_name)) LIKE ? AND ?) OR (LOWER(TRIM(sc_name)) LIKE ? AND ?) OR (LOWER(TRIM(territory_region)) LIKE ? AND ?)").all(`%${trimmedName}%`, trimmedName ? 1 : 0, `%${trimmedName}%`, trimmedName ? 1 : 0, `%${trimmedRegion}%`, trimmedRegion ? 1 : 0) as any[] : [];
+      const dists = trimmedRegion ? db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(region)) LIKE ?").all(`%${trimmedRegion}%`) as any[] : [];
       return Array.from(new Set([...hierarchy.map(h => h.distributor_name), ...dists.map(d => d.name)])).filter(d => d);
     } else if (role === 'TSM' || role === 'ASM') {
-      const hierarchy = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(asm_tsm_name)) = ?").all(trimmedName) as any[];
-      const dists = db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(tsm)) = ?").all(trimmedName) as any[];
+      const hierarchy = trimmedName ? db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(asm_tsm_name)) LIKE ?").all(`%${trimmedName}%`) as any[] : [];
+      const dists = trimmedName ? db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(tsm)) LIKE ?").all(`%${trimmedName}%`) as any[] : [];
       return Array.from(new Set([...hierarchy.map(h => h.distributor_name), ...dists.map(d => d.name)])).filter(d => d);
     } else if (role === 'OB') {
       const hierarchy = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE ob_id = ?").all(contact) as any[];
@@ -1428,21 +1445,21 @@ async function startServer() {
       .run("amjid.admin", "amjid.bisconni@gmail.com", hashedPass, "Super Admin", "Muhammad Amjid");
   }
 
-  // Daily Backup Cron (9:00 AM PKT / 4:00 AM UTC)
-  cron.schedule('0 4 * * *', async () => {
-    console.log("Starting daily backup at 9:00 AM PKT (4:00 AM UTC)...");
+  // Daily Backup Cron (9:00 AM PST / 5:00 PM UTC)
+  cron.schedule('0 17 * * *', async () => {
+    console.log("Starting daily backup at 9:00 AM PST (5:00 PM UTC)...");
     await performFullBackup();
   });
 
   async function performFullBackup(retryCount = 0): Promise<boolean> {
-    const dateStr = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" }); // YYYY-MM-DD
-    const backupFolderName = `SalesPulse_Backup_${dateStr}`;
-    console.log(`[BACKUP] Starting backup: ${backupFolderName} (Attempt ${retryCount + 1})`);
+    const dateStr = new Date().toLocaleDateString("en-CA", { timeZone: "America/Los_Angeles" }).replace(/-/g, '_'); // YYYY_MM_DD
+    const backupFileName = `backup_${dateStr}.json`;
+    console.log(`[BACKUP] Starting backup: ${backupFileName} (Attempt ${retryCount + 1})`);
     
     try {
       const client = await getGoogleSheetsClient();
-      if (!client || !client.auth || !client.spreadsheetId) {
-        throw new Error("Google Sheets client not initialized");
+      if (!client || !client.auth) {
+        throw new Error("Google API client not initialized");
       }
       
       const drive = google.drive({ version: 'v3', auth: client.auth });
@@ -1451,164 +1468,41 @@ async function startServer() {
       // Use specific folder ID provided by user
       const parentFolderId = '1obtuVTe100g6jrvS6ST8-KVUtXYvQVDY';
       
-      // 2. Create/Find SalesPulse_Backups folder
-      let mainBackupFolderId: string;
-      
-      try {
-        console.log(`[BACKUP] Searching for 'SalesPulse_Backups' in parent folder: ${parentFolderId}`);
-        // Try to find in the specific parent folder first
-        const existingFolders = await drive.files.list({
-          q: `name = 'SalesPulse_Backups' and '${parentFolderId}' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-          fields: 'files(id)'
-        });
-        
-        if (existingFolders.data.files && existingFolders.data.files.length > 0) {
-          mainBackupFolderId = existingFolders.data.files[0].id!;
-          console.log(`[BACKUP] Found existing main backup folder: ${mainBackupFolderId}`);
-        } else {
-          console.log(`[BACKUP] Creating new 'SalesPulse_Backups' folder in parent: ${parentFolderId}`);
-          const folder = await drive.files.create({
-            requestBody: { name: 'SalesPulse_Backups', parents: [parentFolderId], mimeType: 'application/vnd.google-apps.folder' },
-            fields: 'id'
-          });
-          mainBackupFolderId = folder.data.id!;
-          console.log(`[BACKUP] Created main backup folder: ${mainBackupFolderId}`);
-        }
-      } catch (folderErr: any) {
-        console.warn("[BACKUP] Could not access parent folder, falling back to root directory:", folderErr.message);
-        
-        // Fallback to root directory
-        const existingFolders = await drive.files.list({
-          q: `name = 'SalesPulse_Backups' and 'root' in parents and mimeType = 'application/vnd.google-apps.folder' and trashed = false`,
-          fields: 'files(id)'
-        });
-        
-        if (existingFolders.data.files && existingFolders.data.files.length > 0) {
-          mainBackupFolderId = existingFolders.data.files[0].id!;
-          console.log(`[BACKUP] Found existing main backup folder in root: ${mainBackupFolderId}`);
-        } else {
-          console.log(`[BACKUP] Creating new 'SalesPulse_Backups' folder in root`);
-          const folder = await drive.files.create({
-            requestBody: { name: 'SalesPulse_Backups', mimeType: 'application/vnd.google-apps.folder' },
-            fields: 'id'
-          });
-          mainBackupFolderId = folder.data.id!;
-          console.log(`[BACKUP] Created main backup folder in root: ${mainBackupFolderId}`);
-          
-          // Share with Super Admins
-          try {
-            const admins = db.prepare("SELECT email FROM users WHERE role = 'Super Admin' AND email IS NOT NULL").all() as any[];
-            for (const admin of admins) {
-              if (admin.email) {
-                await drive.permissions.create({
-                  fileId: mainBackupFolderId,
-                  requestBody: { type: 'user', role: 'writer', emailAddress: admin.email },
-                  sendNotificationEmail: true
-                });
-                console.log(`[BACKUP] Shared backup folder with admin: ${admin.email}`);
-              }
-            }
-          } catch (shareErr: any) {
-            console.error("[BACKUP] Failed to share backup folder:", shareErr.message);
-          }
-        }
-      }
-      
-      // 3. Create daily backup folder
-      console.log(`[BACKUP] Creating daily folder: ${backupFolderName}`);
-      const dailyFolder = await drive.files.create({
-        requestBody: { name: backupFolderName, parents: [mainBackupFolderId], mimeType: 'application/vnd.google-apps.folder' },
-        fields: 'id'
-      });
-      const dailyFolderId = dailyFolder.data.id!;
-      
-      // 4. Create subfolders
-      const subfolders = ['App_Backup', 'Data_Backup', 'Config_Backup'];
-      const subfolderIds: Record<string, string> = {};
-      for (const sub of subfolders) {
-        console.log(`[BACKUP] Creating subfolder: ${sub}`);
-        const f = await drive.files.create({
-          requestBody: { name: sub, parents: [dailyFolderId], mimeType: 'application/vnd.google-apps.folder' },
-          fields: 'id'
-        });
-        subfolderIds[sub] = f.data.id!;
-      }
-      
-      // 5. Perform Backups
-      console.log(`[BACKUP] Starting file uploads...`);
-      
-      // A. App Backup (Key source files)
-      const appFiles = ['server.ts', 'package.json', 'metadata.json', 'src/App.tsx', 'vite.config.ts'];
-      for (const file of appFiles) {
-        if (fs.existsSync(file)) {
-          console.log(`[BACKUP] Uploading app file: ${file}`);
-          await drive.files.create({
-            requestBody: { name: path.basename(file), parents: [subfolderIds['App_Backup']] },
-            media: { body: fs.createReadStream(file) }
-          });
-        }
-      }
-      
-      // B. Data Backup (JSON & CSV)
-      const tables = ['submitted_orders', 'users', 'national_hierarchy', 'distributors'];
-      for (const table of tables) {
-        console.log(`[BACKUP] Backing up table: ${table}`);
-        const data = db.prepare(`SELECT * FROM ${table}`).all();
-        
-        // JSON
-        const jsonContent = JSON.stringify(data, null, 2);
-        await drive.files.create({
-          requestBody: { name: `${table}.json`, parents: [subfolderIds['Data_Backup']] },
-          media: { mimeType: 'application/json', body: jsonContent }
-        });
-        
-        // CSV (Simple implementation)
-        if (data.length > 0) {
-          const headers = Object.keys(data[0] as any);
-          const csvRows = [
-            headers.join(','),
-            ...data.map((row: any) => headers.map(h => `"${String(row[h]).replace(/"/g, '""')}"`).join(','))
-          ];
-          const csvContent = csvRows.join('\n');
-          await drive.files.create({
-            requestBody: { name: `${table}.csv`, parents: [subfolderIds['Data_Backup']] },
-            media: { mimeType: 'text/csv', body: csvContent }
-          });
-        }
-      }
-      
-      // C. Config Backup (Encrypted)
-      console.log(`[BACKUP] Backing up encrypted config...`);
-      const configData = db.prepare("SELECT * FROM app_config").all();
-      const encryptionKey = crypto.createHash('sha256').update(JWT_SECRET).digest();
-      const iv = crypto.randomBytes(16);
-      const cipher = crypto.createCipheriv('aes-256-cbc', encryptionKey, iv);
-      
-      let encrypted = cipher.update(JSON.stringify(configData), 'utf8', 'hex');
-      encrypted += cipher.final('hex');
-      
-      const backupConfig = {
-        iv: iv.toString('hex'),
-        data: encrypted,
-        roles: ['Admin', 'Super Admin', 'Director', 'NSM', 'RSM', 'SC', 'TSM', 'ASM', 'OB'],
-        timestamp: new Date().toISOString()
+      // 1. Gather all data
+      console.log(`[BACKUP] Gathering database and config...`);
+      const tables = ['submitted_orders', 'users', 'national_hierarchy', 'distributors', 'ob_assignments', 'app_config'];
+      const backupData: any = {
+        timestamp: new Date().toISOString(),
+        tables: {}
       };
       
+      for (const table of tables) {
+        try {
+          backupData.tables[table] = db.prepare(`SELECT * FROM ${table}`).all();
+        } catch (e) {
+          console.warn(`[BACKUP] Could not backup table ${table}:`, e);
+        }
+      }
+      
+      // 2. Upload to Drive
+      console.log(`[BACKUP] Uploading ${backupFileName} to folder ${parentFolderId}...`);
+      const jsonContent = JSON.stringify(backupData, null, 2);
+      
       await drive.files.create({
-        requestBody: { name: 'config_encrypted.json', parents: [subfolderIds['Config_Backup']] },
-        media: { mimeType: 'application/json', body: JSON.stringify(backupConfig, null, 2) }
+        requestBody: { name: backupFileName, parents: [parentFolderId] },
+        media: { mimeType: 'application/json', body: jsonContent }
       });
       
-      logAction("SYSTEM", "Backup System", "Admin", "BACKUP_SUCCESS", { folder: backupFolderName });
-      console.log(`[BACKUP] Backup completed successfully: ${backupFolderName}`);
+      logAction("SYSTEM", "Backup System", "Admin", "BACKUP_SUCCESS", { file: backupFileName });
+      console.log(`[BACKUP] Backup completed successfully: ${backupFileName}`);
       return true;
     } catch (err: any) {
       console.error("[BACKUP] Critical Error:", err);
       logAction("SYSTEM", "Backup System", "Admin", "BACKUP_FAILED", { error: err.message, retry: retryCount });
       
-      if (retryCount < 3) {
-        console.log(`[BACKUP] Retrying in 10 minutes... (Attempt ${retryCount + 1})`);
-        setTimeout(() => performFullBackup(retryCount + 1), 10 * 60 * 1000);
+      if (retryCount < 1) {
+        console.log(`[BACKUP] Retrying in 1 minute... (Attempt ${retryCount + 1})`);
+        setTimeout(() => performFullBackup(retryCount + 1), 60 * 1000);
       }
       return false;
     }
@@ -2354,13 +2248,24 @@ async function startServer() {
 
       const submissions = db.prepare("SELECT order_booker, ob_contact, visit_type, submitted_at FROM submitted_orders WHERE date = ?").all(date) as any[];
       
+      // Get entry days count for each OB in the current month
+      const currentMonth = (date as string).slice(0, 7);
+      const entryCounts = db.prepare(`
+        SELECT ob_contact, COUNT(DISTINCT date) as count 
+        FROM submitted_orders 
+        WHERE date LIKE ? 
+        GROUP BY ob_contact
+      `).all(`${currentMonth}%`) as any[];
+
       const status = allOBs.map(ob => {
         const submission = submissions.find(s => s.ob_contact === ob.contact);
+        const entryCount = entryCounts.find(ec => ec.ob_contact === ob.contact)?.count || 0;
         return {
           ...ob,
           submitted: !!submission,
           visit_type: submission ? submission.visit_type : 'A',
-          submitted_at: submission ? submission.submitted_at : null
+          submitted_at: submission ? submission.submitted_at : null,
+          entryDaysCount: entryCount
         };
       });
       
@@ -2629,11 +2534,12 @@ async function startServer() {
     }
   });
 
-  app.get("/api/national/stats", authenticateToken, (req: any, res) => {
+  app.get("/api/national/dashboard-data", authenticateToken, (req: any, res) => {
     try {
       const { role } = req.user;
       const isAdmin = role === 'Admin' || role === 'Super Admin' || role === 'Director';
       const visibleOBIds = getVisibleOBIds(req.user);
+
       
       // 1. Get hierarchy to determine visibility
       const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
@@ -2660,10 +2566,11 @@ async function startServer() {
         stats = db.prepare("SELECT * FROM submitted_orders").all();
       } else {
         const placeholders = visibleOBIds.map(() => '?').join(',');
-        stats = db.prepare(`
+        const query = `
           SELECT * FROM submitted_orders 
           WHERE ob_contact IN (${placeholders})
-        `).all(...visibleOBIds);
+        `;
+        stats = db.prepare(query).all(...visibleOBIds);
       }
 
       const timeInfo = calculateTimeGone();

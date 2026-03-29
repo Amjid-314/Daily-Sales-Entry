@@ -20,7 +20,6 @@ import {
 } from 'recharts';
 import { AIChatBot } from './components/AIChatBot';
 import { MainNav } from './components/MainNav';
-import { IntroProfile } from './components/IntroProfile';
 import { DailyStatusView } from './components/DailyStatusView';
 import { Calendar as CalendarComponent } from './components/Calendar';
 import { EntryForm } from './components/EntryForm';
@@ -50,6 +49,7 @@ import {
   Lock,
   Waves,
   Store,
+  Clock,
   EyeOff,
   Upload,
   Link2,
@@ -68,7 +68,8 @@ import {
   Mail,
   Key,
   User,
-  HelpCircle
+  HelpCircle,
+  Activity
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
 import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry } from './lib/utils';
@@ -83,7 +84,7 @@ const WhatsAppIcon = () => (
 );
 
 
-const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void }) => {
+const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [] }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[] }) => {
   const filteredOBs = useMemo(() => {
     return hierarchy.filter(h => {
       if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
@@ -184,40 +185,6 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     const tsmContacts = new Set(hierarchy.map(h => (h.asm_tsm_contact || '').trim()).filter(Boolean));
     const testOBIds = new Set(hierarchy.filter(h => (h.ob_name || '').toLowerCase().includes('test')).map(h => h.ob_id));
     
-    // Role-based data filtering
-    if (userRole === 'Director' && userName) {
-      const normalizedName = userName.trim().toLowerCase();
-      baseStats = stats.filter(s => {
-        const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-        return (h?.director_sales || '').trim().toLowerCase() === normalizedName;
-      });
-    } else if (userRole === 'NSM' && userName) {
-      const normalizedName = userName.trim().toLowerCase();
-      baseStats = stats.filter(s => {
-        const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-        return (h?.nsm_name || '').trim().toLowerCase() === normalizedName;
-      });
-    } else if ((userRole === 'RSM' || userRole === 'SC') && (userName || userRegion)) {
-      const normalizedName = (userName || '').trim().toLowerCase();
-      const normalizedRegion = (userRegion || '').trim().toLowerCase();
-      baseStats = stats.filter(s => {
-        const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-        const region = (h?.territory_region || s.region || '').trim().toLowerCase();
-        const rsmName = (h?.rsm_name || '').trim().toLowerCase();
-        const scName = (h?.sc_name || '').trim().toLowerCase();
-        return (normalizedName && (rsmName === normalizedName || scName === normalizedName)) || (normalizedRegion && region === normalizedRegion);
-      });
-    } else if ((userRole === 'TSM' || userRole === 'ASM') && userName) {
-      const normalizedName = userName.trim().toLowerCase();
-      baseStats = stats.filter(s => {
-        const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-        const tsm = (h?.asm_tsm_name || s.tsm || '').trim().toLowerCase();
-        return tsm === normalizedName;
-      });
-    } else if (userRole === 'OB' && userContact) {
-      baseStats = stats.filter(s => s.ob_contact === userContact);
-    }
-
     // Global exclusion of test OBs
     baseStats = baseStats.filter(s => !testOBIds.has(s.ob_contact) && !(s.ob_name || '').toLowerCase().includes('test'));
 
@@ -276,8 +243,10 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         ...s,
         region: h?.territory_region || s.region || 'Unassigned',
         tsm: h?.asm_tsm_name || s.tsm || 'Unassigned',
-        rsm: h?.rsm_name || 'Unassigned',
-        sc: h?.sc_name || 'Unassigned',
+        rsm: h?.rsm_name || s.rsm || 'Unassigned',
+        sc: h?.sc_name || s.sc || 'Unassigned',
+        nsm: h?.nsm_name || s.nsm || 'Unassigned',
+        director: h?.director_sales || s.director || 'Unassigned',
         supervisor: h?.supervisor_name || 'Unassigned',
         town: h?.town_name || s.town || 'Unassigned',
         distributor: h?.distributor_name || s.distributor || 'Unassigned',
@@ -297,15 +266,16 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   const filteredStats = useMemo(() => {
     let result = processedStats;
     if (filterLevel !== 'National') {
+      const normalizedFilter = (filterValue || '').trim().toLowerCase();
       result = result.filter(s => {
-        if (filterLevel === 'Region') return s.region === filterValue;
-        if (filterLevel === 'SC') return s.sc === filterValue;
-        if (filterLevel === 'TSM') return s.tsm === filterValue;
-        if (filterLevel === 'Supervisor') return s.supervisor === filterValue;
-        if (filterLevel === 'Town') return s.town === filterValue;
-        if (filterLevel === 'Distributor') return s.distributor === filterValue;
-        if (filterLevel === 'OB') return s.ob_contact === filterValue;
-        if (filterLevel === 'Route') return s.route === filterValue;
+        if (filterLevel === 'Region') return (s.region || '').trim().toLowerCase() === normalizedFilter;
+        if (filterLevel === 'SC') return (s.sc || '').trim().toLowerCase() === normalizedFilter;
+        if (filterLevel === 'TSM') return (s.tsm || '').trim().toLowerCase() === normalizedFilter;
+        if (filterLevel === 'Supervisor') return (s.supervisor || '').trim().toLowerCase() === normalizedFilter;
+        if (filterLevel === 'Town') return (s.town || '').trim().toLowerCase() === normalizedFilter;
+        if (filterLevel === 'Distributor') return (s.distributor || '').trim().toLowerCase() === normalizedFilter;
+        if (filterLevel === 'OB') return (s.ob_contact || '').trim().toLowerCase() === normalizedFilter;
+        if (filterLevel === 'Route') return (s.route || '').trim().toLowerCase() === normalizedFilter;
         return true;
       });
     }
@@ -424,9 +394,83 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     });
   }, [monthStats, hierarchy]);
 
+  const tsmDirectPerformance = useMemo(() => {
+    const tsms: Record<string, any> = {};
+    monthStats.forEach(s => {
+      if (!s.isTSMEntry) return; // Only include TSM entries
+      if (!tsms[s.ob_contact]) { 
+        tsms[s.ob_contact] = { 
+          ob_contact: s.ob_contact,
+          name: s.ob_name, 
+          town: s.town, 
+          tsm: s.tsm, 
+          distributor: s.distributor,
+          region: s.region,
+          totalSales: 0,
+          totalWeight: 0,
+          visited: 0,
+          productive: 0,
+          entries: 0,
+          brandSales: {}
+        };
+        CATEGORIES.forEach(b => tsms[s.ob_contact].brandSales[b] = 0);
+      }
+      tsms[s.ob_contact].totalSales += s.totalBags;
+      tsms[s.ob_contact].totalWeight += s.totalWeightKg;
+      tsms[s.ob_contact].visited += s.visited_shops;
+      tsms[s.ob_contact].productive += s.productive_shops;
+      tsms[s.ob_contact].entries += 1;
+      CATEGORIES.forEach(b => {
+        tsms[s.ob_contact].brandSales[b] += (s.brandSales[b] || 0);
+      });
+    });
+
+    return Object.values(tsms)
+      .filter(tsm => tsm.totalSales > 0 || tsm.entries > 0)
+      .map(tsm => {
+      const h = hierarchy.find(h => h.ob_id === tsm.ob_contact);
+      const target = h ? CATEGORIES.reduce((sum, cat) => {
+        const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+        return sum + (Number(h[targetKey]) || 0);
+      }, 0) : 0;
+      const achievement = target > 0 ? (tsm.totalSales / target) * 100 : 0;
+
+      const workingDays = 25; // Default
+      const consistencyScore = (tsm.entries / workingDays) * 100;
+      
+      const salesPerf = target > 0 ? Math.min(100, achievement) : Math.min(100, (tsm.totalSales / 100) * 100); 
+      const visitCoverage = Math.min(100, (tsm.visited / (tsm.entries * 50)) * 100); // 50 shops per day
+      const productiveRatio = tsm.visited > 0 ? (tsm.productive / tsm.visited) * 100 : 0;
+      
+      const productivityScore = (0.5 * salesPerf) + (0.3 * visitCoverage) + (0.2 * productiveRatio);
+
+      let scoreLabel = 'Weak';
+      if (productivityScore >= 90) scoreLabel = 'Excellent';
+      else if (productivityScore >= 70) scoreLabel = 'Good';
+      else if (productivityScore >= 50) scoreLabel = 'Average';
+
+      let category: 'A' | 'B' | 'C' | 'D' = 'D';
+      if (tsm.totalSales >= 300) category = 'A';
+      else if (tsm.totalSales >= 200) category = 'B';
+      else if (tsm.totalSales >= 100) category = 'C';
+
+      return {
+        ...tsm,
+        target,
+        achievement,
+        consistencyScore,
+        productivityScore,
+        scoreLabel,
+        isIrregular: consistencyScore < 70,
+        category
+      };
+    });
+  }, [monthStats, hierarchy]);
+
   const routeWeakness = useMemo(() => {
     const routes: Record<string, any[]> = {};
     filteredStats.forEach(s => {
+      if (s.isTSMEntry) return; // Exclude TSM entries
       const key = `${s.ob_contact}-${s.route}`;
       if (!routes[key]) routes[key] = [];
       routes[key].push(s);
@@ -494,7 +538,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     const totalTSMSalary = uniqueTSMs * 70000;
     const totalSalaryCost = totalOBSalary + totalTSMSalary;
     const costPerBag = totalSales > 0 ? totalSalaryCost / totalSales : 0;
-    const totalTonnage = monthStats.reduce((sum, s) => sum + (s.totalWeightKg || 0), 0) / 1000;
+    const totalTonnage = monthStats.filter(s => !s.isTSMEntry).reduce((sum, s) => sum + (s.totalWeightKg || 0), 0) / 1000;
     const costPerKg = totalTonnage > 0 ? totalSalaryCost / (totalTonnage * 1000) : 0;
 
     const brandTotals: Record<string, number> = {};
@@ -504,6 +548,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     const skuTotals: Record<string, number> = {};
 
     monthStats.forEach(s => {
+      if (s.isTSMEntry) return; // Exclude TSM entries
       const orderData = (() => {
         if (typeof s.order_data === 'string') {
           try { return JSON.parse(s.order_data); } catch (e) { return null; }
@@ -526,10 +571,11 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     });
 
     brands.forEach(b => {
-      const brandStats = monthStats.filter(s => (s.brandSales[b] || 0) > 0);
-      brandTotals[b] = monthStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0);
-      brandActiveOBs[b] = new Set(brandStats.filter(s => !s.isTSMEntry).map(s => s.ob_contact)).size;
-      brandTonnage[b] = monthStats.reduce((sum, s) => sum + (s.brandTonnage[b] || 0), 0);
+      const obOnlyStats = monthStats.filter(s => !s.isTSMEntry);
+      const brandStats = obOnlyStats.filter(s => (s.brandSales[b] || 0) > 0);
+      brandTotals[b] = obOnlyStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0);
+      brandActiveOBs[b] = new Set(brandStats.map(s => s.ob_contact)).size;
+      brandTonnage[b] = obOnlyStats.reduce((sum, s) => sum + (s.brandTonnage[b] || 0), 0);
       
       brandTargets[b] = filteredHierarchy.reduce((sum, h) => {
         const targetKey = `target_${b.toLowerCase().replace(/\s+/g, '_')}`;
@@ -537,8 +583,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       }, 0);
     });
 
-    const totalVisited = monthStats.reduce((sum, s) => sum + s.visited_shops, 0);
-    const totalProductive = monthStats.reduce((sum, s) => sum + s.productive_shops, 0);
+    const totalVisited = monthStats.filter(s => !s.isTSMEntry).reduce((sum, s) => sum + s.visited_shops, 0);
+    const totalProductive = monthStats.filter(s => !s.isTSMEntry).reduce((sum, s) => sum + s.productive_shops, 0);
     const totalShops = filteredHierarchy.reduce((sum, h) => sum + (Number(h.total_shops) || 0), 0);
     const productivity = totalVisited > 0 ? (totalProductive / totalVisited) * 100 : 0;
 
@@ -567,6 +613,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   const trendData = useMemo(() => {
     const months: Record<string, any> = {};
     filteredStats.forEach(s => {
+      if (s.isTSMEntry) return; // Exclude TSM entries
       if (!months[s.month]) {
         months[s.month] = { month: s.month, totalSales: 0, obCount: new Set(), tsmCount: new Set() };
         brands.forEach(b => months[s.month][b] = 0);
@@ -590,7 +637,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   const routeAnalysisData = useMemo(() => {
     if (filterLevel !== 'Route' && filterLevel !== 'OB') return [];
     
-    let data = filteredStats;
+    let data = filteredStats.filter(s => !s.isTSMEntry);
     
     // Apply filters for route analysis
     if (routeAnalysisCategoryFilter !== 'All' || routeAnalysisBrandFilter !== 'All') {
@@ -658,11 +705,15 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           totalTarget: 0,
           activeOBs: 0,
           averageOBAchievement: 0,
-          averageOBSales: 0
+          averageOBSales: 0,
+          totalVisited: 0,
+          totalProductive: 0
         };
         obStatsByTsm[s.tsm] = new Set();
       }
       tsms[s.tsm].totalSales += s.totalBags;
+      tsms[s.tsm].totalVisited += s.visited;
+      tsms[s.tsm].totalProductive += s.productive;
       obStatsByTsm[s.tsm].add(s.ob_contact);
     });
 
@@ -671,6 +722,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       const activeOBs = obStatsByTsm[tsm].size;
       tsms[tsm].activeOBs = activeOBs;
       tsms[tsm].averageOBSales = activeOBs > 0 ? tsms[tsm].totalSales / activeOBs : 0;
+      tsms[tsm].rpd = tsms[tsm].totalVisited > 0 ? (tsms[tsm].totalProductive / tsms[tsm].totalVisited) * 100 : 0;
       
       const obContacts = Array.from(obStatsByTsm[tsm]);
       let tsmTotalTarget = 0;
@@ -781,6 +833,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
     });
 
     monthStats.forEach(s => {
+      if (s.isTSMEntry) return; // Exclude TSM entries
       let key = 'Other';
       if (filterLevel === 'National') key = s.region || 'Unassigned';
       else if (filterLevel === 'Region') key = s.tsm || 'Unassigned';
@@ -801,7 +854,13 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       let relevantTons = 0;
 
       CATEGORIES.forEach(cat => {
-        const isCategoryMatch = categoryWiseCategoryFilter === 'All' || BRAND_GROUPS[categoryWiseCategoryFilter]?.includes(cat);
+        // User requested: calculate only Washing Powder, exclude DWB+Match Sales
+        // If category filter is 'All', we restrict to Washing Powder categories
+        const isWashingPowder = BRAND_GROUPS["Washing Powder"].includes(cat);
+        const isCategoryMatch = categoryWiseCategoryFilter === 'All' 
+          ? isWashingPowder 
+          : BRAND_GROUPS[categoryWiseCategoryFilter]?.includes(cat);
+          
         const isBrandMatch = categoryWiseBrandFilter === 'All' || categoryWiseBrandFilter === cat;
 
         if (isCategoryMatch && isBrandMatch) {
@@ -906,6 +965,15 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
               {isSyncing ? 'Syncing...' : 'Sync'}
             </button>
+            {backupLogs && backupLogs.length > 0 && (
+              <div className="flex flex-col justify-center mr-2 border-r border-slate-200 pr-3">
+                <span className="text-[8px] font-black text-slate-400 uppercase leading-none">Last Backup</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-[9px] font-bold text-slate-500">{new Date(backupLogs[0].timestamp).toLocaleDateString()} {new Date(backupLogs[0].timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                  <span className={`w-1.5 h-1.5 rounded-full ${backupLogs[0].action === 'BACKUP_SUCCESS' ? 'bg-emerald-500' : 'bg-rose-500'}`}></span>
+                </div>
+              </div>
+            )}
             {lastSync && (
               <div className="flex flex-col justify-center">
                 <span className="text-[8px] font-black text-slate-400 uppercase leading-none">Last Sync</span>
@@ -1387,14 +1455,16 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       <div className="grid grid-cols-1 gap-6">
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Sales Drill Down ({filterLevel})</h3>
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+              Sales Drill Down ({filterLevel}) {categoryWiseCategoryFilter === 'All' ? '(Washing Powder*)' : ''}
+            </h3>
             <div className="flex items-center gap-2">
               <select 
                 value={categoryWiseCategoryFilter} 
                 onChange={(e) => setCategoryWiseCategoryFilter(e.target.value)}
                 className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1 focus:outline-none focus:ring-1 focus:ring-slate-400"
               >
-                <option value="All">All Categories</option>
+                <option value="All">Washing Powder*</option>
                 {Object.keys(BRAND_GROUPS).map(group => (
                   <option key={group} value={group}>{group}</option>
                 ))}
@@ -1611,6 +1681,47 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       </div>
       </div>
 
+      {/* TSM / ASM Direct Sales Performance */}
+      {tsmDirectPerformance.length > 0 && (
+        <div className="card-clean bg-white overflow-hidden border border-slate-100 mt-6">
+          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">TSM / ASM Direct Sales Performance</h3>
+            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">By Achievement %</span>
+          </div>
+          <div className="overflow-x-auto max-h-[500px]">
+            <table className="w-full text-left">
+              <thead className="sticky top-0 bg-white z-10">
+                <tr className="border-b border-slate-100">
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Name</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Region</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Target</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Ach</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Ach %</th>
+                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Productivity</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {tsmDirectPerformance.sort((a, b) => b.achievement - a.achievement).map((tsm, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-4 text-xs font-bold text-slate-700">
+                      <span className="text-slate-300 mr-2">{idx + 1}.</span>
+                      {tsm.name}
+                    </td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{tsm.town}</td>
+                    <td className="px-6 py-4 text-[10px] font-black text-seablue uppercase tracking-widest">{tsm.region}</td>
+                    <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right">{Math.round(tsm.target).toLocaleString()}</td>
+                    <td className="px-6 py-4 text-xs font-bold text-slate-700 text-right">{Math.round(tsm.totalSales).toLocaleString()}</td>
+                    <td className="px-6 py-4 text-xs font-black text-emerald-600 text-right">{tsm.achievement.toFixed(1)}%</td>
+                    <td className="px-6 py-4 text-xs font-black text-slate-600 text-right">{tsm.productivityScore.toFixed(1)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       {/* Route Analysis Section (Visible when OB or Route is selected) */}
       {(filterLevel === 'OB' || filterLevel === 'Route') && (
         <div className="card-clean bg-white overflow-hidden border border-slate-200 shadow-sm">
@@ -1728,10 +1839,10 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         </p>
       </div>
 
-      {/* TSM Performance Table */}
+      {/* TSM Quick Review Table */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
         <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-          <h2 className="text-xs font-black text-seablue uppercase tracking-widest">TSM Performance Overview (Bottom 50)</h2>
+          <h2 className="text-xs font-black text-seablue uppercase tracking-widest">TSM Quick Review (Bottom 50)</h2>
           <Users className="w-4 h-4 text-slate-400" />
         </div>
         <div className="overflow-x-auto">
@@ -1741,13 +1852,15 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                 <th className="px-4 py-3">Hierarchy</th>
                 <th className="px-4 py-3">TSM Name</th>
                 <th className="px-4 py-3 text-right">Active OBs</th>
-                <th className="px-4 py-3 text-right">Total Sales (Ctns)</th>
+                <th className="px-4 py-3 text-right">Target</th>
+                <th className="px-4 py-3 text-right">Achieved</th>
+                <th className="px-4 py-3 text-right">Ach %</th>
+                <th className="px-4 py-3 text-right">RPD</th>
                 <th className="px-4 py-3 text-right">Avg OB Sales</th>
-                <th className="px-4 py-3 text-right">Contribution%</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {tsmPerformance.filter(tsm => !isTSMEntry(tsm.name, tsm.name)).slice(0, 50).map((tsm, idx) => (
+              {tsmPerformance.slice(0, 50).map((tsm, idx) => (
                 <tr key={idx} className="hover:bg-slate-50/50">
                   <td className="px-4 py-3">
                     <p className="text-[8px] font-black text-slate-400 uppercase leading-none">National &gt; {tsm.region}</p>
@@ -1755,16 +1868,16 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
                   </td>
                   <td className="px-4 py-3 font-bold text-slate-700 text-xs">{tsm.name}</td>
                   <td className="px-4 py-3 text-right text-slate-500 font-mono text-xs">{tsm.activeOBs}</td>
+                  <td className="px-4 py-3 text-right font-bold text-slate-400 font-mono text-xs">{Math.round(tsm.totalTarget).toLocaleString()}</td>
                   <td className="px-4 py-3 text-right font-bold text-slate-700 font-mono text-xs">{Math.round(tsm.totalSales).toLocaleString()}</td>
+                  <td className="px-4 py-3 text-right font-bold text-emerald-600 font-mono text-xs">{tsm.achievementPerc.toFixed(1)}%</td>
+                  <td className="px-4 py-3 text-right font-bold text-slate-600 font-mono text-xs">{tsm.rpd.toFixed(1)}%</td>
                   <td className="px-4 py-3 text-right font-bold text-seablue font-mono text-xs">{Math.round(tsm.averageOBSales).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right text-slate-500 font-bold text-xs">
-                    {summary.totalSales > 0 ? ((tsm.totalSales / summary.totalSales) * 100).toFixed(1) : 0}%
-                  </td>
                 </tr>
               ))}
               {tsmPerformance.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-4 py-8 text-center text-slate-500 text-xs font-bold uppercase tracking-widest">
+                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500 text-xs font-bold uppercase tracking-widest">
                     No TSM data found.
                   </td>
                 </tr>
@@ -2496,7 +2609,12 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
   );
 };
 
-const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing, selectedMonth, setSelectedMonth }: any) => {
+const StatsView = ({ 
+  history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, 
+  userRole, userName, userRegion, userContact, onRefresh, isSyncing, 
+  selectedMonth, setSelectedMonth,
+  dailyStatus, fetchDailyStatus, isLoadingDailyStatus
+}: any) => {
   const currentMonth = selectedMonth || getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
@@ -2553,6 +2671,53 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
   const workingDaysTillDate = calculateWorkingDaysTillDate();
   const totalWorkingDays = parseInt(appConfig.total_working_days || '25');
 
+  // Calculate Summary Metrics
+  const totalOBs = filteredOBs.length;
+  const activeOBsCount = filteredOBs.filter(ob => history.some((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth))).length;
+  
+  const now = new Date();
+  const yesterday = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().slice(0, 10);
+  
+  const yesterdayMissing = filteredOBs.filter((ob: any) => {
+    const hasEntry = history.some((h: any) => h.ob_contact === ob.contact && h.date === yesterdayStr);
+    return !hasEntry;
+  });
+
+  const avgEfficiency = filteredOBs.length > 0 ? filteredOBs.reduce((sum, ob) => {
+    const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
+    const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
+    return sum + (workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0);
+  }, 0) / filteredOBs.length : 0;
+
+  const dateWiseSummary = useMemo(() => {
+    if (!history) return [];
+    const dates = Array.from(new Set(history.map(s => s.date))).sort().reverse();
+    const totalOBs = obAssignments.length;
+    
+    return dates.map(date => {
+      const dayStats = history.filter(s => s.date === date && !s.isTSMEntry);
+      const submittedCount = dayStats.filter(s => s.visit_type !== 'Absent').length;
+      const absentCount = dayStats.filter(s => s.visit_type === 'Absent').length;
+      const pendingCount = Math.max(0, totalOBs - (submittedCount + absentCount));
+      const rrOBs = dayStats.filter(s => s.visit_type === 'RR');
+      
+      return {
+        date,
+        totalOBs,
+        submittedCount,
+        absentCount,
+        pendingCount,
+        rrCount: rrOBs.length,
+        rrDetails: rrOBs.map(ob => ({
+          name: ob.ob_name,
+          tsm: ob.tsm
+        }))
+      };
+    }).slice(0, 10); // Show last 10 days
+  }, [history, obAssignments]);
+
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
       <motion.div 
@@ -2587,13 +2752,287 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
         </div>
       </motion.div>
 
-      {/* TSM Activity Report - Moved to Top */}
+      {/* Summary Cards */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-2xl bg-slate-100 flex items-center justify-center text-slate-500">
+            <Users className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total OBs</p>
+            <p className="text-2xl font-black text-slate-800 leading-none mt-1">{totalOBs}</p>
+          </div>
+        </div>
+        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-500">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Active OBs</p>
+            <p className="text-2xl font-black text-emerald-600 leading-none mt-1">{activeOBsCount}</p>
+          </div>
+        </div>
+        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-500">
+            <AlertCircle className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Missing (Yesterday)</p>
+            <p className="text-2xl font-black text-rose-600 leading-none mt-1">{yesterdayMissing.length}</p>
+          </div>
+        </div>
+        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-2xl bg-seablue/10 flex items-center justify-center text-seablue">
+            <Activity className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Avg Efficiency</p>
+            <p className="text-2xl font-black text-seablue leading-none mt-1">{avgEfficiency.toFixed(1)}%</p>
+          </div>
+        </div>
+      </div>
+
+      {/* Daily Submission Status (Moved from Admin) */}
+      <section className="bg-white rounded-3xl shadow-xl shadow-slate-200/40 border-none overflow-hidden">
+        <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
+          <div className="flex items-center gap-3">
+            <div className="p-2 bg-white/10 rounded-xl">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="text-sm font-black uppercase tracking-widest">Daily Submission Status</h2>
+              <p className="text-[8px] text-white/40 uppercase font-bold tracking-widest">Real-time Field Monitoring</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <input 
+              type="date" 
+              defaultValue={getPSTDate()} 
+              onChange={(e) => fetchDailyStatus(e.target.value)}
+              className="bg-white/10 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/20 transition-all"
+            />
+            <button 
+              onClick={() => fetchDailyStatus(getPSTDate())} 
+              className="p-2 hover:bg-white/10 rounded-xl transition-colors group"
+            >
+              <RefreshCw className={`w-4 h-4 ${isLoadingDailyStatus ? 'animate-spin' : 'group-active:rotate-180 transition-transform'}`} />
+            </button>
+          </div>
+        </div>
+
+        <div className="p-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+            {/* Submitted Box */}
+            <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 shadow-sm">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Submitted OBs</div>
+                  <div className="text-3xl font-black text-emerald-700">{dailyStatus.filter(s => s.submitted && s.visit_type !== 'Absent').length}</div>
+                </div>
+                <div className="p-2 bg-emerald-100 rounded-xl text-emerald-600">
+                  <CheckCircle2 className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {dailyStatus.filter(s => s.submitted && s.visit_type !== 'Absent').map(s => (
+                  <div key={s.contact} className="flex flex-col p-2 bg-white/60 rounded-xl border border-emerald-100/50">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-black text-slate-700">{s.name}</span>
+                      <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-lg">{s.visit_type}</span>
+                    </div>
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{s.tsm}</span>
+                      <span className="text-[9px] font-black text-rose-500">Missed: {Math.max(0, workingDaysTillDate - (s.entryDaysCount || 0))} Days</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Pending Box */}
+            <div className="p-6 bg-amber-50 rounded-3xl border border-amber-100 shadow-sm">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Pending OBs</div>
+                  <div className="text-3xl font-black text-amber-700">{dailyStatus.filter(s => !s.submitted).length}</div>
+                </div>
+                <div className="p-2 bg-amber-100 rounded-xl text-amber-600">
+                  <Clock className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {dailyStatus.filter(s => !s.submitted).map(s => (
+                  <div key={s.contact} className="flex flex-col p-2 bg-white/60 rounded-xl border border-amber-100/50">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-black text-slate-700">{s.name}</span>
+                      <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-lg">PENDING</span>
+                    </div>
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{s.tsm}</span>
+                      <span className="text-[9px] font-black text-rose-500">Missed: {Math.max(0, workingDaysTillDate - (s.entryDaysCount || 0))} Days</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Absent Box */}
+            <div className="p-6 bg-rose-50 rounded-3xl border border-rose-100 shadow-sm">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Absent OBs</div>
+                  <div className="text-3xl font-black text-rose-700">{dailyStatus.filter(s => s.visit_type === 'Absent').length}</div>
+                </div>
+                <div className="p-2 bg-rose-100 rounded-xl text-rose-600">
+                  <AlertCircle className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
+                {dailyStatus.filter(s => s.visit_type === 'Absent').map(s => (
+                  <div key={s.contact} className="flex flex-col p-2 bg-white/60 rounded-xl border border-rose-100/50">
+                    <div className="flex justify-between items-center">
+                      <span className="text-[11px] font-black text-slate-700">{s.name}</span>
+                      <span className="text-[9px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-lg">ABSENT</span>
+                    </div>
+                    <div className="flex justify-between items-center mt-1">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{s.tsm}</span>
+                      <span className="text-[9px] font-black text-rose-500">Missed: {Math.max(0, workingDaysTillDate - (s.entryDaysCount || 0))} Days</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+          
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-[10px]">
+              <thead>
+                <tr className="border-b border-slate-100 text-slate-400 uppercase font-black tracking-widest">
+                  <th className="py-4 px-2">OB Name</th>
+                  <th className="py-4 px-2">TSM</th>
+                  <th className="py-4 px-2 text-center">Status</th>
+                  <th className="py-4 px-2 text-center">Visit Type</th>
+                  <th className="py-4 px-2 text-center">Missed Days</th>
+                  <th className="py-4 px-2 text-right">Last Entry</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {dailyStatus.map(ob => {
+                  const totalWorkingDays = Number(appConfig.total_working_days) || 26;
+                  const missedDays = Math.max(0, totalWorkingDays - (ob.entryDaysCount || 0));
+                  
+                  return (
+                    <tr key={ob.contact} className="hover:bg-slate-50 transition-colors">
+                      <td className="py-4 px-2">
+                        <div className="font-black text-slate-800">{ob.name}</div>
+                        <div className="text-[8px] text-slate-400 font-bold">{ob.contact}</div>
+                      </td>
+                      <td className="py-4 px-2 text-slate-500 font-bold">{ob.tsm}</td>
+                      <td className="py-4 px-2 text-center">
+                        {ob.submitted ? (
+                          ob.visit_type === 'Absent' ? (
+                            <span className="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 font-black text-[8px] uppercase tracking-widest border border-rose-100">Absent</span>
+                          ) : ob.visit_type === 'RR' ? (
+                            <span className="px-2 py-1 rounded-lg bg-amber-400 text-white font-black text-[8px] uppercase tracking-widest shadow-sm">Route Riding</span>
+                          ) : ob.visit_type === 'V' ? (
+                            <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 font-black text-[8px] uppercase tracking-widest border border-emerald-100">Van Sales</span>
+                          ) : (
+                            <span className="px-2 py-1 rounded-lg bg-slate-50 text-slate-600 font-black text-[8px] uppercase tracking-widest border border-slate-100">Alone</span>
+                          )
+                        ) : (
+                          <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-400 font-black text-[8px] uppercase tracking-widest">Pending</span>
+                        )}
+                      </td>
+                      <td className="py-4 px-2 text-center">
+                        {ob.submitted && ob.visit_type !== 'Absent' ? (
+                          <span className="font-black text-slate-600">{ob.visit_type}</span>
+                        ) : '-'}
+                      </td>
+                      <td className="py-4 px-2 text-center">
+                        <span className={`font-black ${missedDays > 3 ? 'text-rose-600' : 'text-slate-600'}`}>
+                          {missedDays}
+                        </span>
+                      </td>
+                      <td className="py-4 px-2 text-right font-mono text-slate-400 font-bold">
+                        {ob.submitted_at ? new Date(ob.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      {/* Date-wise Summary */}
+      <section className="bg-white rounded-3xl shadow-xl shadow-slate-200/40 border-none overflow-hidden">
+        <div className="bg-emerald-600 text-white px-6 py-4 flex items-center gap-3">
+          <div className="p-2 bg-white/10 rounded-xl">
+            <TrendingUp className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-black uppercase tracking-widest">Date-wise Submission Summary</h2>
+            <p className="text-[8px] text-white/40 uppercase font-bold tracking-widest">Historical Field Activity</p>
+          </div>
+        </div>
+        <div className="p-6">
+          <div className="space-y-4">
+            {dateWiseSummary.map((day) => (
+              <div key={day.date} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-emerald-200 transition-all">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div className="flex items-center gap-4">
+                    <div className="text-lg font-black text-slate-800">{day.date}</div>
+                    <div className="flex gap-2">
+                      <span className="px-2 py-1 bg-emerald-100 text-emerald-700 text-[8px] font-black uppercase tracking-widest rounded-lg">
+                        {day.submittedCount} Submited OB
+                      </span>
+                      <span className="px-2 py-1 bg-amber-100 text-amber-700 text-[8px] font-black uppercase tracking-widest rounded-lg">
+                        {day.pendingCount} Pending OBs
+                      </span>
+                      <span className="px-2 py-1 bg-rose-100 text-rose-700 text-[8px] font-black uppercase tracking-widest rounded-lg">
+                        {day.absentCount} AbsentOBs
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                
+                <div className="mt-4 pt-4 border-t border-slate-200/50">
+                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                    Date : # of Route Riding OB ({day.rrCount})
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {day.rrDetails.map((rr, idx) => (
+                      <div key={idx} className="px-3 py-1.5 bg-white border border-slate-100 rounded-xl text-[9px] font-bold text-slate-600 shadow-sm">
+                        <span className="text-amber-600 font-black">{rr.tsm}</span>
+                        <ChevronRight className="w-3 h-3 inline mx-1 text-slate-300" />
+                        <span className="text-slate-800">{rr.name}</span>
+                      </div>
+                    ))}
+                    {day.rrDetails.length === 0 && <span className="text-[9px] text-slate-400 italic">No Route Riding entries</span>}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {dateWiseSummary.length === 0 && (
+              <div className="py-10 text-center text-slate-400 italic text-[10px] font-bold uppercase tracking-widest">
+                No historical data available for this month.
+              </div>
+            )}
+          </div>
+        </div>
+      </section>
+
+      {/* TSM Activity Report */}
       <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
         <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-3">
           <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
             <Waves className="w-4 h-4" />
           </div>
-          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">TSM Activity Report</h3>
+          <div>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">TSM Activity Report</h3>
+            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Performance overview for the selected month</p>
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse">
@@ -2601,10 +3040,22 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
               <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
                 <th className="px-6 py-4 whitespace-nowrap">Hierarchy</th>
                 <th className="px-6 py-4 whitespace-nowrap">TSM Name</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">Active OBs</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">Total Sales</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">Avg Productivity</th>
-                <th className="px-6 py-4 text-right whitespace-nowrap">Activity Score</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">
+                  Active OBs
+                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">With entries this month</p>
+                </th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">
+                  Total Sales
+                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Bags (Cartons + Dozens)</p>
+                </th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">
+                  Avg Productivity
+                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Productive / Visited Shops</p>
+                </th>
+                <th className="px-6 py-4 text-right whitespace-nowrap">
+                  Activity Score
+                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Based on active OBs & prod.</p>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -2636,7 +3087,17 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                       <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">{activeOBs}/{tsmOBs.length}</span>
                     </td>
                     <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{totalSales.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-emerald-600 bg-emerald-50/50 whitespace-nowrap">{avgProd.toFixed(0)}%</td>
+                    <td className="px-6 py-4 text-center whitespace-nowrap">
+                      <div className="flex flex-col items-center gap-1 w-24 mx-auto">
+                        <span className="text-xs font-black text-emerald-600">{avgProd.toFixed(0)}%</span>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full rounded-full bg-emerald-500"
+                            style={{ width: `${Math.min(100, avgProd)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
                       <span className={`text-xs font-black px-3 py-1 rounded-full ${score > 70 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                         {score.toFixed(1)}
@@ -2650,18 +3111,8 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
         </div>
       </section>
 
-      {/* Yesterday's Missing Submissions - Moved from Dashboard */}
+      {/* Yesterday's Missing Submissions */}
       {(() => {
-        const now = new Date();
-        const yesterday = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
-        yesterday.setDate(yesterday.getDate() - 1);
-        const yesterdayStr = yesterday.toISOString().slice(0, 10);
-        
-        const yesterdayMissing = filteredOBs.filter((ob: any) => {
-          const hasEntry = history.some((h: any) => h.ob_contact === ob.contact && h.date === yesterdayStr);
-          return !hasEntry;
-        });
-
         if (yesterdayMissing.length === 0) return null;
 
         return (
@@ -2703,15 +3154,18 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
             <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
               <ClipboardList className="w-4 h-4" />
             </div>
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">OB Submission Status</h3>
+            <div>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">OB Submission Status</h3>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Detailed view of order booker submissions</p>
+            </div>
           </div>
           <div className="flex gap-4">
-            <div className="flex flex-col items-end">
+            <div className="flex flex-col items-end bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Working Days</span>
               <span className="text-xs font-black text-seablue">{workingDaysTillDate}</span>
             </div>
-            <div className="flex flex-col items-end">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Target</span>
+            <div className="flex flex-col items-end bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Target Days</span>
               <span className="text-xs font-black text-slate-600">{totalWorkingDays}</span>
             </div>
           </div>
@@ -2723,12 +3177,23 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                 <th className="px-6 py-4 whitespace-nowrap">Hierarchy</th>
                 <th className="px-6 py-4 whitespace-nowrap">OB Name</th>
                 <th className="px-6 py-4 whitespace-nowrap">TSM</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">OB Entries</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">TSM Entries</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">Target Days</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">Missing</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">
+                  OB Entries
+                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Submitted by OB</p>
+                </th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">
+                  TSM Entries
+                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Submitted by TSM</p>
+                </th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">
+                  Missing
+                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Days without entry</p>
+                </th>
                 <th className="px-6 py-4 whitespace-nowrap">Last Entry</th>
-                <th className="px-6 py-4 text-right whitespace-nowrap">Efficiency</th>
+                <th className="px-6 py-4 text-right whitespace-nowrap">
+                  Efficiency
+                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Entries / Working Days</p>
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -2761,7 +3226,6 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                         {tsmEntries.length}
                       </span>
                     </td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500">{totalWorkingDays}</td>
                     <td className="px-6 py-4 text-center">
                       <span className={`text-xs font-black px-2 py-1 rounded-lg ${missing > 0 ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}>
                         {missing}
@@ -2769,10 +3233,16 @@ const StatsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKU
                     </td>
                     <td className="px-6 py-4 text-[10px] font-bold text-slate-500 font-mono">{lastEntry?.date || 'Never'}</td>
                     <td className="px-6 py-4 text-right">
-                      <div className="flex flex-col items-end gap-1">
-                        <span className={`text-[9px] font-black px-2 py-1 rounded-full uppercase tracking-widest shadow-sm ${efficiency < 80 ? 'bg-rose-500 text-white' : 'bg-emerald-500 text-white'}`}>
+                      <div className="flex flex-col items-end gap-1 w-24 ml-auto">
+                        <span className={`text-[10px] font-black ${efficiency < 80 ? 'text-rose-500' : 'text-emerald-500'}`}>
                           {efficiency.toFixed(0)}%
                         </span>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full ${efficiency < 80 ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${Math.min(100, efficiency)}%` }}
+                          />
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -3361,22 +3831,23 @@ const Login = ({ onLogin, logo }: { onLogin: (token: string, user: any) => void,
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex items-center justify-center p-6">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
+      <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mb-8 shadow-xl shadow-slate-200/20 overflow-hidden border border-slate-50">
+        {logo ? (
+          <img src={logo} alt="App Logo" className="w-full h-full object-contain p-2" />
+        ) : (
+          <div className="w-full h-full bg-seablue flex items-center justify-center">
+            <Waves className="text-white w-12 h-12" />
+          </div>
+        )}
+      </div>
+
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 border border-slate-100"
       >
         <div className="flex flex-col items-center mb-10">
-          <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-slate-200/20 overflow-hidden border border-slate-50">
-            {logo ? (
-              <img src={logo} alt="App Logo" className="w-full h-full object-contain p-2" />
-            ) : (
-              <div className="w-full h-full bg-seablue flex items-center justify-center">
-                <Waves className="text-white w-12 h-12" />
-              </div>
-            )}
-          </div>
           <h1 className="text-3xl font-black text-slate-900 tracking-tight">SalesPulse</h1>
           <p className="text-slate-400 text-xs mt-2 font-bold uppercase tracking-widest">Intelligent Sales Execution Platform</p>
         </div>
@@ -3449,6 +3920,308 @@ const Login = ({ onLogin, logo }: { onLogin: (token: string, user: any) => void,
   );
 };
 
+const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeGone }: any) => {
+  const kpiGroups = useMemo(() => {
+    if (!stats || !hierarchy || isLoading) return null;
+
+    const role = (user?.role || '').toUpperCase();
+    const name = (user?.name || '').trim().toLowerCase();
+    const contact = (user?.contact || '').trim();
+
+    // Filter hierarchy for the user
+    const userHierarchy = hierarchy.filter(h => {
+      if (role === 'SUPER ADMIN' || role === 'ADMIN' || role === 'DIRECTOR' || role === 'NSM') return true;
+      if (role === 'RSM' || role === 'SC') return (h.territory_region || '').trim().toLowerCase() === (user?.region || '').trim().toLowerCase();
+      if (role === 'TSM' || role === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === name;
+      if (role === 'OB') return h.ob_id === contact;
+      return false;
+    });
+
+    // Filter stats for the user
+    const userStats = stats.filter(s => {
+      if (role === 'SUPER ADMIN' || role === 'ADMIN' || role === 'DIRECTOR' || role === 'NSM') return true;
+      const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+      if (!h) return false;
+      if (role === 'RSM' || role === 'SC') return (h.territory_region || '').trim().toLowerCase() === (user?.region || '').trim().toLowerCase();
+      if (role === 'TSM' || role === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === name;
+      if (role === 'OB') return s.ob_contact === contact;
+      return false;
+    });
+
+    return BRAND_GROUP_NAMES.map(groupName => {
+      const brandsInGroup = BRAND_GROUPS[groupName];
+      
+      // Calculate Target for this group
+      const target = userHierarchy.reduce((sum, h) => {
+        return sum + brandsInGroup.reduce((s, brand) => {
+          const field = `target_${brand.toLowerCase().replace(/ /g, '_')}`;
+          return s + (Number(h[field]) || 0);
+        }, 0);
+      }, 0);
+
+      // Calculate Achievement for this group
+      const achievement = userStats.reduce((sum, s) => {
+        return sum + brandsInGroup.reduce((s2, brand) => s2 + (s.brandSales?.[brand] || 0), 0);
+      }, 0);
+
+      const percentage = target > 0 ? (achievement / target) * 100 : 0;
+      const remainingTarget = Math.max(0, target - achievement);
+      const remainingDays = timeGone?.remaining || 0;
+      const passedDays = timeGone?.passed || 1;
+      const requiredPerDay = remainingDays > 0 ? remainingTarget / remainingDays : 0;
+      const dailyAvg = achievement / passedDays;
+
+      return {
+        name: groupName,
+        target,
+        achievement,
+        percentage,
+        remainingTarget,
+        remainingDays,
+        requiredPerDay,
+        dailyAvg
+      };
+    });
+  }, [user, stats, hierarchy, isLoading, timeGone]);
+
+  const obWiseKpis = useMemo(() => {
+    if (!stats || !hierarchy || isLoading) return null;
+    const role = (user?.role || '').toUpperCase();
+    if (role !== 'TSM' && role !== 'ASM') return null;
+
+    const name = (user?.name || '').trim().toLowerCase();
+    
+    // Get all OBs under this TSM/ASM
+    const myOBs = hierarchy.filter(h => (h.asm_tsm_name || '').trim().toLowerCase() === name);
+    const obIds = Array.from(new Set(myOBs.map(h => h.ob_id)));
+
+    return obIds.map(obId => {
+      const obHierarchy = myOBs.filter(h => h.ob_id === obId);
+      const obName = obHierarchy[0]?.ob_name || 'Unknown OB';
+      
+      const obStats = stats.filter(s => s.ob_contact === obId);
+
+      const groupKpis = BRAND_GROUP_NAMES.map(groupName => {
+        const brandsInGroup = BRAND_GROUPS[groupName];
+        
+        const target = obHierarchy.reduce((sum, h) => {
+          return sum + brandsInGroup.reduce((s, brand) => {
+            const field = `target_${brand.toLowerCase().replace(/ /g, '_')}`;
+            return s + (Number(h[field]) || 0);
+          }, 0);
+        }, 0);
+
+        const achievement = obStats.reduce((sum, s) => {
+          return sum + brandsInGroup.reduce((s2, brand) => s2 + (s.brandSales?.[brand] || 0), 0);
+        }, 0);
+
+        const percentage = target > 0 ? (achievement / target) * 100 : 0;
+        const remainingTarget = Math.max(0, target - achievement);
+        const remainingDays = timeGone?.remaining || 0;
+        const passedDays = timeGone?.passed || 1;
+        const requiredPerDay = remainingDays > 0 ? remainingTarget / remainingDays : 0;
+        const dailyAvg = achievement / passedDays;
+
+        return {
+          name: groupName,
+          target,
+          achievement,
+          percentage,
+          remainingTarget,
+          remainingDays,
+          requiredPerDay,
+          dailyAvg
+        };
+      });
+
+      return {
+        obId,
+        obName,
+        groupKpis
+      };
+    });
+  }, [user, stats, hierarchy, isLoading, timeGone]);
+
+  return (
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-6">
+      <motion.div 
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="max-w-2xl w-full space-y-8"
+      >
+        {/* Logo */}
+        <div className="flex justify-center">
+          <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-xl border border-slate-50 overflow-hidden">
+            {logo ? (
+              <img src={logo} alt="Logo" className="w-full h-full object-contain p-2" />
+            ) : (
+              <div className="w-full h-full bg-seablue flex items-center justify-center">
+                <Waves className="text-white w-10 h-10" />
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Welcome Card */}
+        <div className="bg-white rounded-3xl shadow-2xl p-8 border border-slate-100 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-32 h-32 bg-seablue/5 rounded-full -mr-16 -mt-16" />
+          
+          <div className="relative z-10">
+            <h2 className="text-xs font-black text-seablue uppercase tracking-[0.2em] mb-1">Welcome Back</h2>
+            <h1 className="text-3xl font-black text-slate-800 tracking-tight">{user?.name}</h1>
+            <div className="flex items-center gap-4 mt-4">
+              <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+                <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{user?.role}</span>
+              </div>
+              <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+                <Store className="w-3.5 h-3.5 text-slate-400" />
+                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{user?.region || 'National'}</span>
+              </div>
+            </div>
+          </div>
+
+          {/* KPI Section */}
+          <div className="mt-10 space-y-8">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monthly Performance Summary</h3>
+              {isLoading && <Loader2 className="w-3 h-3 text-seablue animate-spin" />}
+            </div>
+
+            {kpiGroups ? (
+              <div className="space-y-6">
+                {kpiGroups.map((group) => (
+                  <div key={group.name} className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <div className="h-px flex-1 bg-slate-100" />
+                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{group.name}</span>
+                      <div className="h-px flex-1 bg-slate-100" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                        <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Target</p>
+                        <p className="text-base font-black text-slate-800">{Math.round(group.target).toLocaleString()}</p>
+                      </div>
+                      <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
+                        <p className="text-[7px] font-black text-emerald-400 uppercase tracking-widest mb-1">Achievement</p>
+                        <p className="text-base font-black text-emerald-600">{Math.round(group.achievement).toLocaleString()}</p>
+                      </div>
+                      <div className="p-3 bg-seablue/5 rounded-2xl border border-seablue/10">
+                        <p className="text-[7px] font-black text-seablue uppercase tracking-widest mb-1">Ach %</p>
+                        <p className="text-base font-black text-seablue">{group.percentage.toFixed(1)}%</p>
+                      </div>
+                      <div className="p-3 bg-amber-50 rounded-2xl border border-amber-100">
+                        <p className="text-[7px] font-black text-amber-400 uppercase tracking-widest mb-1">Remaining</p>
+                        <p className="text-base font-black text-amber-600">{Math.round(group.remainingTarget).toLocaleString()}</p>
+                      </div>
+                      
+                      <div className="col-span-2 grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
+                        <div className="text-center">
+                          <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Rem. Days</p>
+                          <p className="text-[10px] font-black text-slate-700">{group.remainingDays}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Req/Day</p>
+                          <p className="text-[10px] font-black text-slate-700">{Math.round(group.requiredPerDay)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Daily Avg</p>
+                          <p className="text-[10px] font-black text-slate-700">{Math.round(group.dailyAvg)}</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="h-40 flex items-center justify-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Loading KPIs...</p>
+              </div>
+            )}
+          </div>
+
+          {/* OB Wise Breakdown for TSM/ASM */}
+          {obWiseKpis && obWiseKpis.length > 0 && (
+            <div className="mt-12 space-y-8">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
+                  <Users className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Team Performance (OB Wise)</h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Individual OB Breakdown</p>
+                </div>
+              </div>
+
+              <div className="space-y-6">
+                {obWiseKpis.map((ob) => (
+                  <div key={ob.obId} className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
+                    <div className="flex items-center justify-between mb-4">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100">
+                          <span className="text-xs font-black text-seablue">{ob.obId}</span>
+                        </div>
+                        <div>
+                          <h4 className="text-sm font-black text-slate-800">{ob.obName}</h4>
+                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Order Booker</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {ob.groupKpis.map((group) => (
+                        <div key={group.name} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-50 pb-1">{group.name}</p>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <p className="text-[6px] font-black text-slate-400 uppercase">Target</p>
+                              <p className="text-[10px] font-black text-slate-800">{Math.round(group.target)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[6px] font-black text-emerald-400 uppercase">Ach</p>
+                              <p className="text-[10px] font-black text-emerald-600">{Math.round(group.achievement)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[6px] font-black text-seablue uppercase">Ach %</p>
+                              <p className="text-[10px] font-black text-seablue">{group.percentage.toFixed(1)}%</p>
+                            </div>
+                            <div>
+                              <p className="text-[6px] font-black text-amber-400 uppercase">Rem</p>
+                              <p className="text-[10px] font-black text-amber-600">{Math.round(group.remainingTarget)}</p>
+                            </div>
+                          </div>
+                          <div className="mt-2 pt-2 border-t border-slate-50 grid grid-cols-2 gap-2">
+                            <div>
+                              <p className="text-[5px] font-black text-slate-400 uppercase">Req/Day</p>
+                              <p className="text-[8px] font-black text-slate-600">{Math.round(group.requiredPerDay)}</p>
+                            </div>
+                            <div>
+                              <p className="text-[5px] font-black text-slate-400 uppercase">Daily Avg</p>
+                              <p className="text-[8px] font-black text-slate-600">{Math.round(group.dailyAvg)}</p>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <button
+            onClick={onEnter}
+            className="w-full mt-10 bg-seablue hover:bg-seablue-light text-white font-black py-4 rounded-2xl shadow-xl shadow-seablue/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98] group"
+          >
+            Enter App
+            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
 const calculateTotalBags = (order: any) => {
   const items = order.items || order.order_data;
   if (!items) return 0;
@@ -3506,6 +4279,7 @@ export default function App() {
   const [matrixView, setMatrixView] = useState<string>('Total');
   const [targetView, setTargetView] = useState('Brand');
   const [showUserManual, setShowUserManual] = useState(false);
+  const [showWelcome, setShowWelcome] = useState(false);
 
   const handleLogin = (token: string, userData: any) => {
     const role = normalizeRole(userData.role);
@@ -3525,7 +4299,8 @@ export default function App() {
     }
 
     if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(role)) {
-      setView('intro');
+      setView('dashboard');
+      setShowWelcome(true);
     }
   };
 
@@ -3584,233 +4359,11 @@ export default function App() {
   const [historyPage, setHistoryPage] = useState(1);
   const itemsPerPage = 10;
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [hasAutoRefreshed, setHasAutoRefreshed] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
   const [obAssignments, setObAssignments] = useState<OBAssignment[]>([]);
   
   const [appConfig, setAppConfig] = useState<Record<string, string>>({ total_working_days: '25' });
-  const postLoginData = useMemo(() => {
-    if (!user || !history) return null;
-    const today = getPSTDate();
-    const currentMonth = today.slice(0, 7);
-    
-    const tsmContacts = new Set(hierarchy.map(h => (h.asm_tsm_contact || '').trim()).filter(Boolean));
-    
-    const userStats = history.filter(s => {
-      const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-      const normalizedRole = (user.role || '').toUpperCase();
-      const normalizedName = (user.name || '').trim().toLowerCase();
-      const normalizedContact = (user.contact || '').trim().toLowerCase();
-
-      if (normalizedRole === 'OB') return s.ob_contact === user.contact;
-      if (normalizedRole === 'TSM' || normalizedRole === 'ASM') {
-        const tsm = (h?.asm_tsm_name || s.tsm || '').trim().toLowerCase();
-        return tsm === normalizedName;
-      }
-      if (normalizedRole === 'RSM' || normalizedRole === 'SC') {
-        const rsmName = (h?.rsm_name || '').trim().toLowerCase();
-        const scName = (h?.sc_name || '').trim().toLowerCase();
-        return rsmName === normalizedName || scName === normalizedName;
-      }
-      if (normalizedRole === 'NSM') {
-        const nsmName = (h?.nsm_name || '').trim().toLowerCase();
-        return nsmName === normalizedName;
-      }
-      if (normalizedRole === 'DIRECTOR') {
-        const directorName = (h?.director_sales || '').trim().toLowerCase();
-        return directorName === normalizedName;
-      }
-      return true;
-    });
-
-    const calculateTotalWeightTons = (order: any) => {
-      const items = order.order_data || order.items;
-      if (!items) return 0;
-      const grams = Object.keys(items).reduce((sum, skuId) => {
-        const sku = SKUS.find(s => s.id === skuId);
-        if (!sku) return sum;
-        const item = items[skuId];
-        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-        return sum + (packs * sku.weight_gm_per_pack);
-      }, 0);
-      return grams / 1000000;
-    };
-
-    const todaySales = userStats.filter(s => s.date === today).reduce((sum, s) => sum + calculateTotalBags(s), 0);
-    const mtdSales = userStats.filter(s => s.date && s.date.startsWith(currentMonth)).reduce((sum, s) => sum + calculateTotalBags(s), 0);
-    const mtdVolumeTons = userStats.filter(s => s.date && s.date.startsWith(currentMonth)).reduce((sum, s) => sum + calculateTotalWeightTons(s), 0);
-
-    const mtdVolumeBrandWise: Record<string, number> = {};
-    const activeOBsBrandWise: Record<string, number> = {};
-
-    CATEGORIES.forEach(cat => {
-      const catStats = userStats.filter(s => s.date && s.date.startsWith(currentMonth));
-      mtdVolumeBrandWise[cat] = catStats.reduce((sum, s) => {
-        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
-        const catWeight = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
-          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-          return cSum + (packs * sku.weight_gm_per_pack);
-        }, 0);
-        return sum + (catWeight / 1000000);
-      }, 0);
-
-      const activeOBs = new Set(catStats.filter(s => {
-        // Exclude TSM entries from OB count
-        if (tsmContacts.has(s.ob_contact)) return false;
-        
-        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
-        const catAch = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
-          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-          return cSum + Number(item.ctn || 0) + Number(item.dzn || 0) + Number(item.pks || 0);
-        }, 0);
-        return catAch > 0;
-      }).map(s => s.ob_contact));
-      activeOBsBrandWise[cat] = activeOBs.size;
-    });
-
-    const totalActiveOBs = new Set(userStats.filter(s => s.date && s.date.startsWith(currentMonth) && !tsmContacts.has(s.ob_contact)).map(s => s.ob_contact)).size;
-
-    const now = getPSTDate();
-    const year = parseInt(now.slice(0, 4));
-    const month = parseInt(now.slice(5, 7)) - 1;
-    const todayNum = parseInt(now.slice(8, 10));
-    const totalWorkingDays = getWorkingDays(year, month, appConfig.holidays || '');
-    const workingDaysPassed = getWorkingDays(year, month, appConfig.holidays || '', todayNum);
-    const remainingWorkingDays = Math.max(1, totalWorkingDays - workingDaysPassed);
-
-    const brandPerformance = CATEGORIES.map(cat => {
-      const ach = userStats.filter(s => s.date.startsWith(currentMonth)).reduce((sum, s) => {
-        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
-        const catAch = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
-          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-          return cSum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-        }, 0);
-        return sum + catAch;
-      }, 0);
-
-      const achTons = userStats.filter(s => s.date.startsWith(currentMonth)).reduce((sum, s) => {
-        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
-        const catWeight = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
-          const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-          return cSum + (packs * sku.weight_gm_per_pack);
-        }, 0);
-        return sum + (catWeight / 1000000);
-      }, 0);
-      
-      // Get real target from obAssignments
-      let target = 0;
-      if (user.role === 'OB') {
-        const assignment = obAssignments.find(a => a.contact === user.contact);
-        target = assignment?.targets?.[cat] || 0;
-      } else if (user.role === 'TSM' || user.role === 'ASM') {
-        target = obAssignments
-          .filter(a => a.tsm === user.name)
-          .reduce((sum, a) => sum + (a.targets?.[cat] || 0), 0);
-      } else {
-        // National/Admin targets from hierarchy
-        target = hierarchy.reduce((sum, h) => {
-          const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
-          return sum + (Number(h[targetKey]) || 0);
-        }, 0);
-      }
-
-      const remainingTarget = Math.max(0, target - ach);
-      const rpd = remainingTarget / remainingWorkingDays;
-      const avgDailySales = workingDaysPassed > 0 ? ach / workingDaysPassed : 0;
-      const todayTarget = rpd;
-
-      return { 
-        category: cat, 
-        achievement: ach, 
-        achTons,
-        target: target || 1, 
-        percentage: (target || 1) > 0 ? (ach / (target || 1)) * 100 : 0, 
-        rpd, 
-        avgDailySales, 
-        todayTarget, 
-        remainingTarget 
-      };
-    }).sort((a, b) => a.percentage - b.percentage);
-
-    // OB Performance for TSM/ASM
-    let obPerformance = [];
-    if (user.role === 'TSM' || user.role === 'ASM' || ['Admin', 'Super Admin', 'Director', 'NSM', 'RSM', 'SC'].includes(user.role)) {
-      const relevantOBs = obAssignments.filter(a => {
-        if (user.role === 'TSM' || user.role === 'ASM') return a.tsm === user.name;
-        return true;
-      });
-
-      obPerformance = relevantOBs.map(ob => {
-        const obStats = history.filter(s => s.ob_contact === ob.contact && s.date.startsWith(currentMonth));
-        const brands = CATEGORIES.map(cat => {
-          const ach = obStats.reduce((sum, s) => {
-            const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
-            const catAch = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
-              const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-              const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-              return cSum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-            }, 0);
-            return sum + catAch;
-          }, 0);
-          const target = ob.targets?.[cat] || 0;
-          return { category: cat, achievement: ach, target };
-        });
-        return { name: ob.obName, brands };
-      });
-    }
-
-    // Last 8 Visits for specific brands
-    const last8Visits = userStats
-      .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 8)
-      .map(s => {
-        const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : s.order_data;
-        const brands: Record<string, number> = {};
-        ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].forEach(cat => {
-          const catAch = SKUS.filter(sku => sku.category === cat).reduce((cSum, sku) => {
-            const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-            return cSum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-          }, 0);
-          brands[cat] = catAch;
-        });
-        return { date: s.date, route: s.route, obName: s.ob_name || s.order_booker || s.ob_contact || 'Unknown', brands };
-      });
-
-    const routes: Record<string, any[]> = {};
-    userStats.forEach(s => {
-      if (!routes[s.route]) routes[s.route] = [];
-      routes[s.route].push(s);
-    });
-
-    const weakestRoutes = Object.entries(routes).map(([route, entries]) => {
-      const sorted = entries.sort((a, b) => b.date.localeCompare(a.date)).slice(0, 2);
-      const latest = sorted[0];
-      const prev = sorted[1];
-      const sales = calculateTotalBags(latest);
-      const prevSales = prev ? calculateTotalBags(prev) : sales;
-      
-      const reasons = [];
-      if (prev && sales < prevSales) reasons.push('Declining Sales');
-      if (latest.productive_shops < 15) reasons.push('Low Productivity');
-      if (latest.visited_shops < 40) reasons.push('Low Coverage');
-
-      return { route, sales, prevSales, reasons };
-    }).filter(r => r.reasons.length > 0).sort((a, b) => a.sales - b.sales).slice(0, 5);
-
-    const last7DaysSales = Array.from({ length: 7 }, (_, i) => {
-      const d = new Date();
-      d.setDate(d.getDate() - (6 - i));
-      const dateStr = d.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
-      const dayName = d.toLocaleDateString("en-US", { weekday: 'short', timeZone: "Asia/Karachi" });
-      const sales = userStats.filter(s => s.date === dateStr).reduce((sum, s) => sum + calculateTotalBags(s), 0);
-      return { day: dayName, sales };
-    });
-
-    return { todaySales, mtdSales, mtdVolumeTons, mtdVolumeBrandWise, activeOBsBrandWise, totalActiveOBs, brandPerformance, weakestRoutes, last7DaysSales, obPerformance, last8Visits, totalWorkingDays, workingDaysPassed, remainingWorkingDays };
-  }, [user, history, obAssignments, hierarchy, appConfig]);
 
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [stockHistory, setStockHistory] = useState<any[]>([]);
@@ -4519,13 +5072,13 @@ export default function App() {
       const data = await res.json();
       if (res.ok) {
         setMessage({ text: 'Backup completed successfully and stored in Google Drive!', type: 'success' });
-        fetchBackupLogs();
       } else {
         throw new Error(data.error || 'Backup failed');
       }
     } catch (err: any) {
       setMessage({ text: 'Backup failed: ' + err.message, type: 'error' });
     } finally {
+      fetchBackupLogs();
       setIsBackingUp(false);
       setTimeout(() => setMessage(null), 5000);
     }
@@ -4733,27 +5286,32 @@ export default function App() {
   const fetchNationalData = async () => {
     setIsLoadingNational(true);
     try {
-      const res = await apiFetch(`/api/national/stats`);
+      const res = await apiFetch(`/api/national/dashboard-data`);
       if (res.ok) {
         const data = await res.json();
         const parsedStats = (data.stats || []).map((h: any) => {
           const orderData = typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {});
           const categoryProductiveData = typeof h.category_productive_data === 'string' ? JSON.parse(h.category_productive_data) : (h.category_productive_data || {});
           
-          // Calculate total cartons for dashboard
+          // Calculate total cartons and brand-wise sales for dashboard
           let totalCartons = 0;
+          const brandSales: Record<string, number> = {};
+          
           SKUS.forEach(sku => {
             const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
             const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
             const ctns = sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0;
             totalCartons += ctns;
+            
+            brandSales[sku.category] = (brandSales[sku.category] || 0) + ctns;
           });
 
           return {
             ...h,
             order_data: orderData,
             category_productive_data: categoryProductiveData,
-            cartons: totalCartons
+            cartons: totalCartons,
+            brandSales
           };
         });
         setNationalStats(parsedStats);
@@ -4861,6 +5419,22 @@ export default function App() {
     window.addEventListener('message', handleMessage);
     return () => window.removeEventListener('message', handleMessage);
   }, [token]);
+
+  // Auto-refresh fallback for dashboard
+  useEffect(() => {
+    if (view === 'dashboard' && !isLoadingHistory && !isLoadingAdmin && !isLoadingNational && !hasAutoRefreshed) {
+      if (nationalStats.length === 0 && history.length === 0) {
+        const timer = setTimeout(() => {
+          console.log("Auto-refreshing dashboard data...");
+          fetchNationalData();
+          fetchHistory(true);
+          fetchAdminData();
+          setHasAutoRefreshed(true);
+        }, 3000);
+        return () => clearTimeout(timer);
+      }
+    }
+  }, [view, isLoadingHistory, isLoadingAdmin, isLoadingNational, hasAutoRefreshed, nationalStats.length, history.length]);
 
   const connectGoogle = async () => {
     try {
@@ -5402,8 +5976,18 @@ export default function App() {
     return <Login onLogin={handleLogin} logo={appLogo} />;
   }
 
-  if (view === 'intro') {
-    return <IntroProfile user={user} onContinue={() => setView('entry')} />;
+  if (showWelcome) {
+    return (
+      <WelcomeScreen 
+        user={user} 
+        stats={nationalStats} 
+        hierarchy={hierarchy} 
+        logo={appLogo}
+        onEnter={() => setShowWelcome(false)}
+        isLoading={isLoadingNational}
+        timeGone={timeGone}
+      />
+    );
   }
 
   if (view === 'dashboard') {
@@ -5452,6 +6036,7 @@ export default function App() {
                 lastSync={appConfig.last_sync_at}
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
+                backupLogs={backupLogs}
               />
             )}
           </div>
@@ -6345,6 +6930,9 @@ export default function App() {
             isSyncing={isSyncingGlobal}
             selectedMonth={selectedMonth}
             setSelectedMonth={setSelectedMonth}
+            dailyStatus={dailyStatus}
+            fetchDailyStatus={fetchDailyStatus}
+            isLoadingDailyStatus={isLoadingDailyStatus}
           />
         )}
       </div>
@@ -6729,15 +7317,15 @@ export default function App() {
                 <div className="flex items-center justify-between">
                   <div>
                     <h3 className="text-sm font-black text-indigo-900 uppercase tracking-tight">System Protection</h3>
-                    <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Encrypted App, Data & Config Backups</p>
+                    <p className="text-[10px] font-bold text-indigo-600 uppercase tracking-widest">Full Database & App Config Backups</p>
                   </div>
                   <button 
                     onClick={runManualBackup}
-                    disabled={isBackingUp || !appConfig.google_spreadsheet_id}
+                    disabled={isBackingUp || !googleStatus.connected}
                     className="btn-seablue px-4 py-2 flex items-center gap-2 text-[10px]"
                   >
                     {isBackingUp ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                    Run Manual Backup
+                    Backup Now
                   </button>
                 </div>
 
@@ -6746,7 +7334,9 @@ export default function App() {
                     <div className="text-[8px] font-black text-indigo-400 uppercase tracking-widest mb-1">Backup Location</div>
                     <div className="text-[10px] font-bold text-indigo-900 truncate flex items-center gap-2">
                       <Link2 className="w-3 h-3" />
-                      Same folder as Main Google Sheet
+                      <a href="https://drive.google.com/drive/folders/1obtuVTe100g6jrvS6ST8-KVUtXYvQVDY" target="_blank" rel="noopener noreferrer" className="hover:underline">
+                        Google Drive Folder
+                      </a>
                     </div>
                   </div>
                   <div className="bg-white/60 p-3 rounded-xl border border-indigo-100">
@@ -6772,14 +7362,14 @@ export default function App() {
                       <tbody className="divide-y divide-indigo-50">
                         {backupLogs.slice(0, 5).map((log, i) => (
                           <tr key={i} className="hover:bg-indigo-50/30">
-                            <td className="px-3 py-2 font-bold text-indigo-900">{log.timestamp}</td>
+                            <td className="px-3 py-2 font-bold text-indigo-900">{new Date(log.timestamp).toLocaleString()}</td>
                             <td className="px-3 py-2">
                               <span className={`px-1.5 py-0.5 rounded-full font-black uppercase text-[7px] ${log.action === 'BACKUP_SUCCESS' ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
                                 {log.action === 'BACKUP_SUCCESS' ? 'Success' : 'Failed'}
                               </span>
                             </td>
                             <td className="px-3 py-2 text-indigo-600 truncate max-w-[120px]">
-                              {JSON.parse(log.details || '{}').folder || JSON.parse(log.details || '{}').error || '-'}
+                              {JSON.parse(log.details || '{}').file || JSON.parse(log.details || '{}').error || '-'}
                             </td>
                           </tr>
                         ))}
@@ -6966,93 +7556,7 @@ export default function App() {
             </div>
           </section>
 
-          <section className="card-clean overflow-hidden">
-            <div className="bg-slate-800 text-white px-4 py-2 flex justify-between items-center">
-              <div className="flex items-center gap-2">
-                <ShieldCheck className="w-4 h-4" />
-                <h2 className="text-sm font-bold uppercase tracking-widest">Daily Submission Status</h2>
-              </div>
-              <div className="flex items-center gap-2">
-                <input 
-                  type="date" 
-                  defaultValue={new Date().toISOString().split('T')[0]} 
-                  onChange={(e) => fetchDailyStatus(e.target.value)}
-                  className="bg-white/10 text-white text-[10px] font-bold px-2 py-1 rounded border border-white/20 focus:outline-none"
-                />
-                <button onClick={() => fetchDailyStatus(new Date().toISOString().split('T')[0])} className="p-1 hover:bg-white/10 rounded transition-colors">
-                  <RefreshCw className={`w-3 h-3 ${isLoadingDailyStatus ? 'animate-spin' : ''}`} />
-                </button>
-              </div>
-            </div>
-            <div className="p-4">
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
-                <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Total Team</div>
-                  <div className="text-xl font-black text-slate-700">{dailyStatus.length}</div>
-                </div>
-                <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
-                  <div className="text-[8px] font-black text-emerald-400 uppercase tracking-widest">Submitted</div>
-                  <div className="text-xl font-black text-emerald-600">{dailyStatus.filter(s => s.submitted && s.visit_type !== 'Absent').length}</div>
-                </div>
-                <div className="p-3 bg-red-50 rounded-xl border border-red-100">
-                  <div className="text-[8px] font-black text-red-400 uppercase tracking-widest">Absent</div>
-                  <div className="text-xl font-black text-red-600">{dailyStatus.filter(s => s.visit_type === 'Absent').length}</div>
-                </div>
-                <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
-                  <div className="text-[8px] font-black text-amber-400 uppercase tracking-widest">Pending</div>
-                  <div className="text-xl font-black text-amber-600">{dailyStatus.filter(s => !s.submitted).length}</div>
-                </div>
-              </div>
-              
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-[10px]">
-                  <thead>
-                    <tr className="border-b border-slate-100 text-slate-400 uppercase">
-                      <th className="py-2">OB Name</th>
-                      <th className="py-2">TSM</th>
-                      <th className="py-2 text-center">Status</th>
-                      <th className="py-2 text-center">Visit Type</th>
-                      <th className="py-2 text-right">Last Entry</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {dailyStatus.map(ob => (
-                      <tr key={ob.contact} className="hover:bg-slate-50">
-                        <td className="py-2">
-                          <div className="font-bold text-slate-700">{ob.name}</div>
-                          <div className="text-[8px] text-slate-400">{ob.contact}</div>
-                        </td>
-                        <td className="py-2 text-slate-500">{ob.tsm}</td>
-                        <td className="py-2 text-center">
-                          {ob.submitted ? (
-                            ob.visit_type === 'Absent' ? (
-                              <span className="px-1.5 py-0.5 rounded-full bg-red-50 text-red-600 font-bold text-[8px] uppercase">Absent</span>
-                            ) : ob.visit_type === 'RR' ? (
-                              <span className="px-1.5 py-0.5 rounded-full bg-amber-400 text-white font-bold text-[8px] uppercase">Route Riding</span>
-                            ) : ob.visit_type === 'V' ? (
-                              <span className="px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-600 font-bold text-[8px] uppercase">Van Sales</span>
-                            ) : (
-                              <span className="px-1.5 py-0.5 rounded-full bg-slate-50 text-slate-600 font-bold text-[8px] uppercase">Alone</span>
-                            )
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded-full bg-slate-100 text-slate-400 font-bold text-[8px] uppercase">Pending</span>
-                          )}
-                        </td>
-                        <td className="py-2 text-center">
-                          {ob.submitted && ob.visit_type !== 'Absent' ? (
-                            <span className="font-bold text-slate-600">{ob.visit_type}</span>
-                          ) : '-'}
-                        </td>
-                        <td className="py-2 text-right font-mono text-slate-400">
-                          {ob.submitted_at ? new Date(ob.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </section>
+
 
           <section className="card-clean overflow-hidden">
             <div className="bg-emerald-600 text-white px-4 py-2 flex justify-between items-center">
