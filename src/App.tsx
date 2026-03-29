@@ -62,6 +62,8 @@ import {
   Users,
   DollarSign,
   Package,
+  PackageSearch,
+  MessageCircle,
   ChevronRight,
   Filter,
   ArrowDownRight,
@@ -84,7 +86,7 @@ const WhatsAppIcon = () => (
 );
 
 
-const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [] }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[] }) => {
+const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
   const filteredOBs = useMemo(() => {
     return hierarchy.filter(h => {
       if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
@@ -508,6 +510,37 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
     return weakRoutes.sort((a, b) => a.latestSales - b.latestSales).slice(0, 10);
   }, [filteredStats]);
+
+  const stockGapsData = useMemo(() => {
+    if (!stockHistory || !hierarchy) return [];
+    
+    // Get latest stock for each distributor
+    const latestStocks: Record<string, any> = {};
+    [...stockHistory].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()).forEach(s => {
+      latestStocks[s.distributor] = s;
+    });
+
+    const gaps: any[] = [];
+    Object.entries(latestStocks).forEach(([distName, stock]) => {
+      const items = typeof stock.stocks === 'string' ? JSON.parse(stock.stocks) : (stock.stocks || {});
+      const lowItems = Object.entries(items)
+        .filter(([skuId, data]: [string, any]) => Number(data.ctn || 0) <= 2)
+        .map(([skuId]) => SKUS.find(s => s.id === skuId)?.name || skuId);
+
+      if (lowItems.length > 0) {
+        const h = hierarchy.find(h => h.distributor_town === distName);
+        gaps.push({
+          distributor: distName,
+          region: h?.territory_region || 'Unknown',
+          tsm: h?.asm_tsm_name || 'Unknown',
+          lowItems,
+          count: lowItems.length
+        });
+      }
+    });
+
+    return gaps.sort((a, b) => b.count - a.count);
+  }, [stockHistory, hierarchy]);
 
   const summary = useMemo(() => {
     const totalSales = monthStats.reduce((sum, s) => sum + s.totalBags, 0);
@@ -1116,6 +1149,13 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           <div className="text-4xl font-black text-indigo-600">{Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70 text-slate-400">B</span></div>
           <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Month to Date</div>
         </div>
+        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Productivity %</div>
+          <div className={`text-4xl font-black ${summary.productivity >= 70 ? 'text-emerald-600' : summary.productivity >= 50 ? 'text-amber-500' : 'text-rose-600'}`}>
+            {summary.productivity.toFixed(1)}%
+          </div>
+          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Productive / Visited</div>
+        </div>
       </div>
 
       {/* Charts Section */}
@@ -1449,6 +1489,92 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           </div>
           <div className="text-3xl font-black text-orange-600">{summary.lowPerfOBs}</div>
           <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">&lt; 50% Achievement</div>
+        </div>
+      </div>
+
+      {/* Stock Gaps Analysis */}
+      <div className="grid grid-cols-1 gap-6">
+        <div className="card-clean bg-white overflow-hidden border border-slate-100">
+          <div className="bg-amber-50 px-6 py-4 border-b border-amber-100 flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
+                <PackageSearch className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black text-amber-800 uppercase tracking-widest">Critical Stock Gaps</h3>
+                <p className="text-[9px] font-bold text-amber-400 uppercase tracking-widest mt-0.5">Distributors with Low Inventory</p>
+              </div>
+            </div>
+            <div className="text-[10px] font-black text-amber-600 uppercase bg-white px-3 py-1 rounded-full border border-amber-200">
+              {stockGapsData.length} Gaps Detected
+            </div>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+              <thead>
+                <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                  <th className="px-6 py-3">Distributor / Town</th>
+                  <th className="px-6 py-3">Region</th>
+                  <th className="px-6 py-3">TSM</th>
+                  <th className="px-6 py-3">Low Stock SKUs</th>
+                  <th className="px-6 py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-50">
+                {stockGapsData.slice(0, 10).map((gap, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50/30 transition-colors">
+                    <td className="px-6 py-4">
+                      <p className="text-[11px] font-black text-slate-700 uppercase">{gap.distributor}</p>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">{gap.region}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">{gap.tsm}</span>
+                    </td>
+                    <td className="px-6 py-4">
+                      <div className="flex flex-wrap gap-1">
+                        {gap.lowItems.slice(0, 3).map((item: string) => (
+                          <span key={item} className="text-[8px] font-black bg-amber-50 text-amber-600 px-2 py-0.5 rounded-full border border-amber-100 uppercase">
+                            {item}
+                          </span>
+                        ))}
+                        {gap.lowItems.length > 3 && (
+                          <span className="text-[8px] font-black text-slate-300 uppercase">+{gap.lowItems.length - 3} more</span>
+                        )}
+                      </div>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <button 
+                        onClick={() => {
+                          const text = `*STOCK GAP ALERT*\n\nDistributor: ${gap.distributor}\nTSM: ${gap.tsm}\nRegion: ${gap.region}\n\n*Low Stock SKUs:*\n${gap.lowItems.join('\n')}\n\nPlease ensure inventory is replenished immediately.`;
+                          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                        }}
+                        className="flex items-center gap-1.5 ml-auto text-[10px] font-black text-emerald-600 uppercase hover:text-emerald-700 transition-colors"
+                      >
+                        <MessageCircle className="w-3 h-3" />
+                        Notify TSM
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+                {stockGapsData.length === 0 && (
+                  <tr>
+                    <td colSpan={5} className="px-6 py-12 text-center">
+                      <p className="text-xs font-black text-slate-300 uppercase tracking-widest">No Critical Stock Gaps Found</p>
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          {stockGapsData.length > 10 && (
+            <div className="bg-slate-50 px-6 py-3 border-t border-slate-100 text-center">
+              <button className="text-[10px] font-black text-slate-400 uppercase hover:text-seablue transition-colors">
+                View All {stockGapsData.length} Gaps
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
@@ -2295,18 +2421,22 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
                 />
               </div>
 
-              <div className="grid grid-cols-3 gap-2 mt-2">
+              <div className="grid grid-cols-4 gap-2 mt-2">
                 <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
                   <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg Daily</div>
                   <div className="text-[10px] font-black text-slate-700">{bp.avgDailySales.toFixed(1)}</div>
                 </div>
                 <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100">
                   <div className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-1">Target (RPD)</div>
-                  <div className="text-[10px] font-black text-amber-600">{bp.rpd.toFixed(1)}</div>
+                  <div className={`text-[10px] font-black ${bp.rpd > bp.avgDailySales ? 'text-red-600' : 'text-amber-600'}`}>{bp.rpd.toFixed(1)}</div>
                 </div>
                 <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
                   <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Remaining</div>
                   <div className="text-[10px] font-black text-slate-700">{bp.remainingTarget.toFixed(1)}</div>
+                </div>
+                <div className="bg-emerald-50 rounded-lg p-2 text-center border border-emerald-100">
+                  <div className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-1">Prod %</div>
+                  <div className="text-[10px] font-black text-emerald-600">{(bp.productivity || 0).toFixed(0)}%</div>
                 </div>
               </div>
             </motion.div>
@@ -3920,7 +4050,7 @@ const Login = ({ onLogin, logo }: { onLogin: (token: string, user: any) => void,
   );
 };
 
-const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeGone }: any) => {
+const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeGone, stockHistory = [] }: any) => {
   const kpiGroups = useMemo(() => {
     if (!stats || !hierarchy || isLoading) return null;
 
@@ -3959,8 +4089,28 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
         }, 0);
       }, 0);
 
-      // Calculate Achievement for this group
+      // Calculate Achievement and Productivity for this group
+      let groupVisited = 0;
+      let groupProductive = 0;
+      
       const achievement = userStats.reduce((sum, s) => {
+        groupVisited += (Number(s.visited_shops) || 0);
+        
+        // Use category_productive_data for brand-wise productivity if available
+        const prodData = s.category_productive_data || {};
+        let catProd = 0;
+        brandsInGroup.forEach(brand => {
+          // The key in category_productive_data is the category name
+          catProd += (Number(prodData[brand]) || 0);
+        });
+        
+        // If no category-specific data, fallback to total productive_shops (less accurate for brand-wise)
+        if (catProd === 0 && brandsInGroup.length > 0) {
+          // This is a rough estimate if specific data is missing
+          // groupProductive += (Number(s.productive_shops) || 0);
+        }
+        groupProductive += catProd;
+
         return sum + brandsInGroup.reduce((s2, brand) => s2 + (s.brandSales?.[brand] || 0), 0);
       }, 0);
 
@@ -3968,8 +4118,14 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
       const remainingTarget = Math.max(0, target - achievement);
       const remainingDays = timeGone?.remaining || 0;
       const passedDays = timeGone?.passed || 1;
+      const totalDays = timeGone?.total || 0;
       const requiredPerDay = remainingDays > 0 ? remainingTarget / remainingDays : 0;
       const dailyAvg = achievement / passedDays;
+      const productivity = groupVisited > 0 ? (groupProductive / groupVisited) * 100 : 0;
+
+      // Run-Rate Forecasting
+      const projectedAchievement = dailyAvg * totalDays;
+      const projectedPercentage = target > 0 ? (projectedAchievement / target) * 100 : 0;
 
       return {
         name: groupName,
@@ -3979,10 +4135,75 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
         remainingTarget,
         remainingDays,
         requiredPerDay,
-        dailyAvg
+        dailyAvg,
+        productivity,
+        visited: groupVisited,
+        productive: groupProductive,
+        projectedAchievement,
+        projectedPercentage
       };
     });
   }, [user, stats, hierarchy, isLoading, timeGone]);
+
+  const obStockHealth = useMemo(() => {
+    if (!stockHistory || !hierarchy || isLoading) return null;
+    const role = (user?.role || '').toUpperCase();
+    if (role !== 'TSM' && role !== 'ASM') return null;
+
+    const name = (user?.name || '').trim().toLowerCase();
+    if (!name) return null;
+
+    // Get all distributors under this TSM/ASM
+    const myDistributors = Array.from(new Set(hierarchy
+      .filter(h => (h.asm_tsm_name || '').trim().toLowerCase() === name)
+      .map(h => h.distributor_town)
+    )).filter(d => d);
+
+    return myDistributors.map(distName => {
+      // Find latest stock for this distributor
+      const distStocks = [...stockHistory]
+        .filter(s => s.distributor === distName)
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      
+      const latest = distStocks[0];
+      if (!latest) return { name: distName, status: 'No Data', items: {} };
+
+      const items = typeof latest.stocks === 'string' ? JSON.parse(latest.stocks) : (latest.stocks || {});
+      
+      // Simple health check: if any key SKU is 0, it's "Low"
+      const lowStockItems = Object.entries(items)
+        .filter(([skuId, data]: [string, any]) => Number(data.ctn || 0) <= 2) // Threshold: 2 cartons
+        .map(([skuId]) => SKUS.find(s => s.id === skuId)?.name || skuId);
+
+      return {
+        name: distName,
+        date: latest.date,
+        status: lowStockItems.length > 0 ? 'Low Stock' : 'Healthy',
+        lowStockItems,
+        items
+      };
+    });
+  }, [user, stockHistory, hierarchy, isLoading]);
+
+  const livePulseData = useMemo(() => {
+    if (!stats || isLoading) return null;
+    const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
+    const todayStats = stats.filter(s => s.date === today);
+    
+    // Sort by time descending
+    const recentSubmissions = [...todayStats].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    ).slice(0, 5);
+
+    const totalVisited = todayStats.reduce((sum, s) => sum + (Number(s.visited_shops) || 0), 0);
+    const totalProductive = todayStats.reduce((sum, s) => sum + (Number(s.productive_shops) || 0), 0);
+
+    return {
+      totalVisited,
+      totalProductive,
+      recentSubmissions
+    };
+  }, [stats, isLoading]);
 
   const obWiseKpis = useMemo(() => {
     if (!stats || !hierarchy || isLoading) return null;
@@ -3990,19 +4211,31 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
     if (role !== 'TSM' && role !== 'ASM') return null;
 
     const name = (user?.name || '').trim().toLowerCase();
+    if (!name) return null;
     
-    // Get all OBs under this TSM/ASM
-    const myOBs = hierarchy.filter(h => (h.asm_tsm_name || '').trim().toLowerCase() === name);
-    const obIds = Array.from(new Set(myOBs.map(h => h.ob_id)));
+    const currentMonth = new Date().toISOString().slice(0, 7);
+    const monthlyStats = stats.filter(s => s.date.startsWith(currentMonth));
+
+    // Get all OBs under this TSM/ASM, filtering out those with empty OB names
+    const myOBs = hierarchy.filter(h => 
+      (h.asm_tsm_name || '').trim().toLowerCase() === name &&
+      (h.ob_name || '').trim() !== ''
+    );
+    
+    const obIds = Array.from(new Set(myOBs.map(h => h.ob_id))).filter(id => id);
 
     return obIds.map(obId => {
       const obHierarchy = myOBs.filter(h => h.ob_id === obId);
       const obName = obHierarchy[0]?.ob_name || 'Unknown OB';
+      const masterTotalShops = Number(obHierarchy[0]?.total_shops) || 50;
       
-      const obStats = stats.filter(s => s.ob_contact === obId);
+      const obStats = monthlyStats.filter(s => s.ob_contact === obId);
+      const totalDays = timeGone?.total || 0;
+      const passedDays = timeGone?.passed || 1;
+      const remainingDays = Math.max(0, totalDays - passedDays);
 
       const groupKpis = BRAND_GROUP_NAMES.map(groupName => {
-        const brandsInGroup = BRAND_GROUPS[groupName];
+        const brandsInGroup = BRAND_GROUPS[groupName] || [];
         
         const target = obHierarchy.reduce((sum, h) => {
           return sum + brandsInGroup.reduce((s, brand) => {
@@ -4011,16 +4244,29 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
           }, 0);
         }, 0);
 
+        let groupVisited = 0;
+        let groupProductive = 0;
+
         const achievement = obStats.reduce((sum, s) => {
+          groupVisited += (Number(s.visited_shops) || 0);
+          const prodData = s.category_productive_data || {};
+          brandsInGroup.forEach(brand => {
+            groupProductive += (Number(prodData[brand]) || 0);
+          });
+
           return sum + brandsInGroup.reduce((s2, brand) => s2 + (s.brandSales?.[brand] || 0), 0);
         }, 0);
 
         const percentage = target > 0 ? (achievement / target) * 100 : 0;
         const remainingTarget = Math.max(0, target - achievement);
-        const remainingDays = timeGone?.remaining || 0;
-        const passedDays = timeGone?.passed || 1;
+        
         const requiredPerDay = remainingDays > 0 ? remainingTarget / remainingDays : 0;
         const dailyAvg = achievement / passedDays;
+        const productivity = groupVisited > 0 ? (groupProductive / groupVisited) * 100 : 0;
+
+        // Run-Rate Forecasting
+        const projectedAchievement = dailyAvg * totalDays;
+        const projectedPercentage = target > 0 ? (projectedAchievement / target) * 100 : 0;
 
         return {
           name: groupName,
@@ -4030,14 +4276,36 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
           remainingTarget,
           remainingDays,
           requiredPerDay,
-          dailyAvg
+          dailyAvg,
+          productivity,
+          visited: groupVisited,
+          productive: groupProductive,
+          projectedAchievement,
+          projectedPercentage
         };
       });
+
+      // Compliance Tracking
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
+      const todayStat = obStats.find(s => s.date === today);
+      const visitedToday = Number(todayStat?.visited_shops) || 0;
+      const skippedToday = Math.max(0, masterTotalShops - visitedToday);
+      const complianceToday = masterTotalShops > 0 ? (visitedToday / masterTotalShops) * 100 : 0;
+
+      // At-Risk Flagging
+      const isAtRisk = groupKpis.some(g => g.target > 0 && g.projectedPercentage < 85) || 
+                       (todayStat && complianceToday < 70);
 
       return {
         obId,
         obName,
-        groupKpis
+        groupKpis,
+        masterTotalShops,
+        visitedToday,
+        skippedToday,
+        complianceToday,
+        isAtRisk,
+        hasSubmittedToday: !!todayStat
       };
     });
   }, [user, stats, hierarchy, isLoading, timeGone]);
@@ -4081,6 +4349,138 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
             </div>
           </div>
 
+          {/* Proactive Alerts Section */}
+          {obWiseKpis && obWiseKpis.some(ob => ob.isAtRisk) && (
+            <div className="mt-8 p-6 bg-red-50 rounded-3xl border border-red-100 shadow-sm animate-in fade-in slide-in-from-top-4 duration-500">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shadow-sm">
+                  <AlertTriangle className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-red-800 uppercase tracking-widest">Proactive Compliance Alerts</h3>
+                  <p className="text-[9px] font-bold text-red-400 uppercase tracking-widest mt-0.5">Critical Attention Required</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {obWiseKpis.filter(ob => ob.isAtRisk).map(ob => (
+                  <div key={ob.obId} className="flex items-center justify-between p-3 bg-white rounded-2xl border border-red-50 shadow-sm group hover:border-red-200 transition-all">
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 bg-red-50 rounded-xl flex items-center justify-center text-red-600 text-[10px] font-black">
+                        {ob.obId}
+                      </div>
+                      <span className="text-[11px] font-black text-slate-700">{ob.obName}</span>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[8px] font-black text-red-500 uppercase tracking-tighter">
+                        {ob.complianceToday < 70 ? 'Low Compliance' : 'Low Projection'}
+                      </p>
+                      <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">
+                        {ob.complianceToday < 70 ? `${ob.complianceToday.toFixed(0)}% Visited` : 'Below 85% Proj.'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Stock Health Section for TSM/ASM */}
+          {obStockHealth && obStockHealth.some(d => d.status === 'Low Stock') && (
+            <div className="mt-8 p-6 bg-amber-50 rounded-3xl border border-amber-100 shadow-sm">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600 shadow-sm">
+                  <PackageSearch className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-amber-800 uppercase tracking-widest">Stock Health Alerts</h3>
+                  <p className="text-[9px] font-bold text-amber-400 uppercase tracking-widest mt-0.5">Inventory Gaps Detected</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {obStockHealth.filter(d => d.status === 'Low Stock').map(d => (
+                  <div key={d.name} className="p-3 bg-white rounded-2xl border border-amber-50 shadow-sm group relative">
+                    <div className="flex items-center justify-between mb-2">
+                      <span className="text-[10px] font-black text-slate-700 uppercase truncate max-w-[120px]">{d.name}</span>
+                      <button 
+                        onClick={() => {
+                          const text = `*STOCK ALERT*\n\nDistributor: ${d.name}\nStatus: LOW STOCK\n\n*Items:* \n${d.lowStockItems.join('\n')}\n\nPlease check and replenish.`;
+                          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+                        }}
+                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-emerald-50 text-emerald-600 rounded-lg"
+                      >
+                        <MessageCircle className="w-3 h-3" />
+                      </button>
+                    </div>
+                    <div className="flex flex-wrap gap-1">
+                      {d.lowStockItems.slice(0, 3).map(item => (
+                        <span key={item} className="text-[7px] font-bold bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded uppercase">{item}</span>
+                      ))}
+                      {d.lowStockItems.length > 3 && <span className="text-[7px] font-bold text-slate-300">+{d.lowStockItems.length - 3} more</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Live Field Pulse Section */}
+          {livePulseData && (
+            <div className="mt-8 space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
+                  <Activity className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Live Field Pulse</h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Real-time Field Activity</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Shops Visited</p>
+                  <p className="text-2xl font-black text-seablue tracking-tighter">{livePulseData.totalVisited}</p>
+                  <p className="text-[7px] font-bold text-slate-400 uppercase mt-1">Today's Total</p>
+                </div>
+                <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Productive Shops</p>
+                  <p className="text-2xl font-black text-emerald-600 tracking-tighter">{livePulseData.totalProductive}</p>
+                  <p className="text-[7px] font-bold text-emerald-400 uppercase mt-1">
+                    {livePulseData.totalVisited > 0 ? ((livePulseData.totalProductive / livePulseData.totalVisited) * 100).toFixed(0) : 0}% Productivity
+                  </p>
+                </div>
+              </div>
+
+              {livePulseData.recentSubmissions.length > 0 && (
+                <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100">
+                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-3">Recent Submissions</p>
+                  <div className="space-y-3">
+                    {livePulseData.recentSubmissions.map((s, idx) => (
+                      <div key={idx} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 bg-slate-50 rounded-xl flex items-center justify-center text-[10px] font-black text-slate-400">
+                            {s.ob_contact?.slice(-2)}
+                          </div>
+                          <div>
+                            <p className="text-[10px] font-black text-slate-700">{s.ob_name || 'Unknown OB'}</p>
+                            <p className="text-[7px] font-bold text-slate-400 uppercase">{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <div className="flex items-center gap-1 justify-end">
+                            <div className={`w-1.5 h-1.5 rounded-full ${s.latitude ? 'bg-emerald-500' : 'bg-red-400'}`} />
+                            <p className="text-[8px] font-black text-slate-600 uppercase">{s.latitude ? 'GPS OK' : 'No GPS'}</p>
+                          </div>
+                          <p className="text-[7px] font-bold text-slate-400 uppercase">{s.visited_shops} Shops</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
           {/* KPI Section */}
           <div className="mt-10 space-y-8">
             <div className="flex items-center justify-between">
@@ -4115,18 +4515,26 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
                         <p className="text-base font-black text-amber-600">{Math.round(group.remainingTarget).toLocaleString()}</p>
                       </div>
                       
-                      <div className="col-span-2 grid grid-cols-3 gap-2 pt-2 border-t border-slate-100">
+                      <div className="col-span-2 grid grid-cols-5 gap-2 pt-2 border-t border-slate-100">
                         <div className="text-center">
                           <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Rem. Days</p>
                           <p className="text-[10px] font-black text-slate-700">{group.remainingDays}</p>
                         </div>
                         <div className="text-center">
                           <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Req/Day</p>
-                          <p className="text-[10px] font-black text-slate-700">{Math.round(group.requiredPerDay)}</p>
+                          <p className={`text-[10px] font-black ${group.requiredPerDay > group.dailyAvg ? 'text-red-600' : 'text-slate-700'}`}>{Math.round(group.requiredPerDay)}</p>
                         </div>
                         <div className="text-center">
                           <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Daily Avg</p>
                           <p className="text-[10px] font-black text-slate-700">{Math.round(group.dailyAvg)}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[6px] font-black text-seablue uppercase tracking-tighter">Proj %</p>
+                          <p className={`text-[10px] font-black ${group.projectedPercentage < 85 ? 'text-red-500' : 'text-seablue'}`}>{group.projectedPercentage.toFixed(0)}%</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[6px] font-black text-emerald-500 uppercase tracking-tighter">Prod %</p>
+                          <p className="text-[10px] font-black text-emerald-600">{group.productivity.toFixed(0)}%</p>
                         </div>
                       </div>
                     </div>
@@ -4140,6 +4548,47 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
             )}
           </div>
 
+          {/* Brand-Mix Analysis */}
+          <div className="mt-12 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-purple-100 rounded-xl flex items-center justify-center text-purple-600">
+                <Activity className="w-4 h-4" />
+              </div>
+              <div>
+                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand-Mix Analysis</h3>
+                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Portfolio Balance & Imbalance</p>
+              </div>
+            </div>
+            
+            <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+              <div className="h-48 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={kpiGroups} layout="vertical" margin={{ left: -20, right: 20 }}>
+                    <XAxis type="number" hide />
+                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 8, fontWeight: 900, fill: '#64748b' }} width={80} />
+                    <Tooltip 
+                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
+                      formatter={(value: any) => [`${Number(value).toFixed(1)}%`, 'Achievement']}
+                    />
+                    <Bar dataKey="percentage" radius={[0, 4, 4, 0]}>
+                      {kpiGroups.map((entry, index) => (
+                        <Cell key={`cell-${index}`} fill={entry.percentage < 50 ? '#ef4444' : entry.percentage < 80 ? '#f59e0b' : '#0ea5e9'} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {kpiGroups.map(g => (
+                  <div key={g.name} className="text-center p-2 rounded-xl bg-slate-50 border border-slate-100">
+                    <p className="text-[6px] font-black text-slate-400 uppercase truncate">{g.name}</p>
+                    <p className={`text-[10px] font-black ${g.percentage < 80 ? 'text-red-500' : 'text-seablue'}`}>{g.percentage.toFixed(0)}%</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
           {/* OB Wise Breakdown for TSM/ASM */}
           {obWiseKpis && obWiseKpis.length > 0 && (
             <div className="mt-12 space-y-8">
@@ -4151,60 +4600,114 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
                   <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Team Performance (OB Wise)</h3>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Individual OB Breakdown</p>
                 </div>
-              </div>
-
-              <div className="space-y-6">
-                {obWiseKpis.map((ob) => (
-                  <div key={ob.obId} className="bg-slate-50 rounded-3xl p-6 border border-slate-100">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="flex items-center gap-3">
-                        <div className="w-10 h-10 bg-white rounded-2xl flex items-center justify-center shadow-sm border border-slate-100">
-                          <span className="text-xs font-black text-seablue">{ob.obId}</span>
+                <div className="space-y-6">
+                  {obWiseKpis.map((ob) => (
+                    <div key={ob.obId} className={`bg-slate-50 rounded-3xl p-6 border transition-all ${ob.isAtRisk ? 'border-red-200 bg-red-50/30' : 'border-slate-100'}`}>
+                      <div className="flex items-center justify-between mb-4">
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm border ${ob.isAtRisk ? 'bg-red-100 border-red-200 text-red-600' : 'bg-white border-slate-100 text-seablue'}`}>
+                            <span className="text-xs font-black">{ob.obId}</span>
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h4 className="text-sm font-black text-slate-800">{ob.obName}</h4>
+                              {ob.isAtRisk && (
+                                <span className="flex items-center gap-1 px-1.5 py-0.5 bg-red-100 text-red-600 rounded-full text-[7px] font-black uppercase animate-pulse">
+                                  <AlertTriangle className="w-2 h-2" />
+                                  At Risk
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Order Booker</p>
+                          </div>
                         </div>
-                        <div>
-                          <h4 className="text-sm font-black text-slate-800">{ob.obName}</h4>
-                          <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Order Booker</p>
+                        
+                        <div className="flex items-center gap-2">
+                          <button 
+                            onClick={() => {
+                              const text = `*Performance Summary: ${ob.obName}*\n\n` + 
+                                ob.groupKpis.map(g => `*${g.name}*\n- Target: ${Math.round(g.target)}\n- Ach: ${Math.round(g.achievement)} (${g.percentage.toFixed(1)}%)\n- Projected: ${Math.round(g.projectedAchievement)} (${g.projectedPercentage.toFixed(1)}%)\n- Prod: ${g.productivity.toFixed(1)}%`).join('\n\n') +
+                                `\n\n*Compliance Today*\n- Visited: ${ob.visitedToday}/${ob.masterTotalShops}\n- Skipped: ${ob.skippedToday}`;
+                              window.open(`https://wa.me/${ob.obId}?text=${encodeURIComponent(text)}`, '_blank');
+                            }}
+                            className="p-2 bg-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-200 transition-colors"
+                            title="Share via WhatsApp"
+                          >
+                            <Share2 className="w-4 h-4" />
+                          </button>
                         </div>
                       </div>
-                    </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                      {ob.groupKpis.map((group) => (
-                        <div key={group.name} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-2 border-b border-slate-50 pb-1">{group.name}</p>
-                          <div className="grid grid-cols-2 gap-2">
-                            <div>
-                              <p className="text-[6px] font-black text-slate-400 uppercase">Target</p>
-                              <p className="text-[10px] font-black text-slate-800">{Math.round(group.target)}</p>
-                            </div>
-                            <div>
-                              <p className="text-[6px] font-black text-emerald-400 uppercase">Ach</p>
-                              <p className="text-[10px] font-black text-emerald-600">{Math.round(group.achievement)}</p>
-                            </div>
-                            <div>
-                              <p className="text-[6px] font-black text-seablue uppercase">Ach %</p>
-                              <p className="text-[10px] font-black text-seablue">{group.percentage.toFixed(1)}%</p>
-                            </div>
-                            <div>
-                              <p className="text-[6px] font-black text-amber-400 uppercase">Rem</p>
-                              <p className="text-[10px] font-black text-amber-600">{Math.round(group.remainingTarget)}</p>
-                            </div>
-                          </div>
-                          <div className="mt-2 pt-2 border-t border-slate-50 grid grid-cols-2 gap-2">
-                            <div>
-                              <p className="text-[5px] font-black text-slate-400 uppercase">Req/Day</p>
-                              <p className="text-[8px] font-black text-slate-600">{Math.round(group.requiredPerDay)}</p>
-                            </div>
-                            <div>
-                              <p className="text-[5px] font-black text-slate-400 uppercase">Daily Avg</p>
-                              <p className="text-[8px] font-black text-slate-600">{Math.round(group.dailyAvg)}</p>
-                            </div>
-                          </div>
+                      {/* Compliance Bar */}
+                      <div className="mb-6 p-3 bg-white rounded-2xl border border-slate-100 shadow-sm">
+                        <div className="flex items-center justify-between mb-2">
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Route Compliance (Today)</p>
+                          <p className="text-[10px] font-black text-slate-700">{ob.visitedToday} / {ob.masterTotalShops} Shops</p>
                         </div>
-                      ))}
+                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full transition-all duration-500 ${ob.complianceToday < 70 ? 'bg-red-500' : 'bg-seablue'}`}
+                            style={{ width: `${Math.min(100, ob.complianceToday)}%` }}
+                          />
+                        </div>
+                        {ob.skippedToday > 0 && (
+                          <p className="text-[7px] font-bold text-red-500 mt-1.5 uppercase tracking-tighter flex items-center gap-1">
+                            <AlertCircle className="w-2 h-2" />
+                            {ob.skippedToday} Shops Skipped Today
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {ob.groupKpis.map((group) => (
+                          <div key={group.name} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
+                            <div className="flex items-center justify-between mb-2 border-b border-slate-50 pb-1">
+                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{group.name}</p>
+                              <div className="flex items-center gap-1">
+                                <Target className="w-2 h-2 text-seablue" />
+                                <span className={`text-[8px] font-black ${group.projectedPercentage < 85 ? 'text-red-500' : 'text-seablue'}`}>
+                                  {group.projectedPercentage.toFixed(0)}% Proj.
+                                </span>
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-2">
+                              <div>
+                                <p className="text-[6px] font-black text-slate-400 uppercase">Target</p>
+                                <p className="text-[10px] font-black text-slate-800">{Math.round(group.target)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[6px] font-black text-emerald-400 uppercase">Ach</p>
+                                <p className="text-[10px] font-black text-emerald-600">{Math.round(group.achievement)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[6px] font-black text-seablue uppercase">Ach %</p>
+                                <p className="text-[10px] font-black text-seablue">{group.percentage.toFixed(1)}%</p>
+                              </div>
+                              <div>
+                                <p className="text-[6px] font-black text-amber-400 uppercase">Rem</p>
+                                <p className="text-[10px] font-black text-amber-600">{Math.round(group.remainingTarget)}</p>
+                              </div>
+                            </div>
+                            <div className="mt-2 pt-2 border-t border-slate-50 grid grid-cols-3 gap-1">
+                              <div>
+                                <p className="text-[5px] font-black text-slate-400 uppercase">Req/Day</p>
+                                <p className={`text-[8px] font-black ${group.requiredPerDay > group.dailyAvg ? 'text-red-600' : 'text-slate-600'}`}>{Math.round(group.requiredPerDay)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[5px] font-black text-slate-400 uppercase">Daily Avg</p>
+                                <p className="text-[8px] font-black text-slate-600">{Math.round(group.dailyAvg)}</p>
+                              </div>
+                              <div>
+                                <p className="text-[5px] font-black text-seablue uppercase">Prod %</p>
+                                <p className="text-[8px] font-black text-seablue">{group.productivity.toFixed(0)}%</p>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
             </div>
           )}
@@ -4482,8 +4985,8 @@ export default function App() {
   // Move Stocks hooks to top level
   const allDistributors = useMemo(() => {
     const combined = [
-      ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm, region: d.region })),
-      ...obAssignments.map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm, region: ob.region }))
+      ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm, region: d.region, ob_id: d.ob_id })),
+      ...obAssignments.filter(ob => ob.name).map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm, region: ob.region, ob_id: ob.contact }))
     ];
     return combined.filter((v, i, a) => a.findIndex(t => t.distributor === v.distributor) === i);
   }, [distributors, obAssignments]);
@@ -4981,13 +5484,14 @@ export default function App() {
     const month = now.getMonth();
     const today = now.getDate();
     
-    const totalWorkingDays = getWorkingDays(year, month, appConfig.holidays || '');
-    const workingDaysPassed = getWorkingDays(year, month, appConfig.holidays || '', today);
+    const totalWorkingDays = getWorkingDays(year, month, appConfig?.holidays || '');
+    const workingDaysPassed = getWorkingDays(year, month, appConfig?.holidays || '', today);
     
     return {
       percentage: totalWorkingDays > 0 ? (workingDaysPassed / totalWorkingDays) * 100 : 0,
       passed: workingDaysPassed,
-      total: totalWorkingDays
+      total: totalWorkingDays,
+      remaining: Math.max(0, totalWorkingDays - workingDaysPassed)
     };
   };
 
@@ -5986,6 +6490,7 @@ export default function App() {
         onEnter={() => setShowWelcome(false)}
         isLoading={isLoadingNational}
         timeGone={timeGone}
+        stockHistory={stockHistory}
       />
     );
   }
@@ -6037,6 +6542,7 @@ export default function App() {
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
                 backupLogs={backupLogs}
+                stockHistory={stockHistory}
               />
             )}
           </div>
@@ -7634,6 +8140,10 @@ export default function App() {
                       <label className="text-[8px] font-bold text-slate-400 uppercase">Region</label>
                       <input type="text" defaultValue={dist.region} onBlur={async (e) => { await apiFetch('/api/admin/distributors', { method: 'POST', body: JSON.stringify({ ...dist, region: e.target.value }) }); }} className="input-clean w-full" />
                     </div>
+                    <div className="space-y-1">
+                      <label className="text-[8px] font-bold text-slate-400 uppercase">OB ID</label>
+                      <input type="text" defaultValue={dist.ob_id || ''} onBlur={async (e) => { await apiFetch('/api/admin/distributors', { method: 'POST', body: JSON.stringify({ ...dist, ob_id: e.target.value }) }); }} className="input-clean w-full" placeholder="Optional" />
+                    </div>
                   </div>
                   <button onClick={async () => { if (confirm("Delete?")) { await apiFetch(`/api/admin/distributors/${dist.id}`, { method: 'DELETE' }); fetchAdminData(); } }} className="text-red-500 p-2 hover:bg-red-50 rounded-lg transition-colors"><Trash className="w-4 h-4" /></button>
                 </div>
@@ -7676,7 +8186,7 @@ export default function App() {
             </div>
             <div className="divide-y divide-slate-100 max-h-[600px] overflow-y-auto">
               {obAssignments
-                .filter(ob => !selectedAdminTSM || ob.tsm === selectedAdminTSM)
+                .filter(ob => (!selectedAdminTSM || ob.tsm === selectedAdminTSM) && ob.name)
                 .map(ob => (
                 <div key={ob.id} className="p-4 space-y-4">
                   <div className="grid grid-cols-2 md:grid-cols-7 gap-3">
@@ -7958,12 +8468,12 @@ export default function App() {
             <div className="flex flex-wrap items-center gap-2">
               <button 
                 onClick={() => {
-                  const headers = ['Director', 'NSM', 'RSM', 'Region', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name)];
+                  const headers = ['Director', 'NSM', 'RSM', 'Region', 'TSM', 'Town', 'Distributor', 'OB ID', ...SKUS.map(s => s.name)];
                   const rows = filteredDistributors.map(d => {
                     const stocks = stockOrders[d.distributor] || {};
                     const obInfo = obAssignments.find(ob => ob.distributor === d.distributor) || {} as any;
                     return [
-                      obInfo.director || '', obInfo.nsm || '', obInfo.rsm || '', d.region || '', d.tsm, d.town, d.distributor,
+                      obInfo.director || '', obInfo.nsm || '', obInfo.rsm || '', d.region || '', d.tsm, d.town, d.distributor, d.ob_id || '',
                       ...SKUS.map(sku => stocks[sku.id]?.ctn || 0)
                     ];
                   });
@@ -8035,6 +8545,7 @@ export default function App() {
                   <tr className="bg-slate-50/90 backdrop-blur-sm text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
                     <th className="px-6 py-4 sticky left-0 bg-slate-50/90 z-10 border-r border-slate-100">Distributor</th>
                     <th className="px-6 py-4 border-r border-slate-100/50">Town</th>
+                    <th className="px-6 py-4 border-r border-slate-100/50">OB ID</th>
                     {SKUS.map(sku => (
                       <th key={sku.id} className="px-4 py-4 text-center min-w-[100px] border-r border-slate-100/50">{sku.name}</th>
                     ))}
@@ -8048,6 +8559,7 @@ export default function App() {
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{dist.tsm}</p>
                       </td>
                       <td className="px-6 py-4 text-[10px] font-bold text-slate-500 border-r border-slate-100/30">{dist.town}</td>
+                      <td className="px-6 py-4 text-[10px] font-black text-seablue border-r border-slate-100/30">{dist.ob_id || '-'}</td>
                       {SKUS.map(sku => (
                         <td key={sku.id} className="px-4 py-3 border-r border-slate-100/30">
                           <input 

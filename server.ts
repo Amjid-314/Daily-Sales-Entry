@@ -2542,7 +2542,11 @@ async function startServer() {
 
       
       // 1. Get hierarchy to determine visibility
-      const hierarchy = db.prepare("SELECT * FROM national_hierarchy").all() as any[];
+      const hierarchy = db.prepare(`
+        SELECT h.*, a.total_shops, a.routes 
+        FROM national_hierarchy h
+        LEFT JOIN ob_assignments a ON h.ob_id = a.contact
+      `).all() as any[];
       const currentMonth = new Date().toISOString().slice(0, 7);
       const brandTargets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(currentMonth) as any[];
       
