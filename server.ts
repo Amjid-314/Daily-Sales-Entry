@@ -550,13 +550,28 @@ async function startServer() {
     ];
   }
 
-  function getSalesDataRow(order: any) {
+  function getSalesDataRow(order: any, obMap?: Record<string, any>) {
     const isAbsent = order.visit_type === 'Absent';
     const orderData = !isAbsent && typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
     const catProdData = !isAbsent && typeof order.category_productive_data === 'string' ? JSON.parse(order.category_productive_data) : (order.category_productive_data || {});
     const visitTypeMap: Record<string, string> = { 'A': 'Alone', 'V': 'Van Sales', 'RR': 'Route Riding', 'Absent': 'Absent' };
     const visitTypeLabel = visitTypeMap[order.visit_type] || order.visit_type || 'Alone';
     
+    let currentHierarchy = obMap ? obMap[order.ob_contact] : null;
+    if (!currentHierarchy && !obMap) {
+      currentHierarchy = db.prepare("SELECT * FROM ob_assignments WHERE contact = ?").get(order.ob_contact) as any;
+    }
+
+    const director = currentHierarchy?.director || order.director || '';
+    const nsm = currentHierarchy?.nsm || order.nsm || '';
+    const rsm = currentHierarchy?.rsm || order.rsm || '';
+    const sc = currentHierarchy?.sc || order.sc || '';
+    const tsm = currentHierarchy?.tsm || order.tsm || '';
+    const town = currentHierarchy?.town || order.town || '';
+    const distributor = currentHierarchy?.distributor || order.distributor || '';
+    const zone = currentHierarchy?.zone || order.zone || '';
+    const region = currentHierarchy?.region || order.region || '';
+
     let totalTonnageKg = 0;
     const skuColumns = SKUS.map(sku => {
       if (isAbsent) return 0;
@@ -572,8 +587,8 @@ async function startServer() {
     });
 
     return [
-      order.date, order.director || '', order.nsm || '', order.rsm || '', order.sc || '', order.tsm, order.town, order.distributor, order.order_booker, order.ob_contact, order.route,
-      order.zone || '', order.region || '',
+      order.date, director, nsm, rsm, sc, tsm, town, distributor, order.order_booker, order.ob_contact, order.route,
+      zone, region,
       isAbsent ? 0 : order.total_shops, 
       isAbsent ? 0 : order.visited_shops, 
       isAbsent ? 0 : order.productive_shops, 
@@ -1371,10 +1386,15 @@ async function startServer() {
       await ensureSheetsExist(sheets, spreadsheetId);
 
       const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all() as any[];
+      const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+      const obMap: Record<string, any> = {};
+      obs.forEach(ob => {
+        obMap[ob.contact] = ob;
+      });
 
       // 1. Sales_Data (SKU Wise)
       const salesHeaders = getSalesDataHeaders();
-      const salesRows = orders.map((order: any) => getSalesDataRow(order));
+      const salesRows = orders.map((order: any) => getSalesDataRow(order, obMap));
 
       await sheets.spreadsheets.values.clear({
         spreadsheetId,
@@ -1490,7 +1510,8 @@ async function startServer() {
       
       await drive.files.create({
         requestBody: { name: backupFileName, parents: [parentFolderId] },
-        media: { mimeType: 'application/json', body: jsonContent }
+        media: { mimeType: 'application/json', body: jsonContent },
+        supportsAllDrives: true
       });
       
       logAction("SYSTEM", "Backup System", "Admin", "BACKUP_SUCCESS", { file: backupFileName });
@@ -1510,11 +1531,14 @@ async function startServer() {
 
   // Auth Routes
   app.post("/api/auth/login", async (req, res) => {
-    const { username, password } = req.body;
+    let { username, password } = req.body;
     try {
       if (!username) {
         return res.status(400).json({ error: "Username or email is required" });
       }
+      
+      username = username.trim();
+      if (password) password = password.trim();
       
       let user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)").get(username, username) as any;
       
@@ -1534,7 +1558,8 @@ async function startServer() {
         // If password is provided, check it. If not, allow login if it's an email-only request
         if (password) {
           if (user.password === 'nopassword' || user.password === '123456' || user.password === 'password123' || user.password === '123') {
-             if (password !== user.password && password !== '123456' && password !== 'password123') {
+             const lowerPass = password.toLowerCase();
+             if (password !== user.password && password !== '123456' && lowerPass !== 'password123' && password !== '123') {
                return res.status(401).json({ error: "Invalid credentials" });
              }
           } else {
@@ -3407,11 +3432,6 @@ async function startServer() {
     return res.redirect(307, "/api/admin/master-sync");
   });
 
-  // API 404 Guard
-  app.all("/api/*", (req, res) => {
-    res.status(404).json({ error: `API route ${req.method} ${req.url} not found` });
-  });
-
   app.get("/api/stocks/export", (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM stock_reports ORDER BY date DESC, submitted_at DESC").all() as any[];
@@ -3489,6 +3509,11 @@ async function startServer() {
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
+  });
+
+  // API 404 Guard
+  app.all("/api/*", (req, res) => {
+    res.status(404).json({ error: `API route ${req.method} ${req.url} not found` });
   });
 
   // Global Error Handler

@@ -4168,7 +4168,12 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
       const latest = distStocks[0];
       if (!latest) return { name: distName, status: 'No Data', items: {} };
 
-      const items = typeof latest.stocks === 'string' ? JSON.parse(latest.stocks) : (latest.stocks || {});
+      let items = {};
+      try {
+        items = typeof latest.stocks === 'string' ? JSON.parse(latest.stocks) : (latest.stocks || {});
+      } catch (e) {
+        console.error("Error parsing stocks for", distName, e);
+      }
       
       // Simple health check: if any key SKU is 0, it's "Low"
       const lowStockItems = Object.entries(items)
@@ -4286,26 +4291,34 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
       });
 
       // Compliance Tracking
-      const today = new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
-      const todayStat = obStats.find(s => s.date === today);
-      const visitedToday = Number(todayStat?.visited_shops) || 0;
-      const skippedToday = Math.max(0, masterTotalShops - visitedToday);
-      const complianceToday = masterTotalShops > 0 ? (visitedToday / masterTotalShops) * 100 : 0;
+      // Find the latest entry date for this OB
+      const sortedObStats = [...obStats].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+      const latestStat = sortedObStats[0];
+      const latestDate = latestStat ? latestStat.date : null;
+
+      const visitedLatest = Number(latestStat?.visited_shops) || 0;
+      const productiveLatest = Number(latestStat?.productive_shops) || 0;
+      const skippedLatest = Math.max(0, masterTotalShops - visitedLatest);
+      const complianceLatest = masterTotalShops > 0 ? (visitedLatest / masterTotalShops) * 100 : 0;
+      const productivityLatest = visitedLatest > 0 ? (productiveLatest / visitedLatest) * 100 : 0;
 
       // At-Risk Flagging
       const isAtRisk = groupKpis.some(g => g.target > 0 && g.projectedPercentage < 85) || 
-                       (todayStat && complianceToday < 70);
+                       (latestStat && complianceLatest < 70);
 
       return {
         obId,
         obName,
         groupKpis,
         masterTotalShops,
-        visitedToday,
-        skippedToday,
-        complianceToday,
+        visitedToday: visitedLatest,
+        productiveToday: productiveLatest,
+        productivityToday: productivityLatest,
+        skippedToday: skippedLatest,
+        complianceToday: complianceLatest,
         isAtRisk,
-        hasSubmittedToday: !!todayStat
+        hasSubmittedToday: !!latestStat,
+        latestDate
       };
     });
   }, [user, stats, hierarchy, isLoading, timeGone]);
@@ -4641,19 +4654,29 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
                       {/* Compliance Bar */}
                       <div className="mb-6 p-3 bg-white rounded-2xl border border-slate-100 shadow-sm">
                         <div className="flex items-center justify-between mb-2">
-                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Route Compliance (Today)</p>
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Route Compliance ({ob.latestDate ? new Date(ob.latestDate).toLocaleDateString() : 'No Data'})</p>
                           <p className="text-[10px] font-black text-slate-700">{ob.visitedToday} / {ob.masterTotalShops} Shops</p>
                         </div>
-                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mb-2">
                           <div 
                             className={`h-full transition-all duration-500 ${ob.complianceToday < 70 ? 'bg-red-500' : 'bg-seablue'}`}
                             style={{ width: `${Math.min(100, ob.complianceToday)}%` }}
                           />
                         </div>
+                        <div className="flex items-center justify-between">
+                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Productivity</p>
+                          <p className="text-[10px] font-black text-emerald-600">{ob.productiveToday} / {ob.visitedToday} ({ob.productivityToday.toFixed(0)}%)</p>
+                        </div>
+                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-emerald-500 transition-all duration-500"
+                            style={{ width: `${Math.min(100, ob.productivityToday)}%` }}
+                          />
+                        </div>
                         {ob.skippedToday > 0 && (
                           <p className="text-[7px] font-bold text-red-500 mt-1.5 uppercase tracking-tighter flex items-center gap-1">
                             <AlertCircle className="w-2 h-2" />
-                            {ob.skippedToday} Shops Skipped Today
+                            {ob.skippedToday} Shops Skipped
                           </p>
                         )}
                       </div>
