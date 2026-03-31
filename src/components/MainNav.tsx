@@ -11,6 +11,8 @@ import {
   EyeOff 
 } from 'lucide-react';
 
+const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
+
 export const APP_TABS = [
   { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
@@ -26,11 +28,40 @@ interface MainNavProps {
   view: string;
   setView: (v: any) => void;
   role: string | null;
+  userEmail?: string | null;
   onLogout: () => void;
 }
 
-export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, onLogout }) => {
-  const visibleTabs = APP_TABS.filter(tab => !role || tab.roles.includes(role));
+export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail, onLogout }) => {
+  const visibleTabs = APP_TABS.filter(tab => {
+    const email = (userEmail || '').toLowerCase();
+    const isAdmin = ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email);
+    
+    // Admin only tabs
+    if (['admin', 'settings'].includes(tab.id)) {
+      return isAdmin;
+    }
+
+    // Role-based restrictions
+    if (!role) return false;
+    const normalizedRole = role.toUpperCase();
+
+    // Users (Non-Admin) restrictions: Allowed: Data entry, Reports, Dashboard, Help
+    if (!isAdmin) {
+      // Hide Admin panel, Settings, Source (Source is not a tab but we ensure it's not here)
+      if (['admin', 'settings'].includes(tab.id)) return false;
+      
+      // Allowed for all users: Entry, Reports, Dashboard, Help, History
+      if (['entry', 'reports', 'dashboard', 'help', 'history', 'stocks'].includes(tab.id)) {
+        // Still check if role is allowed for this specific tab
+        return tab.roles.map(r => r.toUpperCase()).includes(normalizedRole);
+      }
+      return false;
+    }
+
+    // Admins see everything they are allowed to see by role
+    return tab.roles.map(r => r.toUpperCase()).includes(normalizedRole) || isAdmin;
+  });
 
   return (
     <nav className="bg-white border-b border-slate-100 px-4 h-14 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar gap-2">

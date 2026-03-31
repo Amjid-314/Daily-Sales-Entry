@@ -157,13 +157,17 @@ function initDB() {
       console.error("Error cleaning duplicates:", e);
     }
   } catch (err: any) {
-    if (err.code === 'SQLITE_CORRUPT') {
-      console.error("CRITICAL: Database is malformed. Attempting recovery by renaming corrupted file.");
+    if (err.code === 'SQLITE_CORRUPT' || (err.message && err.message.includes('unsupported file format'))) {
+      console.error("CRITICAL: Database is malformed or unsupported format. Attempting recovery by renaming corrupted file.");
       const corruptPath = `${DB_PATH}.corrupt.${Date.now()}`;
       try {
         if (fs.existsSync(DB_PATH)) {
           fs.renameSync(DB_PATH, corruptPath);
           console.log(`Corrupted database moved to ${corruptPath}`);
+          // Close the existing connection if possible before retrying
+          try { db.close(); } catch(e) {}
+          // Re-initialize the database connection
+          db = new Database(DB_PATH);
           initDB(); // Retry initialization
         } else {
           throw err;
@@ -2314,9 +2318,18 @@ async function startServer() {
       } = data;
 
       // RBAC check: TSM can only submit for their assigned OBs
-      const { role } = req.user;
-      if ((role === 'TSM' || role === 'ASM') && tsm !== req.user.name) {
-        return res.status(403).json({ error: "You can only submit orders for your assigned OBs." });
+      const { role, name: userName, email: userEmail } = req.user;
+      const normalizedTsmData = (tsm || '').trim().toLowerCase();
+      const normalizedUserName = (userName || '').trim().toLowerCase();
+      const normalizedUserEmail = (userEmail || '').trim().toLowerCase();
+
+      if ((role === 'TSM' || role === 'ASM') && 
+          normalizedTsmData !== normalizedUserName && 
+          normalizedTsmData !== normalizedUserEmail) {
+        console.warn(`[AUTH_DENIED] TSM ${userEmail} (${userName}) attempted to submit for ${tsm}`);
+        return res.status(403).json({ 
+          error: `You can only submit orders for your assigned OBs. (Logged in as ${userName}, attempting to submit for ${tsm})` 
+        });
       }
 
       // Duplicate check: Overwrite if the user submits again for the same OB on the same date
@@ -2681,10 +2694,77 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/clear-history", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+  app.get("/api/admin/backup", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     try {
-      db.prepare("DELETE FROM submitted_orders").run();
-      res.json({ success: true, message: "All sales history has been cleared." });
+      const dbPath = path.join(process.cwd(), 'orders.db');
+      if (fs.existsSync(dbPath)) {
+        res.download(dbPath, `backup_${new Date().toISOString().split('T')[0]}.db`);
+      } else {
+        res.status(404).json({ error: "Database file not found" });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/users/bulk-upload", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    const { users, clearExisting } = req.body;
+    if (!Array.isArray(users)) return res.status(400).json({ error: "Invalid data" });
+
+    const transaction = db.transaction(() => {
+      if (clearExisting) {
+        db.prepare("DELETE FROM users WHERE role != 'Super Admin'").run();
+      }
+
+      const insert = db.prepare(`
+        INSERT INTO users (name, email, password, role, region, town, contact)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(email) DO UPDATE SET
+          name = excluded.name,
+          role = excluded.role,
+          region = excluded.region,
+          town = excluded.town,
+          contact = excluded.contact
+      `);
+
+      for (const u of users) {
+        insert.run(u.name, u.email, u.password || 'User@123', u.role, u.region, u.town, u.contact);
+      }
+    });
+
+    try {
+      transaction();
+      res.json({ success: true });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/stock-reports", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    try {
+      const reports = db.prepare(`
+        SELECT 
+          distributor_name, 
+          sku_name, 
+          SUM(stock_ctn) as total_ctn,
+          MAX(last_updated) as last_updated
+        FROM stock_history
+        GROUP BY distributor_name, sku_name
+      `).all();
+      res.json(reports);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/distributors", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    try {
+      const distributors = db.prepare(`
+        SELECT DISTINCT distributor_name, distributor_code, town_name, territory_region
+        FROM national_hierarchy
+        WHERE distributor_name IS NOT NULL AND distributor_name != ''
+      `).all();
+      res.json(distributors);
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }

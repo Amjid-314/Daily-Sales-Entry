@@ -63,3 +63,17 @@ export const normalizeRole = (role: string): any => {
   if (r === 'OB' || r === 'ORDER BOOKER') return 'OB';
   return role;
 };
+
+export const sortDataByAchievement = (data: any[], direction: 'asc' | 'desc' = 'asc') => {
+  return [...data].sort((a, b) => {
+    const aPerc = Number(a.percentage || 0);
+    const bPerc = Number(b.percentage || 0);
+    const aAch = Number(a.achievement || 0);
+    const bAch = Number(b.achievement || 0);
+
+    if (aPerc !== bPerc) {
+      return direction === 'asc' ? aPerc - bPerc : bPerc - aPerc;
+    }
+    return direction === 'asc' ? aAch - bAch : bAch - aAch;
+  });
+};

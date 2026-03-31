@@ -19,7 +19,7 @@ import {
   Legend
 } from 'recharts';
 import { AIChatBot } from './components/AIChatBot';
-import { MainNav } from './components/MainNav';
+import { generateAppLogo } from './lib/logoGenerator';
 import { DailyStatusView } from './components/DailyStatusView';
 import { Calendar as CalendarComponent } from './components/Calendar';
 import { EntryForm } from './components/EntryForm';
@@ -39,6 +39,7 @@ import {
   Download,
   AlertTriangle,
   RefreshCw,
+  Sparkles,
   LayoutDashboard,
   ClipboardList,
   Settings,
@@ -71,10 +72,16 @@ import {
   Key,
   User,
   HelpCircle,
-  Activity
+  Activity,
+  BarChart3,
+  MapPin,
+  ArrowUpDown,
+  Minimize,
+  Maximize,
+  LogOut
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
-import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry } from './lib/utils';
+import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry, sortDataByAchievement } from './lib/utils';
 
 const STORAGE_KEY = 'ob_order_draft';
 const LOGO_STORAGE_KEY = 'app_logo_base64';
@@ -86,7 +93,86 @@ const WhatsAppIcon = () => (
 );
 
 
-const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
+const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
+
+function MainNav({ view, setView, role, userEmail, onLogout, isFullScreen, toggleFullScreen }: any) {
+  const isAdmin = role === 'Super Admin' || role === 'Admin' || (userEmail && ADMIN_EMAILS.includes(userEmail));
+  
+  return (
+    <nav className="sticky top-0 z-40 bg-white border-b border-slate-200 px-4 py-2 flex items-center justify-between shadow-sm">
+      <div className="flex items-center gap-4 overflow-x-auto scrollbar-none">
+        <button 
+          onClick={() => setView('dashboard')} 
+          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'dashboard' ? 'bg-seablue text-white shadow-md shadow-blue-100' : 'text-slate-400 hover:bg-slate-50 hover:text-seablue'}`}
+        >
+          Dashboard
+        </button>
+        {isAdmin && (
+          <button 
+            onClick={() => setView('national')} 
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'national' ? 'bg-seablue text-white shadow-md shadow-blue-100' : 'text-slate-400 hover:bg-slate-50 hover:text-seablue'}`}
+          >
+            National
+          </button>
+        )}
+        <button 
+          onClick={() => setView('entry')} 
+          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'entry' ? 'bg-seablue text-white shadow-md shadow-blue-100' : 'text-slate-400 hover:bg-slate-50 hover:text-seablue'}`}
+        >
+          Entry
+        </button>
+        <button 
+          onClick={() => setView('history')} 
+          className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'history' ? 'bg-seablue text-white shadow-md shadow-blue-100' : 'text-slate-400 hover:bg-slate-50 hover:text-seablue'}`}
+        >
+          History
+        </button>
+        {isAdmin && (
+          <button 
+            onClick={() => setView('reports')} 
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'reports' ? 'bg-seablue text-white shadow-md shadow-blue-100' : 'text-slate-400 hover:bg-slate-50 hover:text-seablue'}`}
+          >
+            Reports
+          </button>
+        )}
+        {isAdmin && (
+          <button 
+            onClick={() => setView('stocks')} 
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'stocks' ? 'bg-seablue text-white shadow-md shadow-blue-100' : 'text-slate-400 hover:bg-slate-50 hover:text-seablue'}`}
+          >
+            Stocks
+          </button>
+        )}
+        {isAdmin && (
+          <button 
+            onClick={() => setView('admin')} 
+            className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase tracking-widest transition-all ${view === 'admin' ? 'bg-seablue text-white shadow-md shadow-blue-100' : 'text-slate-400 hover:bg-slate-50 hover:text-seablue'}`}
+          >
+            Admin
+          </button>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <button 
+          onClick={toggleFullScreen}
+          className="p-2 text-slate-400 hover:bg-slate-50 rounded-full transition-colors"
+          title={isFullScreen ? "Exit Full Screen" : "Full Screen"}
+        >
+          {isFullScreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+        </button>
+        <button 
+          onClick={onLogout}
+          className="p-2 text-rose-500 hover:bg-rose-50 rounded-full transition-colors"
+          title="Logout"
+        >
+          <LogOut className="w-4 h-4" />
+        </button>
+      </div>
+    </nav>
+  );
+}
+
+const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [], sortDirection = 'asc', setSortDirection }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[], sortDirection?: 'asc' | 'desc', setSortDirection?: (d: 'asc' | 'desc') => void }) => {
   const filteredOBs = useMemo(() => {
     return hierarchy.filter(h => {
       if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
@@ -206,9 +292,6 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       let totalWeightKg = 0;
       
       skus.forEach(sku => {
-        // Ignore "New DWB" SKU for now as per user request
-        if (sku.id === 'dwb-new') return;
-
         const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
         const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton || 0)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen || 0)) + Number(item.pks || 0);
         const ctns = Number(sku.unitsPerCarton || 0) > 0 ? packs / Number(sku.unitsPerCarton) : 0;
@@ -360,14 +443,27 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
         return sum + (Number(h[targetKey]) || 0);
       }, 0) : 0;
-      const achievement = target > 0 ? (ob.totalSales / target) * 100 : 0;
+      const percentage = target > 0 ? (ob.totalSales / target) * 100 : 0;
+
+      const brandTargets = CATEGORIES.reduce((acc, cat) => {
+        const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+        acc[cat] = Number(h?.[targetKey]) || 0;
+        return acc;
+      }, {} as Record<string, number>);
+
+      const brandPercentages = CATEGORIES.reduce((acc, cat) => {
+        const t = brandTargets[cat];
+        const a = ob.brandSales[cat] || 0;
+        acc[cat] = t > 0 ? (a / t) * 100 : 0;
+        return acc;
+      }, {} as Record<string, number>);
 
       const workingDays = 25; // Default
       const consistencyScore = (ob.entries / workingDays) * 100;
       
       // OB Productivity Score
       // Weights: Sales 50%, Visit Coverage 30%, Productive Ratio 20%
-      const salesPerf = target > 0 ? Math.min(100, achievement) : Math.min(100, (ob.totalSales / 100) * 100); 
+      const salesPerf = target > 0 ? Math.min(100, percentage) : Math.min(100, (ob.totalSales / 100) * 100); 
       const visitCoverage = Math.min(100, (ob.visited / (ob.entries * 50)) * 100); // 50 shops per day
       const productiveRatio = ob.visited > 0 ? (ob.productive / ob.visited) * 100 : 0;
       
@@ -386,7 +482,10 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       return {
         ...ob,
         target,
-        achievement,
+        percentage,
+        achievement: ob.totalSales,
+        brandTargets,
+        brandPercentages,
         consistencyScore,
         productivityScore,
         scoreLabel,
@@ -435,12 +534,12 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
         return sum + (Number(h[targetKey]) || 0);
       }, 0) : 0;
-      const achievement = target > 0 ? (tsm.totalSales / target) * 100 : 0;
+      const percentage = target > 0 ? (tsm.totalSales / target) * 100 : 0;
 
       const workingDays = 25; // Default
       const consistencyScore = (tsm.entries / workingDays) * 100;
       
-      const salesPerf = target > 0 ? Math.min(100, achievement) : Math.min(100, (tsm.totalSales / 100) * 100); 
+      const salesPerf = target > 0 ? Math.min(100, percentage) : Math.min(100, (tsm.totalSales / 100) * 100); 
       const visitCoverage = Math.min(100, (tsm.visited / (tsm.entries * 50)) * 100); // 50 shops per day
       const productiveRatio = tsm.visited > 0 ? (tsm.productive / tsm.visited) * 100 : 0;
       
@@ -459,7 +558,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       return {
         ...tsm,
         target,
-        achievement,
+        percentage,
+        achievement: tsm.totalSales,
         consistencyScore,
         productivityScore,
         scoreLabel,
@@ -697,28 +797,22 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   }, [filteredStats, filterLevel, routeAnalysisCategoryFilter, routeAnalysisBrandFilter]);
 
   const worstOBs = useMemo(() => {
-    return [...obPerformance]
-      .filter(ob => ob.target > 0)
-      .sort((a, b) => a.achievement - b.achievement)
-      .slice(0, 50);
-  }, [obPerformance]);
+    const data = obPerformance.filter(ob => ob.target > 0);
+    return sortDataByAchievement(data, sortDirection).slice(0, 50);
+  }, [obPerformance, sortDirection]);
 
   const worstByBrand = useMemo(() => {
     const brandWorst: Record<string, any[]> = {};
     CATEGORIES.forEach(cat => {
-      brandWorst[cat] = [...obPerformance]
-        .sort((a, b) => (a.brandSales[cat] || 0) - (b.brandSales[cat] || 0))
-        .slice(0, 50)
-        .map(ob => ({
-          name: ob.name,
-          town: ob.town,
-          tsm: ob.tsm,
-          region: ob.region,
-          sales: ob.brandSales[cat] || 0
-        }));
+      const data = obPerformance.map(ob => ({
+        ...ob,
+        percentage: ob.brandPercentages?.[cat] || 0,
+        achievement: ob.brandSales?.[cat] || 0
+      }));
+      brandWorst[cat] = sortDataByAchievement(data, sortDirection).slice(0, 50);
     });
     return brandWorst;
-  }, [obPerformance]);
+  }, [obPerformance, sortDirection]);
 
   const tsmPerformance = useMemo(() => {
     const tsms: Record<string, any> = {};
@@ -768,13 +862,14 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
       
       tsms[tsm].totalTarget = tsmTotalTarget;
       tsms[tsm].achievementPerc = tsmTotalTarget > 0 ? (tsms[tsm].totalSales / tsmTotalTarget) * 100 : 0;
+      tsms[tsm].percentage = tsms[tsm].achievementPerc; // For sorting
+      tsms[tsm].achievement = tsms[tsm].totalSales; // For sorting
       tsms[tsm].averageOBAchievement = achievements.length > 0 ? achievements.reduce((a, b) => a + b, 0) / achievements.length : 0;
     });
 
-    return Object.values(tsms)
-      .filter(tsm => tsm.activeOBs > 0 || tsm.totalSales > 0)
-      .sort((a, b) => a.achievementPerc - b.achievementPerc); // Sort by % ascending (Bottom to Top)
-  }, [monthStats, hierarchy]);
+    const unsortedTsms = Object.values(tsms).filter(tsm => tsm.activeOBs > 0 || tsm.totalSales > 0);
+    return sortDataByAchievement(unsortedTsms, sortDirection);
+  }, [monthStats, hierarchy, sortDirection]);
 
   const yesterdayMissing = useMemo(() => {
     const now = new Date();
@@ -909,6 +1004,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
 
       groups[key].totalSales += relevantBags;
       groups[key].totalTonnage += relevantTons;
+      groups[key].achievement = groups[key].totalSales; // For sorting
     });
 
     // Calculate targets for each group
@@ -941,14 +1037,17 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           return bSum;
         }, 0);
       }, 0);
+      groups[key].percentage = groups[key].totalTarget > 0 ? (groups[key].totalSales / groups[key].totalTarget) * 100 : 0;
     });
 
-    return Object.values(groups).map(g => ({
+    const unsortedGroups = Object.values(groups).map(g => ({
       ...g,
       obCount: g.obCount.size,
       avgSales: g.obCount.size > 0 ? g.totalSales / g.obCount.size : 0
-    })).sort((a, b) => b.totalSales - a.totalSales);
-  }, [monthStats, hierarchy, filteredHierarchy, filterLevel, categoryWiseCategoryFilter, categoryWiseBrandFilter]);
+    }));
+
+    return sortDataByAchievement(unsortedGroups, sortDirection);
+  }, [monthStats, hierarchy, filteredHierarchy, filterLevel, categoryWiseCategoryFilter, categoryWiseBrandFilter, sortDirection]);
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
@@ -998,6 +1097,16 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
               <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
               {isSyncing ? 'Syncing...' : 'Sync'}
             </button>
+            {setSortDirection && (
+              <button 
+                onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+                className="flex items-center gap-2 bg-white text-slate-600 border border-slate-100 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                title={sortDirection === 'asc' ? "Sorting: Bottom to Top (Lowest % first)" : "Sorting: Top to Bottom (Highest % first)"}
+              >
+                <ArrowUpDown className="w-3 h-3" />
+                {sortDirection === 'asc' ? 'Bottom ↑ Top' : 'Top ↓ Bottom'}
+              </button>
+            )}
             {backupLogs && backupLogs.length > 0 && (
               <div className="flex flex-col justify-center mr-2 border-r border-slate-200 pr-3">
                 <span className="text-[8px] font-black text-slate-400 uppercase leading-none">Last Backup</span>
@@ -2319,7 +2428,7 @@ export const APP_TABS = [
   { id: 'help', label: 'Help', icon: HelpCircle, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
 ];
 
-const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }: { user: any, data: any, setView: (v: any) => void, onRefresh?: () => void, isSyncing?: boolean, role: string | null }) => {
+const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, userEmail }: { user: any, data: any, setView: (v: any) => void, onRefresh?: () => void, isSyncing?: boolean, role: string | null, userEmail?: string | null }) => {
   if (!user || !data) return (
     <div className="flex items-center justify-center min-h-screen bg-slate-50">
       <Loader2 className="w-8 h-8 text-seablue animate-spin" />
@@ -2719,7 +2828,15 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role }:
           <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Quick Navigation</h3>
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-          {APP_TABS.filter(tab => !role || tab.roles.includes(role)).map((tab) => {
+          {APP_TABS.filter(tab => {
+            if (!role) return false;
+            if (!tab.roles.includes(role)) return false;
+            // Strict Admin check
+            if (tab.id === 'admin') {
+              return ADMIN_EMAILS.includes(userEmail || '');
+            }
+            return true;
+          }).map((tab) => {
             return (
               <button 
                 key={tab.id}
@@ -2743,7 +2860,8 @@ const StatsView = ({
   history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, 
   userRole, userName, userRegion, userContact, onRefresh, isSyncing, 
   selectedMonth, setSelectedMonth,
-  dailyStatus, fetchDailyStatus, isLoadingDailyStatus
+  dailyStatus, fetchDailyStatus, isLoadingDailyStatus,
+  sortDirection = 'asc', setSortDirection
 }: any) => {
   const currentMonth = selectedMonth || getPSTDate().slice(0, 7);
   const today = getPSTDate();
@@ -2848,6 +2966,67 @@ const StatsView = ({
     }).slice(0, 10); // Show last 10 days
   }, [history, obAssignments]);
 
+  const sortedTSMData = useMemo(() => {
+    const data = filteredTSMList.map((tsm: string) => {
+      const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm && !isTSMEntry(ob.name, ob.tsm));
+      const tsmOrders = history.filter((h: any) => h.tsm === tsm && h.date.startsWith(currentMonth) && !isTSMEntry(h.order_booker, h.tsm));
+      const activeOBs = new Set(tsmOrders.map((h: any) => h.ob_contact)).size;
+      
+      const totalSales = tsmOrders.reduce((sum: number, h: any) => {
+        const data = h.order_data || {};
+        return sum + SKUS.reduce((s, sku) => {
+          const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+        }, 0);
+      }, 0);
+
+      const tsmTarget = tsmOBs.reduce((sum: number, ob: any) => sum + (Number(ob.target_bags) || 0), 0);
+      const percentage = tsmTarget > 0 ? (totalSales / tsmTarget) * 100 : 0;
+
+      return {
+        tsm,
+        tsmOBs,
+        tsmOrders,
+        activeOBs,
+        totalSales,
+        percentage,
+        achievement: totalSales,
+        region: tsmOBs[0]?.region || 'Unassigned',
+        town: tsmOBs[0]?.town || 'Unassigned'
+      };
+    });
+
+    return sortDataByAchievement(data, sortDirection);
+  }, [filteredTSMList, obAssignments, history, currentMonth, SKUS, sortDirection]);
+
+  const sortedOBData = useMemo(() => {
+    const data = filteredOBs.map((ob: any) => {
+      const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
+      const totalSales = obStats.reduce((sum: number, h: any) => {
+        const data = h.order_data || {};
+        return sum + SKUS.reduce((s, sku) => {
+          const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+        }, 0);
+      }, 0);
+
+      const target = Number(ob.target_bags) || 0;
+      const percentage = target > 0 ? (totalSales / target) * 100 : 0;
+
+      return {
+        ...ob,
+        obStats,
+        totalSales,
+        percentage,
+        achievement: totalSales
+      };
+    });
+
+    return sortDataByAchievement(data, sortDirection);
+  }, [filteredOBs, history, currentMonth, SKUS, sortDirection]);
+
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
       <motion.div 
@@ -2861,6 +3040,16 @@ const StatsView = ({
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Submission Status & Activity Tracking</p>
           </div>
           <div className="flex items-center gap-3">
+            {setSortDirection && (
+              <button 
+                onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+                className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 text-[9px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                title={sortDirection === 'asc' ? "Bottom to Top (Lowest % first)" : "Top to Bottom (Highest % first)"}
+              >
+                <ArrowUpDown className="w-3 h-3 text-seablue" />
+                {sortDirection === 'asc' ? 'Bottom ↑ Top' : 'Top ↓ Bottom'}
+              </button>
+            )}
             <div className="flex items-center gap-2 bg-slate-100/50 px-3 py-1.5 rounded-xl border border-white/60">
               <Calendar className="w-3.5 h-3.5 text-slate-400" />
               <input 
@@ -3189,20 +3378,9 @@ const StatsView = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredTSMList.map((tsm: string, idx: number) => {
-                const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm && !isTSMEntry(ob.name, ob.tsm));
-                const region = tsmOBs[0]?.region || 'Unassigned';
-                const tsmOrders = history.filter((h: any) => h.tsm === tsm && h.date.startsWith(currentMonth) && !isTSMEntry(h.order_booker, h.tsm));
-                const activeOBs = new Set(tsmOrders.map((h: any) => h.ob_contact)).size;
-                const totalSales = tsmOrders.reduce((sum: number, h: any) => {
-                  const data = h.order_data || {};
-                  const bags = SKUS.reduce((s, sku) => {
-                    const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                    const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                    return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                  }, 0);
-                  return sum + bags;
-                }, 0);
+              {sortedTSMData.map((data: any, idx: number) => {
+                const { tsm, tsmOBs, activeOBs, totalSales, region, town } = data;
+                const tsmOrders = data.tsmOrders;
                 const avgProd = tsmOrders.length > 0 ? tsmOrders.reduce((sum: number, h: any) => sum + (h.visited_shops > 0 ? (h.productive_shops / h.visited_shops) * 100 : 0), 0) / tsmOrders.length : 0;
                 const score = (activeOBs / Math.max(1, tsmOBs.length) * 40) + (avgProd * 0.6);
                 
@@ -3210,7 +3388,7 @@ const StatsView = ({
                   <tr key={tsm || `tsm-${idx}`} className="group hover:bg-slate-50/80 transition-all duration-200">
                     <td className="px-6 py-4 whitespace-nowrap">
                       <p className="text-[8px] font-black text-slate-400 uppercase leading-none">National &gt; {region}</p>
-                      <p className="text-[9px] font-bold text-slate-600 uppercase mt-0.5">{tsmOBs[0]?.town || 'Unassigned'}</p>
+                      <p className="text-[9px] font-bold text-slate-600 uppercase mt-0.5">{town}</p>
                     </td>
                     <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors whitespace-nowrap">{tsm}</td>
                     <td className="px-6 py-4 text-center whitespace-nowrap">
@@ -3327,8 +3505,8 @@ const StatsView = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredOBs.map((ob: any, idx: number) => {
-                const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
+              {sortedOBData.map((ob: any, idx: number) => {
+                const obStats = ob.obStats;
                 const obEntries = obStats.filter((h: any) => !isTSMEntry(h.order_booker, h.tsm));
                 const tsmEntries = obStats.filter((h: any) => isTSMEntry(h.order_booker, h.tsm));
                 
@@ -3386,7 +3564,7 @@ const StatsView = ({
   );
 };
 
-const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing, selectedMonth, setSelectedMonth }: any) => {
+const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing, selectedMonth, setSelectedMonth, sortDirection = 'asc', setSortDirection }: any) => {
   const currentMonth = selectedMonth || getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
@@ -3486,6 +3664,125 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
     });
   }, [history, selectedAnalysisOB, selectedAnalysisRoute, CATEGORIES, SKUS]);
 
+  const sortedOBMatrixData = useMemo(() => {
+    const data = filteredOBs.map((ob: any) => {
+      const obStats = reportsMonthStats.filter((h: any) => h.ob_contact === ob.contact);
+      const totalSales = obStats.reduce((sum: number, h: any) => {
+        const data = h.order_data || {};
+        return sum + SKUS.reduce((s, sku) => {
+          const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+        }, 0);
+      }, 0);
+
+      const target = Number(ob.target_bags) || 0;
+      const percentage = target > 0 ? (totalSales / target) * 100 : 0;
+
+      return {
+        ...ob,
+        obStats,
+        totalSales,
+        percentage,
+        achievement: totalSales
+      };
+    });
+
+    return sortDataByAchievement(data, sortDirection);
+  }, [filteredOBs, reportsMonthStats, SKUS, sortDirection]);
+
+  const sortedTargetData = useMemo(() => {
+    const items = targetView === 'Brand' ? CATEGORIES : BRAND_GROUP_NAMES;
+    const data = items.map(cat => {
+      let catTarget = 0;
+      let catAch = 0;
+
+      if (targetView === 'Brand') {
+        catTarget = filteredOBs.reduce((sum: number, ob: any) => sum + (ob.targets?.[cat] || 0), 0);
+        const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
+        catAch = history
+          .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
+          .reduce((sum: number, h: any) => {
+            const data = h.order_data || {};
+            return sum + SKUS.filter((s: any) => s.category === cat).reduce((s: number, sku: any) => {
+              const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+              const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+              return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+            }, 0);
+          }, 0);
+      } else {
+        const brandsInGroup = BRAND_GROUPS[cat] || [];
+        catTarget = filteredOBs.reduce((sum: number, ob: any) => {
+          return sum + brandsInGroup.reduce((s, brand) => s + (ob.targets?.[brand] || 0), 0);
+        }, 0);
+        const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
+        catAch = history
+          .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
+          .reduce((sum: number, h: any) => {
+            const data = h.order_data || {};
+            return sum + SKUS.filter((s: any) => brandsInGroup.includes(s.category)).reduce((s: number, sku: any) => {
+              const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+              const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+              return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+            }, 0);
+          }, 0);
+      }
+
+      const percentage = catTarget > 0 ? (catAch / catTarget) * 100 : 0;
+      return {
+        name: cat,
+        target: catTarget,
+        achievement: catAch,
+        percentage
+      };
+    });
+
+    return sortDataByAchievement(data, sortDirection);
+  }, [targetView, CATEGORIES, BRAND_GROUP_NAMES, filteredOBs, history, currentMonth, SKUS, sortDirection]);
+
+  const sortedRouteToRouteData = useMemo(() => {
+    const obsToProcess = filteredOBs.filter((ob: any) => !selectedAnalysisOB || ob.contact === selectedAnalysisOB);
+    const data: any[] = [];
+
+    obsToProcess.forEach((ob: any) => {
+      const obOrders = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
+      const routes = Array.from(new Set([...(ob.routes || []), ...obOrders.map((h: any) => h.route)])).filter(Boolean);
+      
+      routes.forEach(route => {
+        const routeOrders = obOrders.filter((h: any) => h.route === route);
+        const t = routeOrders.reduce((sum, h) => sum + (h.total_shops || 0), 0);
+        const v = routeOrders.reduce((sum, h) => sum + (h.visited_shops || 0), 0);
+        const p = routeOrders.reduce((sum, h) => sum + (h.productive_shops || 0), 0);
+        
+        const brandSales: Record<string, number> = {};
+        CATEGORIES.forEach(cat => {
+          brandSales[cat] = routeOrders.reduce((sum, h) => {
+            const data = h.order_data || {};
+            return sum + SKUS.filter(s => s.category === cat).reduce((s, sku) => {
+              const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+              const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+              return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+            }, 0);
+          }, 0);
+        });
+
+        const totalAch = Object.values(brandSales).reduce((a, b) => a + b, 0);
+        
+        data.push({
+          route,
+          obName: ob.name,
+          obContact: ob.contact,
+          t, v, p,
+          brandSales,
+          achievement: totalAch,
+          percentage: 0
+        });
+      });
+    });
+
+    return sortDataByAchievement(data, sortDirection);
+  }, [filteredOBs, selectedAnalysisOB, history, currentMonth, CATEGORIES, SKUS, sortDirection]);
+
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
       <motion.div 
@@ -3499,6 +3796,16 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Detailed Analysis & Sales Matrix</p>
           </div>
           <div className="flex items-center gap-3">
+            {setSortDirection && (
+              <button 
+                onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+                className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 text-[9px] font-black uppercase tracking-widest hover:bg-slate-50 transition-all shadow-sm"
+                title={sortDirection === 'asc' ? "Bottom to Top (Lowest % first)" : "Top to Bottom (Highest % first)"}
+              >
+                <ArrowUpDown className="w-3 h-3 text-seablue" />
+                {sortDirection === 'asc' ? 'Bottom ↑ Top' : 'Top ↓ Bottom'}
+              </button>
+            )}
             <div className="flex items-center gap-2 bg-slate-100/50 px-3 py-1.5 rounded-xl border border-white/60">
               <Calendar className="w-3.5 h-3.5 text-slate-400" />
               <input 
@@ -3585,8 +3892,8 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredOBs.map((ob: any, idx: number) => {
-                const obStats = reportsMonthStats.filter((h: any) => h.ob_contact === ob.contact);
+              {sortedOBMatrixData.map((ob: any, idx: number) => {
+                const obStats = ob.obStats;
                 let total = 0;
                 return (
                   <tr key={ob.contact || `ob-matrix-${idx}`} className="group hover:bg-slate-50/80 transition-all">
@@ -3678,55 +3985,18 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {(targetView === 'Brand' ? CATEGORIES : BRAND_GROUP_NAMES).map(cat => {
-                let catTarget = 0;
-                let catAch = 0;
-
-                if (targetView === 'Brand') {
-                  catTarget = filteredOBs.reduce((sum: number, ob: any) => sum + (ob.targets?.[cat] || 0), 0);
-                  const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
-                  catAch = history
-                    .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
-                    .reduce((sum: number, h: any) => {
-                      const data = h.order_data || {};
-                      return sum + SKUS.filter((s: any) => s.category === cat).reduce((s: number, sku: any) => {
-                        const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                        return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                      }, 0);
-                    }, 0);
-                } else {
-                  const brandsInGroup = BRAND_GROUPS[cat] || [];
-                  catTarget = filteredOBs.reduce((sum: number, ob: any) => {
-                    return sum + brandsInGroup.reduce((s, brand) => s + (ob.targets?.[brand] || 0), 0);
-                  }, 0);
-                  const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
-                  catAch = history
-                    .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
-                    .reduce((sum: number, h: any) => {
-                      const data = h.order_data || {};
-                      return sum + SKUS.filter((s: any) => brandsInGroup.includes(s.category)).reduce((s: number, sku: any) => {
-                        const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                        return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                      }, 0);
-                    }, 0);
-                }
-
-                const percent = catTarget > 0 ? (catAch / catTarget) * 100 : 0;
-                return (
-                  <tr key={cat} className="group hover:bg-slate-50/80 transition-all">
-                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors whitespace-nowrap">{cat}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500 font-mono whitespace-nowrap">{catTarget.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{catAch.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
-                      <span className={`text-[10px] font-black px-3 py-1 rounded-full shadow-sm ${percent > 80 ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
-                        {percent.toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
+              {sortedTargetData.map(item => (
+                <tr key={item.name} className="group hover:bg-slate-50/80 transition-all">
+                  <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors whitespace-nowrap">{item.name}</td>
+                  <td className="px-6 py-4 text-center text-xs font-bold text-slate-500 font-mono whitespace-nowrap">{item.target.toFixed(1)}</td>
+                  <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{item.achievement.toFixed(1)}</td>
+                  <td className="px-6 py-4 text-right whitespace-nowrap">
+                    <span className={`text-[10px] font-black px-3 py-1 rounded-full shadow-sm ${item.percentage > 80 ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
+                      {item.percentage.toFixed(1)}%
+                    </span>
+                  </td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -3885,43 +4155,17 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
-              {filteredOBs.filter((ob: any) => !selectedAnalysisOB || ob.contact === selectedAnalysisOB).flatMap((ob: any) => {
-                const obOrders = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
-                const routes = Array.from(new Set([...(ob.routes || []), ...obOrders.map((h: any) => h.route)])).filter(Boolean);
-                
-                return routes.map(route => {
-                  const routeOrders = obOrders.filter((h: any) => h.route === route);
-                  const t = routeOrders.reduce((sum, h) => sum + (h.total_shops || 0), 0);
-                  const v = routeOrders.reduce((sum, h) => sum + (h.visited_shops || 0), 0);
-                  const p = routeOrders.reduce((sum, h) => sum + (h.productive_shops || 0), 0);
-                  
-                  const brandSales: Record<string, number> = {};
-                  CATEGORIES.forEach(cat => {
-                    brandSales[cat] = routeOrders.reduce((sum, h) => {
-                      const data = h.order_data || {};
-                      return sum + SKUS.filter(s => s.category === cat).reduce((s, sku) => {
-                        const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                        const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                        return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                      }, 0);
-                    }, 0);
-                  });
-
-                  const totalAch = Object.values(brandSales).reduce((a, b) => a + b, 0);
-
-                  return (
-                    <tr key={`${ob.contact}-${route}`} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-4 text-xs font-bold text-slate-700">{route}</td>
-                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.name}</td>
-                      <td className="px-6 py-4 text-center text-[10px] font-mono text-slate-600">{t}/{v}/{p}</td>
-                      {CATEGORIES.map(cat => (
-                        <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-slate-500">{brandSales[cat].toFixed(1)}</td>
-                      ))}
-                      <td className="px-6 py-4 text-right text-xs font-black text-seablue">{totalAch.toFixed(1)}</td>
-                    </tr>
-                  );
-                });
-              })}
+              {sortedRouteToRouteData.map((item: any) => (
+                <tr key={`${item.obContact}-${item.route}`} className="hover:bg-slate-50/50 transition-colors">
+                  <td className="px-6 py-4 text-xs font-bold text-slate-700">{item.route}</td>
+                  <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{item.obName}</td>
+                  <td className="px-6 py-4 text-center text-[10px] font-mono text-slate-600">{item.t}/{item.v}/{item.p}</td>
+                  {CATEGORIES.map(cat => (
+                    <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-slate-500">{item.brandSales[cat].toFixed(1)}</td>
+                  ))}
+                  <td className="px-6 py-4 text-right text-xs font-black text-seablue">{item.achievement.toFixed(1)}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>
@@ -3962,27 +4206,37 @@ const Login = ({ onLogin, logo }: { onLogin: (token: string, user: any) => void,
 
   return (
     <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6">
-      <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mb-8 shadow-xl shadow-slate-200/20 overflow-hidden border border-slate-50">
-        {logo ? (
-          <img src={logo} alt="App Logo" className="w-full h-full object-contain p-2" />
-        ) : (
-          <div className="w-full h-full bg-seablue flex items-center justify-center">
-            <Waves className="text-white w-12 h-12" />
-          </div>
-        )}
+      {/* Company Logo at Top Center */}
+      <div className="mb-12 flex flex-col items-center">
+        <div className="w-32 h-32 bg-white rounded-[2.5rem] flex items-center justify-center shadow-2xl shadow-slate-200/50 overflow-hidden border-4 border-white ring-1 ring-slate-100 p-4">
+          {logo ? (
+            <img src={logo} alt="Company Logo" className="w-full h-full object-contain" />
+          ) : (
+            <div className="w-full h-full bg-gradient-to-br from-seablue to-seablue-light flex items-center justify-center rounded-2xl">
+              <Waves className="text-white w-16 h-16" />
+            </div>
+          )}
+        </div>
       </div>
 
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 border border-slate-100"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ duration: 0.5, ease: "easeOut" }}
+        className="max-w-md w-full bg-white rounded-[3rem] shadow-2xl p-12 border border-slate-100 relative overflow-hidden"
       >
-        <div className="flex flex-col items-center mb-10">
-          <h1 className="text-3xl font-black text-slate-900 tracking-tight">SalesPulse</h1>
-          <p className="text-slate-400 text-xs mt-2 font-bold uppercase tracking-widest">Intelligent Sales Execution Platform</p>
+        {/* Decorative background element */}
+        <div className="absolute top-0 right-0 w-40 h-40 bg-seablue/5 rounded-full -mr-20 -mt-20 blur-3xl" />
+        
+        <div className="flex flex-col items-center mb-12 relative z-10">
+          <h1 className="text-4xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            Sales<span className="text-seablue">Pulse</span>
+          </h1>
+          <div className="h-1 w-12 bg-seablue rounded-full mt-3 mb-3" />
+          <p className="text-slate-400 text-[10px] font-black uppercase tracking-[0.3em]">Intelligent Execution Platform</p>
         </div>
 
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-8 relative z-10">
           <div className="space-y-2">
             <label className="block text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Username or ID</label>
             <div className="relative group">
@@ -4050,46 +4304,68 @@ const Login = ({ onLogin, logo }: { onLogin: (token: string, user: any) => void,
   );
 };
 
-const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeGone, stockHistory = [] }: any) => {
+const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeGone, userEmail, stockHistory = [], sortDirection = 'asc', setSortDirection }: any) => {
   const kpiGroups = useMemo(() => {
     if (!stats || !hierarchy || isLoading) return null;
 
     const role = (user?.role || '').toUpperCase();
     const name = (user?.name || '').trim().toLowerCase();
     const contact = (user?.contact || '').trim();
+    
+    const normalizeContact = (c: string) => (c || '').replace(/^0+/, '').trim();
+    const userContactNormalized = normalizeContact(user?.contact);
+    
+    const currentMonth = getPSTDate().slice(0, 7);
 
     // Filter hierarchy for the user
     const userHierarchy = hierarchy.filter(h => {
       if (role === 'SUPER ADMIN' || role === 'ADMIN' || role === 'DIRECTOR' || role === 'NSM') return true;
       if (role === 'RSM' || role === 'SC') return (h.territory_region || '').trim().toLowerCase() === (user?.region || '').trim().toLowerCase();
-      if (role === 'TSM' || role === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === name;
+      if (role === 'TSM' || role === 'ASM') {
+        const hContact = normalizeContact(h.asm_tsm_contact);
+        const hName = (h.asm_tsm_name || '').trim().toLowerCase();
+        return hName === name || (hContact && hContact === userContactNormalized);
+      }
       if (role === 'OB') return h.ob_id === contact;
       return false;
     });
 
-    // Filter stats for the user
+    // Filter stats for the user and current month
     const userStats = stats.filter(s => {
-      if (role === 'SUPER ADMIN' || role === 'ADMIN' || role === 'DIRECTOR' || role === 'NSM') return true;
+      // Month filter
+      if (s.date?.slice(0, 7) !== currentMonth) return false;
+
+      // For Admin roles, show all stats even if hierarchy is missing for some OBs
+      const isAdmin = role === 'SUPER ADMIN' || role === 'ADMIN' || role === 'DIRECTOR' || role === 'NSM';
+      if (isAdmin) return true;
+
       const h = hierarchy.find(h => h.ob_id === s.ob_contact);
       if (!h) return false;
+      
       if (role === 'RSM' || role === 'SC') return (h.territory_region || '').trim().toLowerCase() === (user?.region || '').trim().toLowerCase();
-      if (role === 'TSM' || role === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === name;
+      if (role === 'TSM' || role === 'ASM') {
+        const hContact = normalizeContact(h.asm_tsm_contact);
+        const hName = (h.asm_tsm_name || '').trim().toLowerCase();
+        return hName === name || (hContact && hContact === userContactNormalized);
+      }
       if (role === 'OB') return s.ob_contact === contact;
       return false;
     });
 
-    return BRAND_GROUP_NAMES.map(groupName => {
-      const brandsInGroup = BRAND_GROUPS[groupName];
-      
-      // Calculate Target for this group
+    // Show individual brands instead of groups
+    const unsortedKpis = CATEGORIES.map(brand => {
+      // Calculate Target for this brand
       const target = userHierarchy.reduce((sum, h) => {
-        return sum + brandsInGroup.reduce((s, brand) => {
-          const field = `target_${brand.toLowerCase().replace(/ /g, '_')}`;
-          return s + (Number(h[field]) || 0);
-        }, 0);
+        const field = `target_${brand.toLowerCase().replace(/ /g, '_')}`;
+        // If specific target field doesn't exist, use target_ctn split by categories
+        const specificTarget = Number(h[field]);
+        if (!isNaN(specificTarget) && specificTarget > 0) return sum + specificTarget;
+        
+        const totalTarget = Number(h.target_ctn) || 0;
+        return sum + (totalTarget / CATEGORIES.length);
       }, 0);
 
-      // Calculate Achievement and Productivity for this group
+      // Calculate Achievement and Productivity for this brand
       let groupVisited = 0;
       let groupProductive = 0;
       
@@ -4098,21 +4374,28 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
         
         // Use category_productive_data for brand-wise productivity if available
         const prodData = s.category_productive_data || {};
-        let catProd = 0;
-        brandsInGroup.forEach(brand => {
-          // The key in category_productive_data is the category name
-          catProd += (Number(prodData[brand]) || 0);
-        });
-        
-        // If no category-specific data, fallback to total productive_shops (less accurate for brand-wise)
-        if (catProd === 0 && brandsInGroup.length > 0) {
-          // This is a rough estimate if specific data is missing
-          // groupProductive += (Number(s.productive_shops) || 0);
-        }
+        const catProd = (Number(prodData[brand]) || 0);
         groupProductive += catProd;
 
-        return sum + brandsInGroup.reduce((s2, brand) => s2 + (s.brandSales?.[brand] || 0), 0);
+        // Ensure brandSales is populated correctly
+        const bSales = s.brandSales || {};
+        let brandAchievement = Number(bSales[brand]) || 0;
+        
+        // Fix for DWB: ensure we check all DWB related SKUs if brandSales[brand] is 0 or if it's DWB
+        if (brand === 'DWB') {
+          let dwbSum = 0;
+          SKUS.filter(sku => sku.category === 'DWB').forEach(sku => {
+            const item = (s.order_data || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+            dwbSum += sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0;
+          });
+          // Use the higher of the two or just dwbSum to be safe
+          brandAchievement = Math.max(brandAchievement, dwbSum);
+        }
+
+        return sum + brandAchievement;
       }, 0);
+
 
       const percentage = target > 0 ? (achievement / target) * 100 : 0;
       const remainingTarget = Math.max(0, target - achievement);
@@ -4128,7 +4411,7 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
       const projectedPercentage = target > 0 ? (projectedAchievement / target) * 100 : 0;
 
       return {
-        name: groupName,
+        name: brand,
         target,
         achievement,
         percentage,
@@ -4143,7 +4426,9 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
         projectedPercentage
       };
     });
-  }, [user, stats, hierarchy, isLoading, timeGone]);
+
+    return sortDataByAchievement(unsortedKpis, sortDirection);
+  }, [user, stats, hierarchy, isLoading, timeGone, sortDirection]);
 
   const obStockHealth = useMemo(() => {
     if (!stockHistory || !hierarchy || isLoading) return null;
@@ -4323,44 +4608,129 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
     });
   }, [user, stats, hierarchy, isLoading, timeGone]);
 
-  return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-6">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl w-full space-y-8"
-      >
-        {/* Logo */}
-        <div className="flex justify-center">
-          <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-xl border border-slate-50 overflow-hidden">
-            {logo ? (
-              <img src={logo} alt="Logo" className="w-full h-full object-contain p-2" />
-            ) : (
-              <div className="w-full h-full bg-seablue flex items-center justify-center">
-                <Waves className="text-white w-10 h-10" />
-              </div>
-            )}
-          </div>
-        </div>
+    const totalKpis = useMemo(() => {
+      if (!kpiGroups) return null;
+      const target = kpiGroups.reduce((sum, k) => sum + k.target, 0);
+      const achievement = kpiGroups.reduce((sum, k) => sum + k.achievement, 0);
+      const percentage = target > 0 ? (achievement / target) * 100 : 0;
+      const remainingTarget = Math.max(0, target - achievement);
+      const remainingDays = timeGone?.remaining || 0;
+      const passedDays = timeGone?.passed || 1;
+      const requiredPerDay = remainingDays > 0 ? remainingTarget / remainingDays : 0;
+      const dailyAvg = achievement / passedDays;
 
-        {/* Welcome Card */}
-        <div className="bg-white rounded-3xl shadow-2xl p-8 border border-slate-100 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-seablue/5 rounded-full -mr-16 -mt-16" />
-          
-          <div className="relative z-10">
-            <h2 className="text-xs font-black text-seablue uppercase tracking-[0.2em] mb-1">Welcome Back</h2>
-            <h1 className="text-3xl font-black text-slate-800 tracking-tight">{user?.name}</h1>
-            <div className="flex items-center gap-4 mt-4">
-              <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-                <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{user?.role}</span>
+      return {
+        target,
+        achievement,
+        percentage,
+        remainingTarget,
+        remainingDays,
+        requiredPerDay,
+        dailyAvg
+      };
+    }, [kpiGroups, timeGone]);
+
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-6">
+        <motion.div 
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="max-w-2xl w-full space-y-8"
+        >
+          {/* Logo */}
+          <div className="flex justify-center">
+            <div className="w-28 h-28 bg-white rounded-[2rem] flex items-center justify-center shadow-2xl border-4 border-white ring-1 ring-slate-100 overflow-hidden p-3">
+              {logo ? (
+                <img src={logo} alt="Logo" className="w-full h-full object-contain" />
+              ) : (
+                <div className="w-full h-full bg-gradient-to-br from-seablue to-seablue-light flex items-center justify-center rounded-2xl">
+                  <Waves className="text-white w-12 h-12" />
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Welcome Card */}
+          <div className="bg-white rounded-[3rem] shadow-2xl p-10 border border-slate-100 relative overflow-hidden">
+            <div className="absolute top-0 right-0 w-48 h-48 bg-seablue/5 rounded-full -mr-24 -mt-24 blur-3xl" />
+            
+            <div className="relative z-10 flex flex-col items-center text-center">
+              <div className="w-12 h-1 bg-seablue rounded-full mb-6" />
+              <h2 className="text-xs font-black text-seablue uppercase tracking-[0.3em] mb-2">Welcome Back</h2>
+              <h1 className="text-4xl font-black text-slate-900 tracking-tight mb-4">{user?.name}</h1>
+              
+              <div className="flex flex-wrap justify-center gap-3 mb-10">
+                <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100 shadow-sm">
+                  <ShieldCheck className="w-4 h-4 text-seablue" />
+                  <span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">{user?.role}</span>
+                </div>
+                <div className="flex items-center gap-2 bg-slate-50 px-4 py-2 rounded-2xl border border-slate-100 shadow-sm">
+                  <MapPin className="w-4 h-4 text-seablue" />
+                  <span className="text-[11px] font-black text-slate-700 uppercase tracking-widest">{user?.region || 'National'}</span>
+                </div>
               </div>
-              <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-                <Store className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{user?.region || 'National'}</span>
+
+              {/* Total Performance Summary */}
+              {totalKpis && (
+                <div className="w-full space-y-6">
+                  <div className="flex items-center gap-2">
+                    <div className="h-px flex-1 bg-slate-100" />
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Total Performance</span>
+                    <div className="h-px flex-1 bg-slate-100" />
+                  </div>
+                  
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                    <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100 text-center">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Target</p>
+                      <p className="text-lg font-black text-slate-900">{Math.round(totalKpis.target).toLocaleString()}</p>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100 text-center">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Achievement</p>
+                      <p className="text-lg font-black text-seablue">{Math.round(totalKpis.achievement).toLocaleString()}</p>
+                    </div>
+                    <div className="bg-seablue/5 p-4 rounded-3xl border border-seablue/10 text-center">
+                      <p className="text-[9px] font-black text-seablue uppercase tracking-widest mb-1">Ach. %</p>
+                      <p className="text-lg font-black text-seablue">{totalKpis.percentage.toFixed(1)}%</p>
+                    </div>
+                    <div className="bg-slate-50 p-4 rounded-3xl border border-slate-100 text-center">
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Remaining</p>
+                      <p className="text-lg font-black text-slate-900">{Math.round(totalKpis.remainingTarget).toLocaleString()}</p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="flex flex-col items-center p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                      <Calendar className="w-5 h-5 text-slate-400 mb-2" />
+                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Remaining Days</p>
+                      <p className="text-sm font-black text-slate-800">{totalKpis.remainingDays} Days</p>
+                    </div>
+                    <div className="flex flex-col items-center p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                      <TrendingUp className="w-5 h-5 text-seablue mb-2" />
+                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">RPD (Req. Per Day)</p>
+                      <p className="text-sm font-black text-slate-800">{totalKpis.requiredPerDay.toFixed(1)}</p>
+                    </div>
+                    <div className="flex flex-col items-center p-4 bg-slate-50/50 rounded-3xl border border-slate-100">
+                      <BarChart3 className="w-5 h-5 text-seablue mb-2" />
+                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Daily Avg Sales</p>
+                      <p className="text-sm font-black text-slate-800">{totalKpis.dailyAvg.toFixed(1)}</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Enter App Button */}
+              <div className="mt-10">
+                <button
+                  onClick={onEnter}
+                  className="w-full sm:w-64 bg-seablue hover:bg-seablue-light text-white font-black py-5 rounded-[2rem] shadow-xl shadow-seablue/20 transition-all flex items-center justify-center gap-3 active:scale-[0.98] group"
+                >
+                  Enter Application
+                  <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+                </button>
               </div>
             </div>
           </div>
+
 
           {/* Proactive Alerts Section */}
           {obWiseKpis && obWiseKpis.some(ob => ob.isAtRisk) && (
@@ -4494,45 +4864,62 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
             </div>
           )}
 
-          {/* KPI Section */}
+          {/* KPI Section - Brand-wise Cards */}
           <div className="mt-10 space-y-8">
             <div className="flex items-center justify-between">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monthly Performance Summary</h3>
+              <div className="flex items-center gap-3">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Brand Performance Analysis</h3>
+                {setSortDirection && (
+                  <button 
+                    onClick={() => setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc')}
+                    className="flex items-center gap-1.5 px-2 py-1 bg-white border border-slate-100 rounded-lg text-[8px] font-black text-seablue uppercase tracking-widest shadow-sm hover:bg-slate-50 transition-all"
+                    title={sortDirection === 'asc' ? "Sorting: Bottom to Top (Lowest % first)" : "Sorting: Top to Bottom (Highest % first)"}
+                  >
+                    <ArrowUpDown className="w-2.5 h-2.5" />
+                    {sortDirection === 'asc' ? 'Bottom ↑ Top' : 'Top ↓ Bottom'}
+                  </button>
+                )}
+              </div>
               {isLoading && <Loader2 className="w-3 h-3 text-seablue animate-spin" />}
             </div>
 
             {kpiGroups ? (
-              <div className="space-y-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {kpiGroups.map((group) => (
-                  <div key={group.name} className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-px flex-1 bg-slate-100" />
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{group.name}</span>
-                      <div className="h-px flex-1 bg-slate-100" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                        <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Target</p>
-                        <p className="text-base font-black text-slate-800">{Math.round(group.target).toLocaleString()}</p>
-                      </div>
-                      <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
-                        <p className="text-[7px] font-black text-emerald-400 uppercase tracking-widest mb-1">Achievement</p>
-                        <p className="text-base font-black text-emerald-600">{Math.round(group.achievement).toLocaleString()}</p>
-                      </div>
-                      <div className="p-3 bg-seablue/5 rounded-2xl border border-seablue/10">
-                        <p className="text-[7px] font-black text-seablue uppercase tracking-widest mb-1">Ach %</p>
-                        <p className="text-base font-black text-seablue">{group.percentage.toFixed(1)}%</p>
-                      </div>
-                      <div className="p-3 bg-amber-50 rounded-2xl border border-amber-100">
-                        <p className="text-[7px] font-black text-amber-400 uppercase tracking-widest mb-1">Remaining</p>
-                        <p className="text-base font-black text-amber-600">{Math.round(group.remainingTarget).toLocaleString()}</p>
-                      </div>
-                      
-                      <div className="col-span-2 grid grid-cols-5 gap-2 pt-2 border-t border-slate-100">
-                        <div className="text-center">
-                          <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Rem. Days</p>
-                          <p className="text-[10px] font-black text-slate-700">{group.remainingDays}</p>
+                  <div key={group.name} className="bg-white rounded-[2.5rem] shadow-xl p-6 border border-slate-50 relative overflow-hidden group hover:shadow-2xl transition-all duration-500">
+                    <div className="absolute top-0 right-0 w-24 h-24 bg-slate-50 rounded-full -mr-12 -mt-12 group-hover:bg-seablue/5 transition-colors" />
+                    
+                    <div className="relative z-10">
+                      <div className="flex items-center justify-between mb-6">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 rounded-2xl flex items-center justify-center text-white shadow-lg" style={{ backgroundColor: CATEGORY_COLORS[group.name] || '#64748b' }}>
+                            <Package className="w-5 h-5" />
+                          </div>
+                          <h4 className="text-sm font-black text-slate-800 uppercase tracking-wider">{group.name}</h4>
                         </div>
+                        <div className="text-right">
+                          <p className="text-[10px] font-black text-seablue uppercase tracking-tighter">{group.percentage.toFixed(1)}%</p>
+                          <div className="w-16 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                            <div 
+                              className="h-full bg-seablue rounded-full" 
+                              style={{ width: `${Math.min(100, group.percentage)}%` }}
+                            />
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4 mb-6">
+                        <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
+                          <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Target</p>
+                          <p className="text-sm font-black text-slate-800">{Math.round(group.target).toLocaleString()}</p>
+                        </div>
+                        <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
+                          <p className="text-[7px] font-black text-emerald-400 uppercase tracking-widest mb-1">Achievement</p>
+                          <p className="text-sm font-black text-emerald-600">{Math.round(group.achievement).toLocaleString()}</p>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-3 gap-2 py-3 border-t border-slate-50">
                         <div className="text-center">
                           <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Req/Day</p>
                           <p className={`text-[10px] font-black ${group.requiredPerDay > group.dailyAvg ? 'text-red-600' : 'text-slate-700'}`}>{Math.round(group.requiredPerDay)}</p>
@@ -4545,10 +4932,6 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
                           <p className="text-[6px] font-black text-seablue uppercase tracking-tighter">Proj %</p>
                           <p className={`text-[10px] font-black ${group.projectedPercentage < 85 ? 'text-red-500' : 'text-seablue'}`}>{group.projectedPercentage.toFixed(0)}%</p>
                         </div>
-                        <div className="text-center">
-                          <p className="text-[6px] font-black text-emerald-500 uppercase tracking-tighter">Prod %</p>
-                          <p className="text-[10px] font-black text-emerald-600">{group.productivity.toFixed(0)}%</p>
-                        </div>
                       </div>
                     </div>
                   </div>
@@ -4556,51 +4939,54 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
               </div>
             ) : (
               <div className="h-40 flex items-center justify-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Loading KPIs...</p>
+                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Loading Brand KPIs...</p>
               </div>
             )}
           </div>
 
+
           {/* Brand-Mix Analysis */}
-          <div className="mt-12 space-y-6">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-purple-100 rounded-xl flex items-center justify-center text-purple-600">
-                <Activity className="w-4 h-4" />
+          {kpiGroups && (
+            <div className="mt-12 space-y-6">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-purple-100 rounded-xl flex items-center justify-center text-purple-600">
+                  <Activity className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand-Mix Analysis</h3>
+                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Portfolio Balance & Imbalance</p>
+                </div>
               </div>
-              <div>
-                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand-Mix Analysis</h3>
-                <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Portfolio Balance & Imbalance</p>
+              
+              <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
+                <div className="h-48 w-full">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={kpiGroups} layout="vertical" margin={{ left: -20, right: 20 }}>
+                      <XAxis type="number" hide />
+                      <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 8, fontWeight: 900, fill: '#64748b' }} width={80} />
+                      <Tooltip 
+                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
+                        formatter={(value: any) => [`${Number(value).toFixed(1)}%`, 'Achievement']}
+                      />
+                      <Bar dataKey="percentage" radius={[0, 4, 4, 0]}>
+                        {kpiGroups.map((entry, index) => (
+                          <Cell key={`cell-${index}`} fill={entry.percentage < 50 ? '#ef4444' : entry.percentage < 80 ? '#f59e0b' : '#0ea5e9'} />
+                        ))}
+                      </Bar>
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+                <div className="mt-4 grid grid-cols-3 gap-2">
+                  {kpiGroups.map(g => (
+                    <div key={g.name} className="text-center p-2 rounded-xl bg-slate-50 border border-slate-100">
+                      <p className="text-[6px] font-black text-slate-400 uppercase truncate">{g.name}</p>
+                      <p className={`text-[10px] font-black ${g.percentage < 80 ? 'text-red-500' : 'text-seablue'}`}>{g.percentage.toFixed(0)}%</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
-            
-            <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
-              <div className="h-48 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={kpiGroups} layout="vertical" margin={{ left: -20, right: 20 }}>
-                    <XAxis type="number" hide />
-                    <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 8, fontWeight: 900, fill: '#64748b' }} width={80} />
-                    <Tooltip 
-                      contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
-                      formatter={(value: any) => [`${Number(value).toFixed(1)}%`, 'Achievement']}
-                    />
-                    <Bar dataKey="percentage" radius={[0, 4, 4, 0]}>
-                      {kpiGroups.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.percentage < 50 ? '#ef4444' : entry.percentage < 80 ? '#f59e0b' : '#0ea5e9'} />
-                      ))}
-                    </Bar>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-              <div className="mt-4 grid grid-cols-3 gap-2">
-                {kpiGroups.map(g => (
-                  <div key={g.name} className="text-center p-2 rounded-xl bg-slate-50 border border-slate-100">
-                    <p className="text-[6px] font-black text-slate-400 uppercase truncate">{g.name}</p>
-                    <p className={`text-[10px] font-black ${g.percentage < 80 ? 'text-red-500' : 'text-seablue'}`}>{g.percentage.toFixed(0)}%</p>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
+          )}
 
           {/* OB Wise Breakdown for TSM/ASM */}
           {obWiseKpis && obWiseKpis.length > 0 && (
@@ -4613,8 +4999,10 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
                   <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Team Performance (OB Wise)</h3>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Individual OB Breakdown</p>
                 </div>
-                <div className="space-y-6">
-                  {obWiseKpis.map((ob) => (
+              </div>
+              
+              <div className="space-y-6">
+                {obWiseKpis.map((ob) => (
                     <div key={ob.obId} className={`bg-slate-50 rounded-3xl p-6 border transition-all ${ob.isAtRisk ? 'border-red-200 bg-red-50/30' : 'border-slate-100'}`}>
                       <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
@@ -4732,8 +5120,7 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
                   ))}
                 </div>
               </div>
-            </div>
-          )}
+            )}
 
           <button
             onClick={onEnter}
@@ -4742,9 +5129,8 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
             Enter App
             <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
           </button>
-        </div>
-      </motion.div>
-    </div>
+        </motion.div>
+      </div>
   );
 };
 
@@ -4906,6 +5292,7 @@ export default function App() {
   });
   const [selectedAdminTSM, setSelectedAdminTSM] = useState<string>('');
   const [targetMonth, setTargetMonth] = useState<string>(new Date().toISOString().slice(0, 7));
+  const [manualTSMName, setManualTSMName] = useState('');
   const [distributors, setDistributors] = useState<any[]>([]);
   const [mtdAchievement, setMtdAchievement] = useState<Record<string, number>>({});
   const [appLogo, setAppLogo] = useState<string | null>(() => {
@@ -4922,6 +5309,30 @@ export default function App() {
   const [isGoogleConfigLocked, setIsGoogleConfigLocked] = useState(false);
   const [dailyStatus, setDailyStatus] = useState<any[]>([]);
   const [isLoadingDailyStatus, setIsLoadingDailyStatus] = useState(false);
+  const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
+  const [isFullScreen, setIsFullScreen] = useState(false);
+
+  const toggleFullScreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch((e) => {
+        console.error(`Error attempting to enable full-screen mode: ${e.message} (${e.name})`);
+      });
+      setIsFullScreen(true);
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+        setIsFullScreen(false);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleFullScreenChange = () => {
+      setIsFullScreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullScreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullScreenChange);
+  }, []);
 
   const [order, setOrder] = useState<OrderState>(() => {
     const defaultState: OrderState = {
@@ -5002,6 +5413,7 @@ export default function App() {
   const [selectedStockTown, setSelectedStockTown] = useState<string>('');
   const [isSubmittingStocks, setIsSubmittingStocks] = useState(false);
   const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupLogs, setBackupLogs] = useState<any[]>([]);
 
@@ -5765,7 +6177,7 @@ export default function App() {
     setIsLoadingAdmin(true);
     try {
       const normalizedRole = (userRole || '').toUpperCase();
-      const isAdmin = normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN';
+      const isAdmin = (normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN') && ADMIN_EMAILS.includes(userEmail || '');
       const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
       
       const requests = [
@@ -6202,7 +6614,25 @@ export default function App() {
     }
   };
 
-  const [manualTSMName, setManualTSMName] = useState('');
+  const toggleFullscreen = () => {
+    if (!document.fullscreenElement) {
+      document.documentElement.requestFullscreen().catch(err => {
+        console.error(`Error attempting to enable full-screen mode: ${err.message}`);
+      });
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      setIsFullscreen(!!document.fullscreenElement);
+    };
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => document.removeEventListener('fullscreenchange', handleFullscreenChange);
+  }, []);
 
   const registerTSMsAsOBs = async (manualName?: string) => {
     let tsmToRegister: string[] = [];
@@ -6478,6 +6908,23 @@ export default function App() {
     }
   };
 
+  const [isGeneratingLogo, setIsGeneratingLogo] = useState(false);
+
+  const handleGenerateLogo = async () => {
+    setIsGeneratingLogo(true);
+    try {
+      const logo = await generateAppLogo('');
+      if (logo) {
+        setAppLogo(logo);
+        localStorage.setItem('appLogo', logo);
+      }
+    } catch (error) {
+      console.error('Error generating logo:', error);
+    } finally {
+      setIsGeneratingLogo(false);
+    }
+  };
+
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -6513,7 +6960,10 @@ export default function App() {
         onEnter={() => setShowWelcome(false)}
         isLoading={isLoadingNational}
         timeGone={timeGone}
+        userEmail={userEmail}
         stockHistory={stockHistory}
+        sortDirection={sortDirection}
+        setSortDirection={setSortDirection}
       />
     );
   }
@@ -6523,7 +6973,7 @@ export default function App() {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
           <div className="min-h-screen bg-slate-50 flex flex-col">
-            <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+            <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-4">
                 <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -6539,7 +6989,7 @@ export default function App() {
       if (['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM', 'ASM', 'OB'].includes((userRole || '').toUpperCase())) {
         return (
           <div className="min-h-screen bg-slate-50 pb-40">
-            <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+            <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
             {isLoadingNational ? (
               <div className="flex-1 flex items-center justify-center min-h-[80vh]">
                 <div className="flex flex-col items-center gap-4">
@@ -6796,7 +7246,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -7365,7 +7815,7 @@ export default function App() {
           )}
 
           {/* Admin Quick Actions */}
-          {(userRole === 'Admin' || userRole === 'Super Admin') && (
+          {((userRole === 'Admin' || userRole === 'Super Admin') && ADMIN_EMAILS.includes(userEmail || '')) && (
             <div className="mt-12 p-6 bg-slate-900 rounded-3xl text-white shadow-2xl shadow-slate-200">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                 <div>
@@ -7417,7 +7867,7 @@ export default function App() {
       console.error("Dashboard Error:", err);
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+          <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
           <div className="flex-1 flex items-center justify-center p-10">
             <div className="card-clean p-8 max-w-md text-center space-y-4">
               <AlertTriangle className="w-12 h-12 text-rose-500 mx-auto" />
@@ -7434,7 +7884,7 @@ export default function App() {
   if (view === 'stats') {
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
         {isLoadingNational ? (
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
             <div className="flex flex-col items-center gap-4">
@@ -7462,6 +7912,8 @@ export default function App() {
             dailyStatus={dailyStatus}
             fetchDailyStatus={fetchDailyStatus}
             isLoadingDailyStatus={isLoadingDailyStatus}
+            sortDirection={sortDirection}
+            setSortDirection={setSortDirection}
           />
         )}
       </div>
@@ -7471,7 +7923,7 @@ export default function App() {
   if (view === 'reports') {
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
         {isLoadingNational ? (
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
             <div className="flex flex-col items-center gap-4">
@@ -7496,6 +7948,8 @@ export default function App() {
             isSyncing={isSyncingGlobal}
             selectedMonth={selectedMonth}
             setSelectedMonth={setSelectedMonth}
+            sortDirection={sortDirection}
+            setSortDirection={setSortDirection}
           />
         )}
       </div>
@@ -7506,7 +7960,7 @@ export default function App() {
     if (!isAdminAuthenticated) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+          <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
           <div className="flex-1 flex items-center justify-center p-4">
             <div className="card-clean p-6 max-w-sm w-full bg-white shadow-xl">
               <div className="flex items-center gap-3 mb-6">
@@ -7521,10 +7975,10 @@ export default function App() {
               <form onSubmit={(e) => {
                 e.preventDefault();
                 const fd = new FormData(e.currentTarget);
-                if (fd.get('password') === 'Admin@1234') {
+                if (fd.get('password') === 'Admin@1234' && ADMIN_EMAILS.includes(userEmail || '')) {
                   setIsAdminAuthenticated(true);
                 } else {
-                  alert('Incorrect password');
+                  alert('Incorrect password or unauthorized email');
                 }
               }} className="space-y-4">
                 <div>
@@ -7548,7 +8002,7 @@ export default function App() {
     if (isLoadingAdmin) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+          <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -7562,7 +8016,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -7607,14 +8061,119 @@ export default function App() {
               </div>
             </div>
             <div className="card-clean p-4 space-y-2">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Summary</h3>
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-slate-600">Total Records:</span>
-                <span className="text-sm font-black text-seablue">{history.length}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-bold text-slate-600">Last Sync:</span>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">{lastUpdated || 'Never'}</span>
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admin Actions</h3>
+              <div className="grid grid-cols-2 gap-2">
+                <button 
+                  onClick={() => {
+                    const confirm = window.confirm('Are you sure you want to backup the database?');
+                    if (confirm) {
+                      window.open('/api/admin/backup', '_blank');
+                    }
+                  }}
+                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
+                >
+                  <Download className="w-3 h-3" /> Backup
+                </button>
+                <button 
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.csv,.json';
+                    input.onchange = async (e: any) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = async (event: any) => {
+                        try {
+                          const data = JSON.parse(event.target.result);
+                          const res = await fetch('/api/admin/hierarchy/bulk-upload', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                            body: JSON.stringify({ hierarchy: data, clearExisting: true })
+                          });
+                          if (res.ok) alert('Hierarchy updated successfully');
+                          else alert('Failed to update hierarchy');
+                        } catch (err) {
+                          alert('Invalid JSON file');
+                        }
+                      };
+                      reader.readAsText(file);
+                    };
+                    input.click();
+                  }}
+                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
+                >
+                  <Upload className="w-3 h-3" /> Hierarchy
+                </button>
+                <button 
+                  onClick={() => {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = '.csv,.json';
+                    input.onchange = async (e: any) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = async (event: any) => {
+                        try {
+                          const data = JSON.parse(event.target.result);
+                          const res = await fetch('/api/admin/users/bulk-upload', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
+                            body: JSON.stringify({ users: data, clearExisting: false })
+                          });
+                          if (res.ok) alert('Users updated successfully');
+                          else alert('Failed to update users');
+                        } catch (err) {
+                          alert('Invalid JSON file');
+                        }
+                      };
+                      reader.readAsText(file);
+                    };
+                    input.click();
+                  }}
+                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
+                >
+                  <Users className="w-3 h-3" /> Users
+                </button>
+                <button 
+                  onClick={async () => {
+                    const res = await fetch('/api/admin/stock-reports', {
+                      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'stock-report.json';
+                      a.click();
+                    }
+                  }}
+                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
+                >
+                  <PackageSearch className="w-3 h-3" /> Stocks
+                </button>
+                <button 
+                  onClick={async () => {
+                    const res = await fetch('/api/admin/distributors', {
+                      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                    });
+                    if (res.ok) {
+                      const data = await res.json();
+                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+                      const url = URL.createObjectURL(blob);
+                      const a = document.createElement('a');
+                      a.href = url;
+                      a.download = 'distributors.json';
+                      a.click();
+                    }
+                  }}
+                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
+                >
+                  <Store className="w-3 h-3" /> Distributors
+                </button>
               </div>
             </div>
             <div className="card-clean p-4 space-y-2">
@@ -7915,17 +8474,35 @@ export default function App() {
             </div>
 
             <div className="card-clean p-4 flex items-center justify-between">
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <div className="text-[10px] font-bold text-slate-400 uppercase">App Logo</div>
-                <label className="btn-seablue text-xs cursor-pointer flex items-center gap-2">
-                  <Upload className="w-3 h-3" />
-                  Upload Logo
-                  <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
-                </label>
+                <div className="flex items-center gap-2">
+                  <label className="btn-seablue text-[10px] cursor-pointer flex items-center gap-2 px-3 py-1.5">
+                    <Upload className="w-3 h-3" />
+                    Upload
+                    <input type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+                  </label>
+                  <button 
+                    onClick={handleGenerateLogo}
+                    disabled={isGeneratingLogo}
+                    className="btn-emerald text-[10px] flex items-center gap-2 px-3 py-1.5"
+                  >
+                    {isGeneratingLogo ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                    Generate AI Logo
+                  </button>
+                </div>
               </div>
               {appLogo && (
-                <div className="w-12 h-12 rounded-lg border border-slate-100 overflow-hidden flex items-center justify-center bg-white">
-                  <img src={appLogo} alt="App Logo" className="max-w-full max-h-full object-contain" />
+                <div className="relative group">
+                  <div className="w-16 h-16 rounded-xl border-2 border-slate-100 overflow-hidden flex items-center justify-center bg-white shadow-sm">
+                    <img src={appLogo} alt="App Logo" className="max-w-full max-h-full object-contain" />
+                  </div>
+                  <button 
+                    onClick={() => { setAppLogo(null); localStorage.removeItem('appLogo'); }}
+                    className="absolute -top-2 -right-2 bg-rose-500 text-white p-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity shadow-lg"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                  </button>
                 </div>
               )}
             </div>
@@ -8372,7 +8949,7 @@ export default function App() {
   if (view === 'help') {
     return (
       <div className="min-h-screen bg-slate-50 pb-20">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
         <main className="max-w-4xl mx-auto p-4 space-y-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
             <h1 className="text-2xl font-black text-seablue uppercase tracking-tight mb-2">User Manual</h1>
@@ -8475,7 +9052,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
         
         <div className="p-4 space-y-6">
           <motion.div 
@@ -8625,7 +9202,7 @@ export default function App() {
     if (isLoadingHistory) {
       return (
         <div className="min-h-screen bg-slate-50 flex flex-col">
-          <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+          <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -8642,7 +9219,7 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
         <header className="bg-white border-b border-slate-200 p-4 sticky top-12 z-20 shadow-sm">
           <div className="max-w-full mx-auto px-4 flex flex-col gap-4">
             <div className="flex justify-between items-center">
@@ -8923,7 +9500,7 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 pb-40">
-      <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} />
+      <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} isFullScreen={isFullScreen} toggleFullScreen={toggleFullScreen} />
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-3 py-2">
           <div className="flex justify-between items-center">
@@ -8950,6 +9527,13 @@ export default function App() {
               </div>
             </div>
             <div className="flex gap-1.5">
+              <button 
+                onClick={toggleFullscreen}
+                className="p-1.5 hover:bg-slate-100 rounded-full text-slate-500 transition-colors"
+                title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
+              >
+                {isFullscreen ? <Minimize className="w-4 h-4" /> : <Maximize className="w-4 h-4" />}
+              </button>
               <button 
                 onClick={syncEverything}
                 disabled={isSyncingGlobal || !appConfig.google_spreadsheet_id}
