@@ -416,6 +416,58 @@ async function startServer() {
       UPDATE distributors SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
       UPDATE national_hierarchy SET territory_region = 'North' WHERE territory_region IN ('Zone North', 'Region KPK', 'KPK');
       UPDATE users SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+
+      UPDATE submitted_orders SET region = 'Rawalpindi' WHERE region = 'Rawal Pindi';
+      UPDATE ob_assignments SET region = 'Rawalpindi' WHERE region = 'Rawal Pindi';
+      UPDATE distributors SET region = 'Rawalpindi' WHERE region = 'Rawal Pindi';
+      UPDATE national_hierarchy SET territory_region = 'Rawalpindi' WHERE territory_region = 'Rawal Pindi';
+      UPDATE users SET region = 'Rawalpindi' WHERE region = 'Rawal Pindi';
+
+      UPDATE submitted_orders SET region = 'Karachi' WHERE region = 'karachi';
+      UPDATE ob_assignments SET region = 'Karachi' WHERE region = 'karachi';
+      UPDATE distributors SET region = 'Karachi' WHERE region = 'karachi';
+      UPDATE national_hierarchy SET territory_region = 'Karachi' WHERE territory_region = 'karachi';
+      UPDATE users SET region = 'Karachi' WHERE region = 'karachi';
+
+      UPDATE submitted_orders SET region = 'South Punjab' WHERE region = 'Multan';
+      UPDATE ob_assignments SET region = 'South Punjab' WHERE region = 'Multan';
+      UPDATE distributors SET region = 'South Punjab' WHERE region = 'Multan';
+      UPDATE national_hierarchy SET territory_region = 'South Punjab' WHERE territory_region = 'Multan';
+      UPDATE users SET region = 'South Punjab' WHERE region = 'Multan';
+
+      UPDATE users SET region = 'Quetta' WHERE region = 'Queeta';
+
+      UPDATE submitted_orders SET nsm = 'Rizwan Khattak' WHERE nsm = 'Rizwan Sb';
+      UPDATE ob_assignments SET nsm = 'Rizwan Khattak' WHERE nsm = 'Rizwan Sb';
+      UPDATE national_hierarchy SET nsm_name = 'Rizwan Khattak' WHERE nsm_name = 'Rizwan Sb';
+
+      UPDATE submitted_orders SET tsm = 'Aftab' WHERE tsm = 'Aftab ';
+      UPDATE ob_assignments SET tsm = 'Aftab' WHERE tsm = 'Aftab ';
+      UPDATE national_hierarchy SET asm_tsm_name = 'Aftab' WHERE asm_tsm_name = 'Aftab ';
+
+      UPDATE submitted_orders SET tsm = 'Faisal' WHERE tsm = 'Faisal ';
+      UPDATE ob_assignments SET tsm = 'Faisal' WHERE tsm = 'Faisal ';
+      UPDATE national_hierarchy SET asm_tsm_name = 'Faisal' WHERE asm_tsm_name = 'Faisal ';
+
+      UPDATE submitted_orders SET tsm = 'Irfan' WHERE tsm = 'IRFAN';
+      UPDATE ob_assignments SET tsm = 'Irfan' WHERE tsm = 'IRFAN';
+      UPDATE national_hierarchy SET asm_tsm_name = 'Irfan' WHERE asm_tsm_name = 'IRFAN';
+
+      UPDATE submitted_orders SET tsm = 'Muhammad Shoaib' WHERE tsm = 'Muhamamd Shoaib';
+      UPDATE ob_assignments SET tsm = 'Muhammad Shoaib' WHERE tsm = 'Muhamamd Shoaib';
+      UPDATE national_hierarchy SET asm_tsm_name = 'Muhammad Shoaib' WHERE asm_tsm_name = 'Muhamamd Shoaib';
+
+      UPDATE submitted_orders SET tsm = 'Mukhtiar Hussain' WHERE tsm = 'Mukhtair Hussain';
+      UPDATE ob_assignments SET tsm = 'Mukhtiar Hussain' WHERE tsm = 'Mukhtair Hussain';
+      UPDATE national_hierarchy SET asm_tsm_name = 'Mukhtiar Hussain' WHERE asm_tsm_name = 'Mukhtair Hussain';
+
+      UPDATE submitted_orders SET tsm = 'Raja Shoaib' WHERE tsm = 'Raja shoaib';
+      UPDATE ob_assignments SET tsm = 'Raja Shoaib' WHERE tsm = 'Raja shoaib';
+      UPDATE national_hierarchy SET asm_tsm_name = 'Raja Shoaib' WHERE asm_tsm_name = 'Raja shoaib';
+
+      UPDATE submitted_orders SET tsm = 'Shehryar' WHERE tsm = 'Shehryar ';
+      UPDATE ob_assignments SET tsm = 'Shehryar' WHERE tsm = 'Shehryar ';
+      UPDATE national_hierarchy SET asm_tsm_name = 'Shehryar' WHERE asm_tsm_name = 'Shehryar ';
     `);
   } catch (e) {
     console.error("Error during region renaming:", e);
@@ -566,15 +618,15 @@ async function startServer() {
       currentHierarchy = db.prepare("SELECT * FROM ob_assignments WHERE contact = ?").get(order.ob_contact) as any;
     }
 
-    const director = currentHierarchy?.director || order.director || '';
-    const nsm = currentHierarchy?.nsm || order.nsm || '';
-    const rsm = currentHierarchy?.rsm || order.rsm || '';
-    const sc = currentHierarchy?.sc || order.sc || '';
-    const tsm = currentHierarchy?.tsm || order.tsm || '';
-    const town = currentHierarchy?.town || order.town || '';
-    const distributor = currentHierarchy?.distributor || order.distributor || '';
-    const zone = currentHierarchy?.zone || order.zone || '';
-    const region = currentHierarchy?.region || order.region || '';
+    const director = order.director || currentHierarchy?.director || '';
+    const nsm = order.nsm || currentHierarchy?.nsm || '';
+    const rsm = order.rsm || currentHierarchy?.rsm || '';
+    const sc = order.sc || currentHierarchy?.sc || '';
+    const tsm = order.tsm || currentHierarchy?.tsm || '';
+    const town = order.town || currentHierarchy?.town || '';
+    const distributor = order.distributor || currentHierarchy?.distributor || '';
+    const zone = order.zone || currentHierarchy?.zone || '';
+    const region = order.region || currentHierarchy?.region || '';
 
     let totalTonnageKg = 0;
     const skuColumns = SKUS.map(sku => {
@@ -688,6 +740,15 @@ async function startServer() {
       workingDaysGone,
       timeGonePercent
     };
+  }
+
+  function isMonthLocked(dateString: string) {
+    if (!dateString) return false;
+    // Today is April 1st, 2026. March 2026 and earlier are locked.
+    const date = new Date(dateString);
+    const now = new Date();
+    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    return date < currentMonthStart;
   }
 
   function formatPrivateKey(key: string): string {
@@ -1834,15 +1895,19 @@ async function startServer() {
     const { targets, month } = req.body;
     const targetMonth = month || new Date().toISOString().slice(0, 7);
     
+    if (isMonthLocked(targetMonth)) {
+      return res.status(403).json({ error: "Previous months' targets are locked and cannot be modified." });
+    }
+
     try {
-      const insert = db.prepare("INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn, month) VALUES (?, ?, ?, ?)");
+      const insert = db.prepare("INSERT OR IGNORE INTO brand_targets (ob_contact, brand_name, target_ctn, month) VALUES (?, ?, ?, ?)");
       const transaction = db.transaction((data) => {
         for (const t of data) {
           insert.run(t.ob_contact, t.brand_name, t.target_ctn, targetMonth);
         }
       });
       transaction(targets);
-      res.json({ success: true, count: targets.length });
+      res.json({ success: true, count: targets.length, message: "Targets processed (new records inserted, existing skipped to protect historical data)." });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -2317,48 +2382,23 @@ async function startServer() {
         latitude, longitude, accuracy, visitType
       } = data;
 
-      // RBAC check: TSM can only submit for their assigned OBs
-      const { role, name: userName, email: userEmail } = req.user;
-      const normalizedTsmData = (tsm || '').trim().toLowerCase();
-      const normalizedUserName = (userName || '').trim().toLowerCase();
-      const normalizedUserEmail = (userEmail || '').trim().toLowerCase();
-
-      if ((role === 'TSM' || role === 'ASM') && 
-          normalizedTsmData !== normalizedUserName && 
-          normalizedTsmData !== normalizedUserEmail) {
-        console.warn(`[AUTH_DENIED] TSM ${userEmail} (${userName}) attempted to submit for ${tsm}`);
-        return res.status(403).json({ 
-          error: `You can only submit orders for your assigned OBs. (Logged in as ${userName}, attempting to submit for ${tsm})` 
-        });
+      // Lock previous months
+      if (isMonthLocked(date)) {
+        return res.status(403).json({ error: "Previous months' data is locked and cannot be modified." });
       }
 
-      // Duplicate check: Overwrite if the user submits again for the same OB on the same date
-      // This satisfies the request to "Remove Auto if Date>OB>Submitting Date area Same"
+      // RBAC check: TSM can only submit for their assigned OBs
+      const { role } = req.user;
+      if ((role === 'TSM' || role === 'ASM') && tsm !== req.user.name) {
+        return res.status(403).json({ error: "You can only submit orders for your assigned OBs." });
+      }
+
+      // Duplicate check: NEVER overwrite existing records as per request
       const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, date);
       
       const submittedAt = getPSTTimestamp();
       if (existing) {
-        db.prepare(`
-          UPDATE submitted_orders SET
-            tsm=?, town=?, distributor=?, order_booker=?, route=?, 
-            zone=?, region=?, nsm=?, rsm=?, sc=?, director=?,
-            total_shops=?, visited_shops=?, productive_shops=?, 
-            category_productive_data=?, order_data=?, targets_data=?,
-            latitude=?, longitude=?, accuracy=?, visit_type=?, submitted_at=?
-          WHERE id = ?
-        `).run(
-          tsm || '', town || '', distributor || '', orderBooker || '', route || '',
-          zone || '', region || '', nsm || '', rsm || '', sc || '', director || '',
-          totalShops || 0, visitedShops || 0, productiveShops || 0,
-          JSON.stringify(categoryProductiveShops || {}), JSON.stringify(items || {}), JSON.stringify(targets || {}),
-          latitude || null, longitude || null, accuracy || null, visitType || 'A', submittedAt,
-          existing.id
-        );
-        
-        logAction(req.user.id.toString(), req.user.name, req.user.role, "UPDATE_ORDER", { obContact, date, route });
-        syncAllToSheets().catch(console.error);
-
-        return res.json({ success: true, message: "Order updated successfully", id: existing.id });
+        return res.status(409).json({ error: "Order already exists for this OB and date. Overwriting is not allowed to protect historical data." });
       }
       
       const info = db.prepare(`
@@ -2415,28 +2455,25 @@ async function startServer() {
     if (!Array.isArray(distributors)) return res.status(400).json({ error: "Invalid data" });
 
     const transaction = db.transaction(() => {
+      // clearExisting is disabled to protect historical data
       if (clearExisting) {
-        db.prepare("DELETE FROM distributors").run();
+        console.warn("clearExisting requested but ignored to protect historical data.");
       }
 
       for (const item of distributors) {
         const { name, town, tsm, zone, region } = item;
         if (!name) continue;
+        // Use INSERT OR IGNORE to prevent overwriting existing records
         db.prepare(`
-          INSERT INTO distributors (name, town, tsm, zone, region)
+          INSERT OR IGNORE INTO distributors (name, town, tsm, zone, region)
           VALUES (?, ?, ?, ?, ?)
-          ON CONFLICT(name) DO UPDATE SET
-            town=excluded.town,
-            tsm=excluded.tsm,
-            zone=excluded.zone,
-            region=excluded.region
         `).run(name, town, tsm, zone, region);
       }
     });
 
     try {
       transaction();
-      res.json({ success: true });
+      res.json({ success: true, message: "Distributors processed (new records inserted, existing skipped to protect historical data)." });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -2448,12 +2485,15 @@ async function startServer() {
 
     const currentMonth = month || new Date().toISOString().slice(0, 7);
 
+    // Lock previous months
+    if (isMonthLocked(currentMonth)) {
+      return res.status(403).json({ error: "Previous months' data is locked and cannot be modified." });
+    }
+
     const transaction = db.transaction(() => {
+      // clearExisting is disabled to protect historical data
       if (clearExisting) {
-        db.prepare("DELETE FROM ob_assignments").run();
-        db.prepare("DELETE FROM brand_targets").run();
-        db.prepare("DELETE FROM distributors").run();
-        db.prepare("DELETE FROM national_hierarchy").run();
+        console.warn("clearExisting requested but ignored to protect historical data.");
       }
 
       for (const item of team) {
@@ -2463,74 +2503,44 @@ async function startServer() {
           total_shops, routes, targets 
         } = item;
         
-        // 1. Update OB Assignments
+        // 1. Update OB Assignments - Use INSERT OR IGNORE
         if (contact && name) {
           db.prepare(`
-            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes)
+            INSERT OR IGNORE INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(contact) DO UPDATE SET
-              name=excluded.name,
-              town=excluded.town,
-              distributor=excluded.distributor,
-              tsm=excluded.tsm,
-              zone=excluded.zone,
-              region=excluded.region,
-              nsm=excluded.nsm,
-              rsm=excluded.rsm,
-              sc=excluded.sc,
-              director=excluded.director,
-              total_shops=excluded.total_shops,
-              routes=excluded.routes
           `).run(
             name, contact, town, distributor || '', tsm || '', zone || '', region || '', 
             nsm || '', rsm || '', sc || '', director || '',
             total_shops || 50, JSON.stringify(routes || [])
           );
 
-          // 2. Update Brand Targets
+          // 2. Update Brand Targets - Use INSERT OR IGNORE
           if (targets && typeof targets === 'object') {
             for (const [brand, target] of Object.entries(targets)) {
               db.prepare(`
-                INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
+                INSERT OR IGNORE INTO brand_targets (ob_contact, brand_name, target_ctn, month)
                 VALUES (?, ?, ?, ?)
-                ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET
-                  target_ctn=excluded.target_ctn
               `).run(contact, brand, target, currentMonth);
             }
           }
         }
 
-        // 3. Update Distributors
+        // 3. Update Distributors - Use INSERT OR IGNORE
         if (distributor) {
           db.prepare(`
-            INSERT INTO distributors (name, town, tsm, zone, region)
+            INSERT OR IGNORE INTO distributors (name, town, tsm, zone, region)
             VALUES (?, ?, ?, ?, ?)
-            ON CONFLICT(name) DO UPDATE SET
-              town=excluded.town,
-              tsm=excluded.tsm,
-              zone=excluded.zone,
-              region=excluded.region
           `).run(distributor, town || '', tsm || '', zone || '', region || '');
         }
 
-        // 4. Update National Hierarchy (Optional, but keeps it in sync)
+        // 4. Update National Hierarchy - Use INSERT OR IGNORE
         if (contact) {
           db.prepare(`
-            INSERT INTO national_hierarchy (
+            INSERT OR IGNORE INTO national_hierarchy (
               director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, 
               town_name, distributor_name, ob_name, ob_id, territory_region
             )
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(ob_id) DO UPDATE SET
-              director_sales=excluded.director_sales,
-              nsm_name=excluded.nsm_name,
-              rsm_name=excluded.rsm_name,
-              sc_name=excluded.sc_name,
-              asm_tsm_name=excluded.asm_tsm_name,
-              town_name=excluded.town_name,
-              distributor_name=excluded.distributor_name,
-              ob_name=excluded.ob_name,
-              territory_region=excluded.territory_region
           `).run(
             director || '', nsm || '', rsm || '', sc || '', tsm || '',
             town || '', distributor || '', name || '', contact, region || ''
@@ -2541,7 +2551,7 @@ async function startServer() {
 
     try {
       transaction();
-      res.json({ success: true, message: `Processed ${team.length} records` });
+      res.json({ success: true, message: `Processed ${team.length} records (new records inserted, existing skipped to protect historical data).` });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -2633,43 +2643,22 @@ async function startServer() {
     if (!Array.isArray(hierarchy)) return res.status(400).json({ error: "Invalid data" });
 
     const transaction = db.transaction(() => {
+      // clearExisting is disabled to protect historical data
       if (clearExisting) {
-        db.prepare("DELETE FROM national_hierarchy").run();
+        console.warn("clearExisting requested but ignored to protect historical data.");
       }
 
       const insert = db.prepare(`
-        INSERT INTO national_hierarchy (
+        INSERT OR IGNORE INTO national_hierarchy (
           director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, town_name, 
           distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(ob_id) DO UPDATE SET
-          director_sales = COALESCE(NULLIF(excluded.director_sales, ''), director_sales),
-          nsm_name = COALESCE(NULLIF(excluded.nsm_name, ''), nsm_name),
-          rsm_name = COALESCE(NULLIF(excluded.rsm_name, ''), rsm_name),
-          sc_name = COALESCE(NULLIF(excluded.sc_name, ''), sc_name),
-          asm_tsm_name = COALESCE(NULLIF(excluded.asm_tsm_name, ''), asm_tsm_name),
-          town_name = COALESCE(NULLIF(excluded.town_name, ''), town_name),
-          distributor_name = COALESCE(NULLIF(excluded.distributor_name, ''), distributor_name),
-          distributor_code = COALESCE(NULLIF(excluded.distributor_code, ''), distributor_code),
-          ob_name = COALESCE(NULLIF(excluded.ob_name, ''), ob_name),
-          territory_region = COALESCE(NULLIF(excluded.territory_region, ''), territory_region),
-          target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn)
       `);
 
       const insertOB = db.prepare(`
-        INSERT INTO ob_assignments (
+        INSERT OR IGNORE INTO ob_assignments (
           name, contact, town, distributor, tsm, region, nsm, rsm, sc, director
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(contact) DO UPDATE SET
-          name = COALESCE(NULLIF(excluded.name, ''), name),
-          town = COALESCE(NULLIF(excluded.town, ''), town),
-          distributor = COALESCE(NULLIF(excluded.distributor, ''), distributor),
-          tsm = COALESCE(NULLIF(excluded.tsm, ''), tsm),
-          region = COALESCE(NULLIF(excluded.region, ''), region),
-          nsm = COALESCE(NULLIF(excluded.nsm, ''), nsm),
-          rsm = COALESCE(NULLIF(excluded.rsm, ''), rsm),
-          sc = COALESCE(NULLIF(excluded.sc, ''), sc),
-          director = COALESCE(NULLIF(excluded.director, ''), director)
       `);
 
       for (const item of hierarchy) {
@@ -2688,7 +2677,7 @@ async function startServer() {
 
     try {
       transaction();
-      res.json({ success: true });
+      res.json({ success: true, message: "Hierarchy processed (new records inserted, existing skipped to protect historical data)." });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -2712,19 +2701,14 @@ async function startServer() {
     if (!Array.isArray(users)) return res.status(400).json({ error: "Invalid data" });
 
     const transaction = db.transaction(() => {
+      // clearExisting is disabled to protect historical data
       if (clearExisting) {
-        db.prepare("DELETE FROM users WHERE role != 'Super Admin'").run();
+        console.warn("clearExisting requested but ignored to protect historical data.");
       }
 
       const insert = db.prepare(`
-        INSERT INTO users (name, email, password, role, region, town, contact)
+        INSERT OR IGNORE INTO users (name, email, password, role, region, town, contact)
         VALUES (?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT(email) DO UPDATE SET
-          name = excluded.name,
-          role = excluded.role,
-          region = excluded.region,
-          town = excluded.town,
-          contact = excluded.contact
       `);
 
       for (const u of users) {
@@ -2734,7 +2718,7 @@ async function startServer() {
 
     try {
       transaction();
-      res.json({ success: true });
+      res.json({ success: true, message: "Users processed (new records inserted, existing skipped to protect historical data)." });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
@@ -3480,6 +3464,9 @@ async function startServer() {
           const lat = row[baseColCount + skuCount + catCount + 2] || null;
           const lng = row[baseColCount + skuCount + catCount + 3] || null;
           const acc = row[baseColCount + skuCount + catCount + 4] || null;
+
+          // Lock previous months
+          if (isMonthLocked(date)) continue;
 
           // Check for duplicate - use ob_contact, date, and route for better matching
           const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, date, route);
