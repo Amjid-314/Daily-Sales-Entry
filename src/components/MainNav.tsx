@@ -16,6 +16,8 @@ const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 export const APP_TABS = [
   { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'drilldown', label: 'Drill Down', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'insights', label: 'Insights', icon: Waves, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'stats', label: 'Stats', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
   { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
   { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
@@ -52,7 +54,7 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
       if (['admin', 'settings'].includes(tab.id)) return false;
       
       // Allowed for all users: Entry, Reports, Dashboard, Help, History
-      if (['entry', 'reports', 'dashboard', 'help', 'history', 'stocks'].includes(tab.id)) {
+      if (['entry', 'reports', 'dashboard', 'drilldown', 'insights', 'help', 'history', 'stocks', 'stats'].includes(tab.id)) {
         // Still check if role is allowed for this specific tab
         return tab.roles.map(r => r.toUpperCase()).includes(normalizedRole);
       }

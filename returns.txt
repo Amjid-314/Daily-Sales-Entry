@@ -1,0 +1,74 @@
+93:        return (h.territory_region || '').trim().toLowerCase() === normalizedRegion || 
+97:      if (userRole === 'TSM' || userRole === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+270:        if (filterLevel === 'Region') return (s.region || '').trim().toLowerCase() === normalizedFilter;
+271:        if (filterLevel === 'SC') return (s.sc || '').trim().toLowerCase() === normalizedFilter;
+272:        if (filterLevel === 'TSM') return (s.tsm || '').trim().toLowerCase() === normalizedFilter;
+273:        if (filterLevel === 'Supervisor') return (s.supervisor || '').trim().toLowerCase() === normalizedFilter;
+274:        if (filterLevel === 'Town') return (s.town || '').trim().toLowerCase() === normalizedFilter;
+275:        if (filterLevel === 'Distributor') return (s.distributor || '').trim().toLowerCase() === normalizedFilter;
+276:        if (filterLevel === 'OB') return (s.ob_contact || '').trim().toLowerCase() === normalizedFilter;
+277:        if (filterLevel === 'Route') return (s.route || '').trim().toLowerCase() === normalizedFilter;
+287:      if (filterLevel === 'Region') return (h.territory_region || '').trim().toLowerCase() === filterValue.trim().toLowerCase();
+288:      if (filterLevel === 'TSM') return (h.asm_tsm_name || '').trim().toLowerCase() === filterValue.trim().toLowerCase();
+289:      if (filterLevel === 'Town') return (h.town_name || '').trim().toLowerCase() === filterValue.trim().toLowerCase();
+290:      if (filterLevel === 'OB') return (h.ob_id || '').trim().toLowerCase() === filterValue.trim().toLowerCase();
+914:        if (filterLevel === 'National') return (h.territory_region || '').trim().toLowerCase() === key.trim().toLowerCase();
+915:        if (filterLevel === 'Region') return (h.asm_tsm_name || '').trim().toLowerCase() === key.trim().toLowerCase();
+916:        if (filterLevel === 'TSM') return (h.town_name || '').trim().toLowerCase() === key.trim().toLowerCase();
+917:        if (filterLevel === 'Town') return (h.ob_id || '').trim().toLowerCase() === key.trim().toLowerCase();
+950:  return (
+1219:                      return (
+1323:                      return (
+1418:                  return (
+2062:                        return (
+2320:  if (!user || !data) return (
+2334:  return (
+2728:            return (
+2856:  return (
+3059:                  return (
+3214:                return (
+3253:        return (
+3345:                return (
+3494:  return (
+3596:                return (
+3634:                      return (
+3722:                return (
+3917:                  return (
+3952:      if (role === 'RSM' || role === 'SC') return (h.territory_region || '').trim().toLowerCase() === (user?.region || '').trim().toLowerCase();
+3953:      if (role === 'TSM' || role === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === name;
+3970:      if (role === 'RSM' || role === 'SC') return (h.territory_region || '').trim().toLowerCase() === (user?.region || '').trim().toLowerCase();
+3971:      if (role === 'TSM' || role === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === name;
+4215:  return (
+4683:    return (saved === 'null' || !saved) ? null : saved;
+4793:        return (parsed.role === 'TSM' || parsed.role === 'ASM') ? parsed.name || '' : '';
+4887:        return (parsed.role === 'TSM' || parsed.role === 'ASM') ? parsed.name || '' : '';
+5097:    return (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+5200:    return () => {
+5545:    return () => { delete (window as any).handleMasterSync; };
+5838:    return () => window.removeEventListener('message', handleMessage);
+5852:        return () => clearTimeout(timer);
+6398:    return (
+6416:        return (
+6432:        return (
+6689:    return (
+6859:                      return (
+6867:                            return (
+6900:                  return (
+7043:                    return (
+7156:                      return (
+7310:      return (
+7327:    return (
+7364:    return (
+7399:      return (
+7441:      return (
+7455:    return (
+8063:                      return (
+8370:    return (
+8473:    return (
+8606:                      return (
+8623:      return (
+8640:    return (
+8829:                            return (
+8921:  return (
+9182:                      return (
+9214:                    return (

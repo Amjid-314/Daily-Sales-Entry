@@ -83,7 +83,7 @@ const LOGO_STORAGE_KEY = 'app_logo_base64';
 
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
-const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
+const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
   const filteredOBs = useMemo(() => {
     return hierarchy.filter(h => {
       if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
@@ -149,6 +149,8 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
   const [heatmapView, setHeatmapView] = useState('Total');
   const [tsmCategoryFilter, setTsmCategoryFilter] = useState('All');
   const [tsmBrandFilter, setTsmBrandFilter] = useState('All');
+  const [obReportCategoryFilter, setObReportCategoryFilter] = useState('All');
+  const [obReportBrandFilter, setObReportBrandFilter] = useState('All');
   const [tsmSkuFilter, setTsmSkuFilter] = useState('All');
   const [worstBrandFilter, setWorstBrandFilter] = useState('All');
   const [categoryWiseCategoryFilter, setCategoryWiseCategoryFilter] = useState('All');
@@ -1122,8 +1124,10 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         </div>
       </div>
 
-      {/* Bento Grid Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      {view === 'dashboard' && (
+        <>
+          {/* Bento Grid Summary */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <div className="card-clean p-5 bg-gradient-to-br from-seablue to-indigo-900 text-white shadow-xl shadow-blue-100 relative overflow-hidden group">
           <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Target</div>
           <div className="text-4xl font-black tracking-tighter">{Math.round(summary.totalTarget).toLocaleString()} <span className="text-sm font-normal opacity-70">B</span></div>
@@ -1432,6 +1436,7 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
             </table>
           </div>
         </div>
+      </div>
 
       {/* Productivity Section */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -1574,7 +1579,10 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           )}
         </div>
       </div>
+        </>
+      )}
 
+      {view === 'drilldown' && (
       <div className="grid grid-cols-1 gap-6">
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
@@ -1720,6 +1728,115 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
           </div>
         </div>
       </div>
+      )}
+
+      {view === 'insights' && (
+        <>
+      <div className="card-clean bg-white overflow-hidden mb-6">
+        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
+            OB Performance Report (Target vs Achievement)
+          </h3>
+          <div className="flex items-center gap-2">
+            <select 
+              value={obReportCategoryFilter} 
+              onChange={(e) => setObReportCategoryFilter(e.target.value)}
+              className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1 focus:outline-none focus:ring-1 focus:ring-slate-400"
+            >
+              <option value="All">All Categories</option>
+              {BRAND_GROUP_NAMES.map(group => (
+                <option key={group} value={group}>{group}</option>
+              ))}
+            </select>
+            <select 
+              value={obReportBrandFilter} 
+              onChange={(e) => setObReportBrandFilter(e.target.value)}
+              className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1 focus:outline-none focus:ring-1 focus:ring-slate-400"
+            >
+              <option value="All">All Brands</option>
+              {CATEGORIES.map(cat => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
+          </div>
+        </div>
+        <div className="overflow-x-auto max-h-[400px]">
+          <table className="w-full text-left min-w-[800px]">
+            <thead className="sticky top-0 z-10">
+              <tr className="border-b border-slate-100 bg-slate-50">
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">TSM</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Target (Ctns)</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Achieved (Ctns)</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Ach %</th>
+                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Trend</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {(() => {
+                const obData = filteredOBs.map(ob => {
+                  let sales = 0;
+                  let target = 0;
+                  
+                  const obStats = monthStats.filter(s => s.ob_contact === ob.ob_id && !s.isTSMEntry);
+                  
+                  obStats.forEach(s => {
+                    if (obReportCategoryFilter !== 'All') {
+                      const brandsInGroup = BRAND_GROUPS[obReportCategoryFilter] || [];
+                      sales += brandsInGroup.reduce((sum, brand) => sum + (s.brandSales[brand] || 0), 0);
+                    } else if (obReportBrandFilter !== 'All') {
+                      sales += (s.brandSales[obReportBrandFilter] || 0);
+                    } else {
+                      sales += s.totalBags;
+                    }
+                  });
+
+                  if (obReportCategoryFilter !== 'All') {
+                    // Assuming target_ctn is overall, we might not have category-wise target per OB.
+                    // If not, we just use overall target.
+                    target = Number(ob.target_ctn) || 0;
+                  } else if (obReportBrandFilter !== 'All') {
+                    target = Number(ob.target_ctn) || 0;
+                  } else {
+                    target = Number(ob.target_ctn) || 0;
+                  }
+
+                  const perc = target > 0 ? (sales / target) * 100 : 0;
+                  
+                  // Simple trend calculation (last 3 days vs previous 3 days)
+                  // For simplicity, we just show a placeholder or basic calculation
+                  const recentSales = obStats.slice(-3).reduce((sum, s) => sum + s.totalBags, 0);
+                  const prevSales = obStats.slice(-6, -3).reduce((sum, s) => sum + s.totalBags, 0);
+                  const trend = recentSales >= prevSales ? 'up' : 'down';
+
+                  return { ...ob, sales, target, perc, trend };
+                }).sort((a, b) => b.sales - a.sales);
+
+                return obData.map((row, idx) => (
+                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                    <td className="px-6 py-3 text-xs font-black text-slate-700">{row.ob_name} <span className="text-[9px] text-slate-400 font-normal block">{row.ob_id}</span></td>
+                    <td className="px-6 py-3 text-xs font-bold text-slate-500">{row.town_name}</td>
+                    <td className="px-6 py-3 text-xs font-bold text-slate-500">{row.asm_tsm_name}</td>
+                    <td className="px-6 py-3 text-xs font-bold text-slate-600 text-right">{Math.round(row.target).toLocaleString()}</td>
+                    <td className="px-6 py-3 text-xs font-black text-seablue text-right">{Math.round(row.sales).toLocaleString()}</td>
+                    <td className={`px-6 py-3 text-xs font-black text-right ${row.perc >= 100 ? 'text-emerald-600' : row.perc >= 80 ? 'text-amber-500' : 'text-rose-600'}`}>
+                      {row.perc.toFixed(1)}%
+                    </td>
+                    <td className="px-6 py-3 text-right">
+                      {row.trend === 'up' ? (
+                        <span className="inline-flex items-center text-emerald-500"><TrendingUp className="w-4 h-4" /></span>
+                      ) : (
+                        <span className="inline-flex items-center text-rose-500"><TrendingDown className="w-4 h-4" /></span>
+                      )}
+                    </td>
+                  </tr>
+                ));
+              })()}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       <div className="card-clean p-6 bg-white border border-slate-100 lg:col-span-2">
         <div className="flex items-center justify-between mb-6">
@@ -1801,7 +1918,6 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
             </BarChart>
           </ResponsiveContainer>
         </div>
-      </div>
       </div>
 
       {/* TSM / ASM Direct Sales Performance */}
@@ -2281,25 +2397,27 @@ const NationalDashboard = ({ stats, hierarchy, categories, skus, isSyncing, onRe
         </div>
       </div>
 
-      {(filterLevel === 'OB' || filterLevel === 'Route') && filterValue && (
-        <div className="card-clean p-6 bg-white space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">{filterLevel} Monthly Sales Trend: {filterValue}</h3>
-          <div className="h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trendData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="month" fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
-                <YAxis fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
-                <Tooltip />
-                <Legend />
-                {brands.map((brand, idx) => (
-                  <Line key={brand} type="monotone" dataKey={brand} stroke={['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 5]} strokeWidth={2} />
-                ))}
-                <Line type="monotone" dataKey="totalSales" stroke="#0f172a" strokeWidth={3} strokeDasharray="5 5" />
-              </LineChart>
-            </ResponsiveContainer>
-          </div>
+      <div className="card-clean p-6 bg-white space-y-4 mt-6">
+        <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">
+          {filterLevel === 'National' ? 'National' : `${filterLevel}: ${filterValue}`} Monthly Sales Trend
+        </h3>
+        <div className="h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis dataKey="month" fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
+              <YAxis fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
+              <Tooltip />
+              <Legend />
+              {brands.map((brand, idx) => (
+                <Line key={brand} type="monotone" dataKey={brand} stroke={['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 5]} strokeWidth={2} />
+              ))}
+              <Line type="monotone" dataKey="totalSales" stroke="#0f172a" strokeWidth={3} strokeDasharray="5 5" />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
+      </div>
+        </>
       )}
     </div>
   );
@@ -6410,7 +6528,7 @@ export default function App() {
     );
   }
 
-  if (view === 'dashboard') {
+  if (view === 'dashboard' || view === 'drilldown' || view === 'insights') {
     try {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
@@ -6441,6 +6559,7 @@ export default function App() {
               </div>
             ) : (
               <NationalDashboard 
+                view={view}
                 stats={nationalStats} 
                 hierarchy={hierarchy} 
                 categories={CATEGORIES} 
