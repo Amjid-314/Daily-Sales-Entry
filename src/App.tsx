@@ -19,7 +19,7 @@ import {
   Legend
 } from 'recharts';
 import { AIChatBot } from './components/AIChatBot';
-import { MainNav } from './components/MainNav';
+import { MainNav, APP_TABS } from './components/MainNav';
 import { DailyStatusView } from './components/DailyStatusView';
 import { Calendar as CalendarComponent } from './components/Calendar';
 import { EntryForm } from './components/EntryForm';
@@ -85,7 +85,14 @@ const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
 const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
   const filteredOBs = useMemo(() => {
-    return hierarchy.filter(h => {
+    const uniqueOBs = new Map();
+    hierarchy.forEach(h => {
+      if (!uniqueOBs.has(h.ob_id)) {
+        uniqueOBs.set(h.ob_id, h);
+      }
+    });
+
+    return Array.from(uniqueOBs.values()).filter((h: any) => {
       if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
       if (userRole === 'RSM' || userRole === 'SC') {
         const normalizedRegion = (userRegion || '').trim().toLowerCase();
@@ -2423,16 +2430,6 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
   );
 };
 
-export const APP_TABS = [
-  { id: 'entry', label: 'Entry', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'stats', label: 'Stats', icon: Waves, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
-  { id: 'reports', label: 'Reports', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
-  { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'stocks', label: 'Stocks', icon: Store, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'admin', label: 'Admin', icon: Settings, roles: ['Super Admin', 'Admin'] },
-  { id: 'help', label: 'Help', icon: HelpCircle, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-];
 
 const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, userEmail }: { user: any, data: any, setView: (v: any) => void, onRefresh?: () => void, isSyncing?: boolean, role: string | null, userEmail?: string | null }) => {
   if (!user || !data) return (
@@ -2928,16 +2925,6 @@ const StatsView = ({
   const totalOBs = filteredOBs.length;
   const activeOBsCount = filteredOBs.filter(ob => history.some((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth))).length;
   
-  const now = new Date();
-  const yesterday = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
-  yesterday.setDate(yesterday.getDate() - 1);
-  const yesterdayStr = yesterday.toISOString().slice(0, 10);
-  
-  const yesterdayMissing = filteredOBs.filter((ob: any) => {
-    const hasEntry = history.some((h: any) => h.ob_contact === ob.contact && h.date === yesterdayStr);
-    return !hasEntry;
-  });
-
   const avgEfficiency = filteredOBs.length > 0 ? filteredOBs.reduce((sum, ob) => {
     const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
     const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
@@ -2946,7 +2933,7 @@ const StatsView = ({
 
   const dateWiseSummary = useMemo(() => {
     if (!history) return [];
-    const dates = Array.from(new Set(history.map(s => s.date))).sort().reverse();
+    const dates = Array.from(new Set(history.filter(s => s.date.startsWith(currentMonth)).map(s => s.date))).sort().reverse();
     const totalOBs = obAssignments.length;
     
     return dates.map(date => {
@@ -3026,21 +3013,21 @@ const StatsView = ({
           </div>
         </div>
         <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
-          <div className="w-10 h-10 rounded-2xl bg-rose-50 flex items-center justify-center text-rose-500">
-            <AlertCircle className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Missing (Yesterday)</p>
-            <p className="text-2xl font-black text-rose-600 leading-none mt-1">{yesterdayMissing.length}</p>
-          </div>
-        </div>
-        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
           <div className="w-10 h-10 rounded-2xl bg-seablue/10 flex items-center justify-center text-seablue">
             <Activity className="w-5 h-5" />
           </div>
           <div>
             <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Avg Efficiency</p>
             <p className="text-2xl font-black text-seablue leading-none mt-1">{avgEfficiency.toFixed(1)}%</p>
+          </div>
+        </div>
+        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
+          <div className="w-10 h-10 rounded-2xl bg-amber-50 flex items-center justify-center text-amber-500">
+            <Clock className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Working Days</p>
+            <p className="text-2xl font-black text-amber-600 leading-none mt-1">{workingDaysTillDate}/{totalWorkingDays}</p>
           </div>
         </div>
       </div>
@@ -3364,42 +3351,6 @@ const StatsView = ({
         </div>
       </section>
 
-      {/* Yesterday's Missing Submissions */}
-      {(() => {
-        if (yesterdayMissing.length === 0) return null;
-
-        return (
-          <section className="card-clean bg-rose-50 overflow-hidden rounded-3xl border border-rose-100 shadow-xl shadow-rose-200/20">
-            <div className="px-6 py-5 border-b border-rose-100 flex justify-between items-center">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-rose-500 rounded-xl flex items-center justify-center text-white">
-                  <AlertCircle className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black text-rose-900 uppercase tracking-widest">Yesterday's Missing Submissions</h3>
-                  <p className="text-[8px] font-bold text-rose-600 uppercase tracking-widest">Date: {yesterdayStr}</p>
-                </div>
-              </div>
-              <span className="px-3 py-1 bg-rose-200 text-rose-900 rounded-full text-[10px] font-black uppercase tracking-widest">
-                {yesterdayMissing.length} Missing
-              </span>
-            </div>
-            <div className="p-6 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
-              {yesterdayMissing.map((ob: any, i: number) => (
-                <div key={i} className="bg-white p-4 rounded-2xl border border-rose-100 shadow-sm">
-                  <p className="text-xs font-black text-slate-700 truncate">{ob.name}</p>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{ob.town}</p>
-                  <div className="mt-2 pt-2 border-t border-slate-50 flex justify-between items-center">
-                    <span className="text-[8px] font-black text-rose-500 uppercase tracking-widest">TSM: {ob.tsm}</span>
-                    <span className="text-[8px] font-bold text-slate-400">{ob.contact}</span>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </section>
-        );
-      })()}
-
       {/* OB Submission Status Report */}
       <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
         <div className="px-6 py-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
@@ -3582,7 +3533,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
 
   const routeAnalysisData = useMemo(() => {
     if (!selectedAnalysisOB || !selectedAnalysisRoute) return null;
-    const obOrders = history.filter((h: any) => h.ob_contact === selectedAnalysisOB && h.route === selectedAnalysisRoute);
+    const obOrders = history.filter((h: any) => h.ob_contact === selectedAnalysisOB && h.route === selectedAnalysisRoute && h.date.startsWith(currentMonth));
     const last16 = obOrders.sort((a: any, b: any) => b.date.localeCompare(a.date)).slice(0, 16);
     
     return last16.reverse().map((h: any) => {
@@ -5785,7 +5736,7 @@ export default function App() {
         requests.push(apiFetch('/api/admin/obs'));
         requests.push(apiFetch('/api/admin/distributors'));
         requests.push(apiFetch('/api/admin/config'));
-        requests.push(apiFetch('/api/admin/hierarchy'));
+        requests.push(apiFetch(`/api/admin/hierarchy?month=${selectedMonth}`));
       }
       
       if (isAdmin) {
@@ -5822,7 +5773,7 @@ export default function App() {
   const fetchNationalData = async () => {
     setIsLoadingNational(true);
     try {
-      const res = await apiFetch(`/api/national/dashboard-data`);
+      const res = await apiFetch(`/api/national/dashboard-data?month=${selectedMonth}`);
       if (res.ok) {
         const data = await res.json();
         const parsedStats = (data.stats || []).map((h: any) => {
@@ -5941,7 +5892,7 @@ export default function App() {
     }
     fetchHistory();
     fetchNationalData();
-  }, [view, userRole, token]);
+  }, [view, userRole, token, selectedMonth]);
 
   useEffect(() => {
     if (!token || token === 'null') return;
@@ -6342,7 +6293,7 @@ export default function App() {
         try {
           const res = await apiFetch('/api/admin/bulk-upload', {
             method: 'POST',
-            body: JSON.stringify({ team, clearExisting })
+            body: JSON.stringify({ team, clearExisting, month: selectedMonth })
           });
           const data = await res.json();
           if (res.ok) {
@@ -7620,6 +7571,29 @@ export default function App() {
             <div className="card-clean p-4 space-y-2">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admin Actions</h3>
               <div className="grid grid-cols-2 gap-2">
+                <button 
+                  onClick={async () => {
+                    const confirm = window.confirm('Are you sure you want to clean duplicates? This will keep the latest record for each OB/Date/Month combination.');
+                    if (confirm) {
+                      setIsSyncing(true);
+                      try {
+                        const res = await apiFetch('/api/admin/clean-duplicates', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok) alert(data.message);
+                        else alert('Failed to clean duplicates: ' + data.error);
+                      } catch (err: any) {
+                        alert('Error: ' + err.message);
+                      } finally {
+                        setIsSyncing(false);
+                        fetchAdminData();
+                      }
+                    }
+                  }}
+                  disabled={isSyncing}
+                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
+                >
+                  <Trash2 className="w-3 h-3" /> Clean Duplicates
+                </button>
                 <button 
                   onClick={() => {
                     const confirm = window.confirm('Are you sure you want to backup the database?');

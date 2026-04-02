@@ -117,6 +117,7 @@ function initDB() {
       CREATE TABLE IF NOT EXISTS submitted_orders (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT,
+        month TEXT,
         tsm TEXT,
         town TEXT,
         distributor TEXT,
@@ -184,9 +185,88 @@ function initDB() {
 
 initDB();
 
+// Migration: Ensure 'month' column exists in relevant tables
+function ensureColumn(tableName: string, columnName: string, columnType: string) {
+  try {
+    const info = db.prepare(`PRAGMA table_info(${tableName})`).all() as any[];
+    const exists = info.some(col => col.name === columnName);
+    if (!exists) {
+      console.log(`Migration: Adding column ${columnName} to ${tableName}...`);
+      db.exec(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnType}`);
+    }
+  } catch (e) {
+    console.error(`Migration error for ${tableName}.${columnName}:`, e);
+  }
+}
+
+ensureColumn('submitted_orders', 'month', 'TEXT');
+ensureColumn('national_hierarchy', 'month', 'TEXT');
+ensureColumn('brand_targets', 'month', 'TEXT');
+ensureColumn('hierarchy_targets', 'month', 'TEXT');
+
+// Migration: Fix national_hierarchy table schema (remove UNIQUE from ob_id if it exists)
+try {
+  const tableSql = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='national_hierarchy'").get() as any;
+  if (tableSql && (/ob_id["\s]*TEXT[^,]*UNIQUE/i.test(tableSql.sql) || /UNIQUE\s*\(\s*ob_id\s*\)/i.test(tableSql.sql))) {
+    console.log("Migration: Fixing national_hierarchy table schema (removing UNIQUE from ob_id)...");
+    db.transaction(() => {
+      db.exec(`
+        ALTER TABLE national_hierarchy RENAME TO national_hierarchy_old;
+        CREATE TABLE national_hierarchy (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          director_sales TEXT,
+          nsm_name TEXT,
+          rsm_name TEXT,
+          sc_name TEXT,
+          asm_tsm_name TEXT,
+          supervisor_name TEXT,
+          town_name TEXT,
+          distributor_name TEXT,
+          distributor_code TEXT,
+          ob_name TEXT,
+          ob_id TEXT,
+          territory_region TEXT,
+          target_ctn REAL DEFAULT 0,
+          month TEXT,
+          UNIQUE(ob_id, month)
+        );
+        INSERT INTO national_hierarchy (id, director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, supervisor_name, town_name, distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn, month)
+        SELECT id, director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, supervisor_name, town_name, distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn, month FROM national_hierarchy_old;
+        DROP TABLE national_hierarchy_old;
+      `);
+    })();
+  }
+} catch (e) {
+  console.error("Migration error fixing national_hierarchy table schema:", e);
+}
+
+// Ensure unique indexes for month-wise isolation
+try {
+  // Drop any old unique index on ob_id alone
+  const indexes = db.prepare("PRAGMA index_list(national_hierarchy)").all() as any[];
+  for (const idx of indexes) {
+    if (idx.unique && idx.name !== 'idx_national_hierarchy_ob_month' && !idx.name.startsWith('sqlite_autoindex')) {
+      const info = db.prepare(`PRAGMA index_info(${idx.name})`).all() as any[];
+      if (info.length === 1 && info[0].name === 'ob_id') {
+        console.log(`Migration: Dropping old unique index ${idx.name} on national_hierarchy.ob_id...`);
+        db.exec(`DROP INDEX IF EXISTS ${idx.name}`);
+      }
+    }
+  }
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_national_hierarchy_ob_month ON national_hierarchy(ob_id, month);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_brand_targets_ob_brand_month ON brand_targets(ob_contact, brand_name, month);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_hierarchy_targets_role_name_brand_month ON hierarchy_targets(role, name, brand_name, month);
+  `);
+} catch (e) {
+  console.error("Migration error creating unique indexes:", e);
+}
+
   // Add unique index for sync consistency
   try {
-    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_submitted_orders_date_ob ON submitted_orders(date, ob_contact)").run();
+    db.prepare("DROP INDEX IF EXISTS idx_submitted_orders_date_ob").run();
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_submitted_orders_date_ob_route ON submitted_orders(date, ob_contact, route)").run();
   } catch (e) {
     console.error("Error creating unique index:", e);
   }
@@ -213,9 +293,11 @@ initDB();
     distributor_name TEXT,
     distributor_code TEXT,
     ob_name TEXT,
-    ob_id TEXT UNIQUE,
+    ob_id TEXT,
     territory_region TEXT,
-    target_ctn REAL DEFAULT 0
+    target_ctn REAL DEFAULT 0,
+    month TEXT,
+    UNIQUE(ob_id, month)
   );
 
   -- Cleanup duplicates before adding index
@@ -596,7 +678,7 @@ async function startServer() {
   // Helper for Sales Data Headers & Rows
   function getSalesDataHeaders() {
     return [
-      'Date', 'Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
+      'Date', 'Month', 'Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
       'Zone', 'Region',
       'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type',
       ...SKUS.map(sku => `${sku.name} (${sku.category})`),
@@ -627,6 +709,7 @@ async function startServer() {
     const distributor = order.distributor || currentHierarchy?.distributor || '';
     const zone = order.zone || currentHierarchy?.zone || '';
     const region = order.region || currentHierarchy?.region || '';
+    const month = order.month || (order.date ? order.date.slice(0, 7) : '');
 
     let totalTonnageKg = 0;
     const skuColumns = SKUS.map(sku => {
@@ -643,7 +726,7 @@ async function startServer() {
     });
 
     return [
-      order.date, director, nsm, rsm, sc, tsm, town, distributor, order.order_booker, order.ob_contact, order.route,
+      order.date, month, director, nsm, rsm, sc, tsm, town, distributor, order.order_booker, order.ob_contact, order.route,
       zone, region,
       isAbsent ? 0 : order.total_shops, 
       isAbsent ? 0 : order.visited_shops, 
@@ -744,11 +827,14 @@ async function startServer() {
 
   function isMonthLocked(dateString: string) {
     if (!dateString) return false;
-    // Today is April 1st, 2026. March 2026 and earlier are locked.
+    // March 2026 (2026-03) is LOCKED
     const date = new Date(dateString);
-    const now = new Date();
-    const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-    return date < currentMonthStart;
+    const month = date.toISOString().slice(0, 7);
+    if (month === '2026-03') return true;
+    
+    // Also lock any month before March 2026 for safety
+    const march2026 = new Date('2026-03-01');
+    return date < march2026;
   }
 
   function formatPrivateKey(key: string): string {
@@ -2382,9 +2468,20 @@ async function startServer() {
         latitude, longitude, accuracy, visitType
       } = data;
 
+      const orderDate = date || getPSTDate();
+      const orderMonth = orderDate.slice(0, 7);
+
       // Lock previous months
-      if (isMonthLocked(date)) {
+      if (isMonthLocked(orderDate)) {
         return res.status(403).json({ error: "Previous months' data is locked and cannot be modified." });
+      }
+
+      // April 2026 is new insert only
+      if (orderMonth === '2026-04') {
+        const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, orderDate);
+        if (existing) {
+          return res.status(403).json({ error: "April 2026 data is set to 'New Insert Only'. Existing records cannot be updated." });
+        }
       }
 
       // RBAC check: TSM can only submit for their assigned OBs
@@ -2394,7 +2491,7 @@ async function startServer() {
       }
 
       // Duplicate check: NEVER overwrite existing records as per request
-      const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, date);
+      const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, orderDate);
       
       const submittedAt = getPSTTimestamp();
       if (existing) {
@@ -2403,15 +2500,16 @@ async function startServer() {
       
       const info = db.prepare(`
         INSERT INTO submitted_orders (
-          date, tsm, town, distributor, order_booker, ob_contact, route, 
+          date, month, tsm, town, distributor, order_booker, ob_contact, route, 
           zone, region, nsm, rsm, sc, director,
           total_shops, visited_shops, productive_shops, 
           category_productive_data, order_data, targets_data,
           latitude, longitude, accuracy, visit_type, submitted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
-        date || getPSTDate(), 
+        orderDate,
+        orderMonth,
         tsm || '', 
         town || '', 
         distributor || '', 
@@ -2538,12 +2636,12 @@ async function startServer() {
           db.prepare(`
             INSERT OR IGNORE INTO national_hierarchy (
               director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, 
-              town_name, distributor_name, ob_name, ob_id, territory_region
+              town_name, distributor_name, ob_name, ob_id, territory_region, month
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             director || '', nsm || '', rsm || '', sc || '', tsm || '',
-            town || '', distributor || '', name || '', contact, region || ''
+            town || '', distributor || '', name || '', contact, region || '', currentMonth
           );
         }
       }
@@ -2560,11 +2658,13 @@ async function startServer() {
   // National Hierarchy APIs
   app.get("/api/admin/hierarchy", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req: any, res) => {
     try {
+      const { month } = req.query;
+      const currentMonth = month || new Date().toISOString().slice(0, 7);
       const visibleOBIds = getVisibleOBIds(req.user);
       if (visibleOBIds.length === 0) return res.json([]);
       
-      const hierarchy = db.prepare(`SELECT * FROM national_hierarchy WHERE ob_id IN (${visibleOBIds.map(() => '?').join(',')})`).all(...visibleOBIds);
-      const brandTargets = db.prepare(`SELECT * FROM brand_targets`).all();
+      const hierarchy = db.prepare(`SELECT * FROM national_hierarchy WHERE month = ? AND ob_id IN (${visibleOBIds.map(() => '?').join(',')})`).all(currentMonth, ...visibleOBIds);
+      const brandTargets = db.prepare(`SELECT * FROM brand_targets WHERE month = ?`).all(currentMonth);
 
       const enrichedHierarchy = hierarchy.map(h => {
         const obTargets = brandTargets.filter(bt => bt.ob_contact === h.ob_id);
@@ -2585,18 +2685,21 @@ async function startServer() {
   app.get("/api/national/dashboard-data", authenticateToken, (req: any, res) => {
     try {
       const { role } = req.user;
+      const { month } = req.query;
       const isAdmin = role === 'Admin' || role === 'Super Admin' || role === 'Director';
       const visibleOBIds = getVisibleOBIds(req.user);
 
+      const targetMonth = month || new Date().toISOString().slice(0, 7);
       
       // 1. Get hierarchy to determine visibility
       const hierarchy = db.prepare(`
         SELECT h.*, a.total_shops, a.routes 
         FROM national_hierarchy h
         LEFT JOIN ob_assignments a ON h.ob_id = a.contact
-      `).all() as any[];
-      const currentMonth = new Date().toISOString().slice(0, 7);
-      const brandTargets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(currentMonth) as any[];
+        WHERE h.month = ?
+      `).all(targetMonth) as any[];
+      
+      const brandTargets = db.prepare("SELECT * FROM brand_targets WHERE month = ?").all(targetMonth) as any[];
       
       const enrichedHierarchy = hierarchy.map(h => {
         const obTargets = brandTargets.filter(bt => bt.ob_contact === h.ob_id);
@@ -2612,17 +2715,17 @@ async function startServer() {
         return res.json({ stats: [], hierarchy: [], timeInfo: calculateTimeGone() });
       }
 
-      // 2. Fetch stats for visible OBs
+      // 2. Fetch stats for visible OBs and selected month
       let stats;
       if (isAdmin) {
-        stats = db.prepare("SELECT * FROM submitted_orders").all();
+        stats = db.prepare("SELECT * FROM submitted_orders WHERE month = ?").all(targetMonth);
       } else {
         const placeholders = visibleOBIds.map(() => '?').join(',');
         const query = `
           SELECT * FROM submitted_orders 
-          WHERE ob_contact IN (${placeholders})
+          WHERE ob_contact IN (${placeholders}) AND month = ?
         `;
-        stats = db.prepare(query).all(...visibleOBIds);
+        stats = db.prepare(query).all(...visibleOBIds, targetMonth);
       }
 
       const timeInfo = calculateTimeGone();
@@ -2679,6 +2782,116 @@ async function startServer() {
       transaction();
       res.json({ success: true, message: "Hierarchy processed (new records inserted, existing skipped to protect historical data)." });
     } catch (err) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/clean-duplicates", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    try {
+      const transaction = db.transaction(() => {
+        // 1. Merge Duplicate OB IDs (Same Name, Town, Distributor)
+        // We'll pick the MAX(ob_id) as the "Main" ID for each group
+        // This handles cases where the same person has multiple IDs in the hierarchy
+        const duplicates = db.prepare(`
+          SELECT ob_name, town_name, distributor_name, MAX(ob_id) as main_id, GROUP_CONCAT(DISTINCT ob_id) as all_ids
+          FROM national_hierarchy
+          WHERE ob_name IS NOT NULL AND ob_name != ''
+          GROUP BY ob_name, town_name, distributor_name
+          HAVING COUNT(DISTINCT ob_id) > 1
+        `).all() as any[];
+
+        for (const dup of duplicates) {
+          const mainId = dup.main_id;
+          const otherIds = dup.all_ids.split(',').filter((id: string) => id !== mainId);
+          
+          if (otherIds.length > 0) {
+            const placeholders = otherIds.map(() => '?').join(',');
+            
+            // Update submitted_orders
+            db.prepare(`
+              UPDATE submitted_orders 
+              SET ob_contact = ? 
+              WHERE ob_contact IN (${placeholders})
+            `).run(mainId, ...otherIds);
+
+            // Update brand_targets
+            db.prepare(`
+              UPDATE brand_targets 
+              SET ob_contact = ? 
+              WHERE ob_contact IN (${placeholders})
+            `).run(mainId, ...otherIds);
+
+            // Update ob_assignments
+            db.prepare(`
+              UPDATE ob_assignments 
+              SET contact = ? 
+              WHERE contact IN (${placeholders})
+            `).run(mainId, ...otherIds);
+            
+            // Update national_hierarchy
+            db.prepare(`
+              UPDATE national_hierarchy 
+              SET ob_id = ? 
+              WHERE ob_id IN (${placeholders})
+            `).run(mainId, ...otherIds);
+          }
+        }
+
+        // 2. Clean submitted_orders (Exact Duplicates: Same OB, Date, Route)
+        db.exec(`
+          DELETE FROM submitted_orders 
+          WHERE id NOT IN (
+            SELECT MAX(id) 
+            FROM submitted_orders 
+            GROUP BY ob_contact, date, route
+          )
+        `);
+
+        // 3. Clean national_hierarchy (Exact Duplicates: Same OB, Month)
+        db.exec(`
+          DELETE FROM national_hierarchy 
+          WHERE id NOT IN (
+            SELECT MAX(id) 
+            FROM national_hierarchy 
+            GROUP BY ob_id, month
+          )
+        `);
+        
+        // 4. Clean national_hierarchy by Name (The user's specific request: Same Name, Town, Distributor, Month)
+        db.exec(`
+          DELETE FROM national_hierarchy 
+          WHERE id NOT IN (
+            SELECT MAX(id) 
+            FROM national_hierarchy 
+            GROUP BY ob_name, town_name, distributor_name, month
+          )
+        `);
+
+        // 5. Clean brand_targets (Exact Duplicates: Same OB, Brand, Month)
+        db.exec(`
+          DELETE FROM brand_targets 
+          WHERE id NOT IN (
+            SELECT MAX(id) 
+            FROM brand_targets 
+            GROUP BY ob_contact, brand_name, month
+          )
+        `);
+
+        // 6. Clean ob_assignments (Exact Duplicates: Same Name, Town, Distributor)
+        db.exec(`
+          DELETE FROM ob_assignments 
+          WHERE id NOT IN (
+            SELECT MAX(id) 
+            FROM ob_assignments 
+            GROUP BY name, town, distributor
+          )
+        `);
+      });
+
+      transaction();
+      res.json({ success: true, message: "Duplicates cleaned and merged successfully across all tables. Duplicate OB IDs have been standardized." });
+    } catch (err: any) {
+      console.error("Clean Duplicates Error:", err);
       res.status(500).json({ error: err.message });
     }
   });
@@ -2849,10 +3062,10 @@ async function startServer() {
           db.prepare(`
             INSERT INTO national_hierarchy (
               director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, 
-              town_name, distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn
+              town_name, distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn, month
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(ob_id) DO UPDATE SET
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(ob_id, month) DO UPDATE SET
               director_sales = COALESCE(NULLIF(excluded.director_sales, ''), director_sales),
               nsm_name = COALESCE(NULLIF(excluded.nsm_name, ''), nsm_name),
               rsm_name = COALESCE(NULLIF(excluded.rsm_name, ''), rsm_name),
@@ -2865,8 +3078,9 @@ async function startServer() {
               territory_region = COALESCE(NULLIF(excluded.territory_region, ''), territory_region),
               target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn)
           `).run(
-            item.director || '', item.nsm || '', item.rsm || '', item.sc || '', item.tsm || '',
-            item.town || '', item.distributor || '', item.distributor_code || '', item.name || '', item.contact, item.region || '', item.target_ctn || 0
+            item.director, item.nsm, item.rsm, item.sc || '', item.tsm,
+            item.town, item.distributor, item.distributor_code || '',
+            item.name, item.contact, item.region, item.target_ctn, currentMonth
           );
         }
       });
@@ -3006,7 +3220,7 @@ async function startServer() {
       const transaction = db.transaction(() => {
         const insertOrder = db.prepare(`
           INSERT INTO submitted_orders (
-            date, director, nsm, rsm, sc, tsm, town, distributor, order_booker, ob_contact, route, 
+            date, month, director, nsm, rsm, sc, tsm, town, distributor, order_booker, ob_contact, route, 
             zone, region,
             total_shops, visited_shops, productive_shops, 
             category_productive_data, order_data, targets_data,
@@ -3063,6 +3277,17 @@ async function startServer() {
             }
           }
 
+          const orderMonth = cleanDate.slice(0, 7);
+          
+          // Lock previous months
+          if (isMonthLocked(cleanDate)) continue;
+
+          // April 2026 is new insert only
+          if (orderMonth === '2026-04') {
+            const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(cleanContact, cleanDate);
+            if (existing) continue;
+          }
+
           const cleanRoute = getVal(['Route'])?.toString().trim() || '';
 
           const visitTypeLabel = getVal(['Visit Type']);
@@ -3103,6 +3328,7 @@ async function startServer() {
           if (existing) {
             db.prepare(`
               UPDATE submitted_orders SET
+                month = ?,
                 director = ?, nsm = ?, rsm = ?, sc = ?, tsm = ?, town = ?, distributor = ?, order_booker = ?, route = ?,
                 zone = ?, region = ?,
                 total_shops = ?, visited_shops = ?, productive_shops = ?,
@@ -3110,6 +3336,7 @@ async function startServer() {
                 submitted_at = ?, latitude = ?, longitude = ?, accuracy = ?, visit_type = ?
               WHERE id = ?
             `).run(
+              orderMonth,
               getVal(['Director', 'director sales']) || '', getVal(['NSM', 'nsm name']) || '', getVal(['RSM', 'rsm name']) || '', getVal(['SC', 'sc name']) || '', getVal(['TSM', 'ASM', 'asm/tsm', 'asm / tsm', 'asm_tsm_name']) || '', 
               getVal(['Town', 'town name']) || '', getVal(['Distributor', 'distributor name']) || '', getVal(['OB Name', 'order booker name']) || '', cleanRoute,
               zone, region,
@@ -3124,7 +3351,7 @@ async function startServer() {
             );
           } else {
             insertOrder.run(
-              cleanDate, getVal(['Director', 'director sales']) || '', getVal(['NSM', 'nsm name']) || '', getVal(['RSM', 'rsm name']) || '', getVal(['SC', 'sc name']) || '', getVal(['TSM', 'ASM', 'asm/tsm', 'asm / tsm', 'asm_tsm_name']) || '', 
+              cleanDate, orderMonth, getVal(['Director', 'director sales']) || '', getVal(['NSM', 'nsm name']) || '', getVal(['RSM', 'rsm name']) || '', getVal(['SC', 'sc name']) || '', getVal(['TSM', 'ASM', 'asm/tsm', 'asm / tsm', 'asm_tsm_name']) || '', 
               getVal(['Town', 'town name']) || '', getVal(['Distributor', 'distributor name']) || '', getVal(['OB Name', 'order booker name']) || '', cleanContact, cleanRoute,
               zone, region,
               parseInt(getVal(['Total Shops'])) || 0, parseInt(getVal(['Visited Shops'])) || 0, parseInt(getVal(['Productive Shops'])) || 0,
@@ -3417,13 +3644,13 @@ async function startServer() {
         // Let's append but avoid exact duplicates (same OB, Date, and Submitted At)
         const insertOrder = db.prepare(`
           INSERT INTO submitted_orders (
-            date, director, nsm, rsm, tsm, town, distributor, order_booker, ob_contact, route, 
+            date, month, director, nsm, rsm, tsm, town, distributor, order_booker, ob_contact, route, 
             zone, region,
             total_shops, visited_shops, productive_shops, 
             category_productive_data, order_data, targets_data,
             submitted_at, latitude, longitude, accuracy, visit_type
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const row of rows) {
@@ -3468,12 +3695,19 @@ async function startServer() {
           // Lock previous months
           if (isMonthLocked(date)) continue;
 
+          const orderMonth = date.slice(0, 7);
+          // April 2026 is new insert only
+          if (orderMonth === '2026-04') {
+            const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, date);
+            if (existing) continue;
+          }
+
           // Check for duplicate - use ob_contact, date, and route for better matching
           const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, date, route);
           if (existing) continue;
 
           insertOrder.run(
-            date, director || '', nsm || '', rsm || '', tsm, town, distributor, obName, obContact, route,
+            date, orderMonth, director || '', nsm || '', rsm || '', tsm, town, distributor, obName, obContact, route,
             zone || '', region || '',
             parseInt(tShops) || 0, parseInt(vShops) || 0, parseInt(pShops) || 0,
             JSON.stringify(catProdData), 
