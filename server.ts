@@ -144,6 +144,17 @@ function initDB() {
       );
     `);
 
+    // Ensure all submitted_orders have the correct month based on their date
+    try {
+      db.exec(`
+        UPDATE submitted_orders 
+        SET month = substr(date, 1, 7) 
+        WHERE month IS NULL OR month = '' OR month != substr(date, 1, 7);
+      `);
+    } catch (err) {
+      console.warn("Migration for month column in submitted_orders failed:", err.message);
+    }
+
     // Remove duplicate orders (keep the latest one based on id)
     try {
       db.exec(`
@@ -827,14 +838,15 @@ async function startServer() {
 
   function isMonthLocked(dateString: string) {
     if (!dateString) return false;
-    // March 2026 (2026-03) is LOCKED
     const date = new Date(dateString);
-    const month = date.toISOString().slice(0, 7);
-    if (month === '2026-03') return true;
     
-    // Also lock any month before March 2026 for safety
+    // Lock any month before March 2026 for safety
     const march2026 = new Date('2026-03-01');
-    return date < march2026;
+    if (date < march2026) return true;
+    
+    // March 2026 and April 2026 are NOT locked for inserts, 
+    // but they are handled as "New Insert Only" in the logic below.
+    return false;
   }
 
   function formatPrivateKey(key: string): string {
@@ -2186,7 +2198,8 @@ async function startServer() {
       }
       const { sheets, spreadsheetId } = client;
 
-      const result = await performFullSync(sheets, spreadsheetId);
+      const { month } = req.body;
+      const result = await performFullSync(sheets, spreadsheetId, month);
 
       res.json({ 
         success: true, 
@@ -2476,11 +2489,11 @@ async function startServer() {
         return res.status(403).json({ error: "Previous months' data is locked and cannot be modified." });
       }
 
-      // April 2026 is new insert only
-      if (orderMonth === '2026-04') {
-        const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, orderDate);
+      // March and April 2026 are new insert only
+      if (orderMonth === '2026-03' || orderMonth === '2026-04') {
+        const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, orderDate, route);
         if (existing) {
-          return res.status(403).json({ error: "April 2026 data is set to 'New Insert Only'. Existing records cannot be updated." });
+          return res.status(403).json({ error: `${orderMonth} data is set to 'New Insert Only'. Existing records cannot be updated.` });
         }
       }
 
@@ -2583,7 +2596,9 @@ async function startServer() {
 
     const currentMonth = month || new Date().toISOString().slice(0, 7);
 
-    // Lock previous months
+    // March 2026 and April 2026 are NOT locked for inserts, 
+    // but they are handled as "New Insert Only" for sales data.
+    // For hierarchy/targets, we allow updates if they are for the current or future months.
     if (isMonthLocked(currentMonth)) {
       return res.status(403).json({ error: "Previous months' data is locked and cannot be modified." });
     }
@@ -2967,9 +2982,10 @@ async function startServer() {
     }
   });
 
-  async function pullTeamData(sheets: any, spreadsheetId: string) {
+  async function pullTeamData(sheets: any, spreadsheetId: string, month?: string) {
     try {
-      console.log(`Pulling Team Data from ${spreadsheetId}...`);
+      const targetMonth = month || new Date().toISOString().slice(0, 7);
+      console.log(`Pulling Team Data from ${spreadsheetId} for month ${targetMonth}...`);
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
         range: "Team_Data!A1:ZZ1000",
@@ -3028,7 +3044,6 @@ async function startServer() {
         };
       }).filter(t => t.name && t.contact);
 
-      const currentMonth = new Date().toISOString().slice(0, 7);
       const transaction = db.transaction(() => {
         for (const item of team) {
           db.prepare(`
@@ -3055,7 +3070,7 @@ async function startServer() {
               VALUES (?, ?, ?, ?)
               ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET 
                 target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn)
-            `).run(item.contact, brand, target, currentMonth);
+            `).run(item.contact, brand, target, targetMonth);
           }
 
           // Also update national_hierarchy
@@ -3080,7 +3095,7 @@ async function startServer() {
           `).run(
             item.director, item.nsm, item.rsm, item.sc || '', item.tsm,
             item.town, item.distributor, item.distributor_code || '',
-            item.name, item.contact, item.region, item.target_ctn, currentMonth
+            item.name, item.contact, item.region, item.target_ctn, targetMonth
           );
         }
       });
@@ -3282,13 +3297,13 @@ async function startServer() {
           // Lock previous months
           if (isMonthLocked(cleanDate)) continue;
 
-          // April 2026 is new insert only
-          if (orderMonth === '2026-04') {
-            const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(cleanContact, cleanDate);
+          const cleanRoute = getVal(['Route'])?.toString().trim() || '';
+
+          // March and April 2026 are new insert only
+          if (orderMonth === '2026-03' || orderMonth === '2026-04') {
+            const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(cleanContact, cleanDate, cleanRoute);
             if (existing) continue;
           }
-
-          const cleanRoute = getVal(['Route'])?.toString().trim() || '';
 
           const visitTypeLabel = getVal(['Visit Type']);
           let visitType = 'A';
@@ -3429,7 +3444,8 @@ async function startServer() {
     });
   }
 
-  async function performFullSync(sheets: any, spreadsheetId: string) {
+  async function performFullSync(sheets: any, spreadsheetId: string, month?: string) {
+    const targetMonth = month || new Date().toISOString().slice(0, 7);
     // 1. Ensure all sheets exist
     const requiredSheets = ["Sales_Data", "Team_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report", "Current_Stocks", "Last_Entry_Date", "Visit_Type_Analysis", "OB_Performance", "TSM_Performance", "Product_Config", "Users"];
     await ensureSheetsExist(sheets, spreadsheetId);
@@ -3438,7 +3454,7 @@ async function startServer() {
     await pullProductConfig(sheets, spreadsheetId);
 
     // 3. Pull Team Data (Hierarchy & Targets)
-    const pullTeamResult = await pullTeamData(sheets, spreadsheetId);
+    const pullTeamResult = await pullTeamData(sheets, spreadsheetId, targetMonth);
 
     // 4. Pull Users Data
     const pullUsersResult = await pullUsersData(sheets, spreadsheetId);
@@ -3501,7 +3517,8 @@ async function startServer() {
         throw err;
       }
 
-      const result = await performFullSync(sheets, spreadsheetId);
+      const { month } = req.body;
+      const result = await performFullSync(sheets, spreadsheetId, month);
 
       res.json({ 
         success: true, 

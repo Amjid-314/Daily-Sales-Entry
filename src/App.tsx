@@ -4851,6 +4851,15 @@ export default function App() {
   
   const [appConfig, setAppConfig] = useState<Record<string, string>>({ total_working_days: '25' });
 
+  useEffect(() => {
+    if (selectedMonth) {
+      const [year, month] = selectedMonth.split('-').map(Number);
+      const firstDay = new Date(year, month - 1, 1).toISOString().split('T')[0];
+      const lastDay = new Date(year, month, 0).toISOString().split('T')[0];
+      setHistoryFilters(prev => ({ ...prev, from: firstDay, to: lastDay }));
+    }
+  }, [selectedMonth]);
+
   const [isLoadingAdmin, setIsLoadingAdmin] = useState(false);
   const [stockHistory, setStockHistory] = useState<any[]>([]);
   const [selectedEntryRegion, setSelectedEntryRegion] = useState<string>('');
@@ -5574,7 +5583,10 @@ export default function App() {
   const syncEverything = async () => {
     setIsSyncingGlobal(true);
     try {
-      const res = await apiFetch('/api/admin/master-sync', { method: 'POST' });
+      const res = await apiFetch('/api/admin/master-sync', { 
+        method: 'POST',
+        body: JSON.stringify({ month: selectedMonth })
+      });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Sync failed');
       
