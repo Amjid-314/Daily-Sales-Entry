@@ -550,6 +550,10 @@ async function startServer() {
       UPDATE ob_assignments SET tsm = 'Muhammad Shoaib' WHERE tsm = 'Muhamamd Shoaib';
       UPDATE national_hierarchy SET asm_tsm_name = 'Muhammad Shoaib' WHERE asm_tsm_name = 'Muhamamd Shoaib';
 
+      UPDATE submitted_orders SET tsm = 'Muhammad Shoaib (ASM)' WHERE tsm = 'Muhammad Shoaib' AND region = 'North';
+      UPDATE ob_assignments SET tsm = 'Muhammad Shoaib (ASM)' WHERE tsm = 'Muhammad Shoaib' AND region = 'North';
+      UPDATE national_hierarchy SET asm_tsm_name = 'Muhammad Shoaib (ASM)' WHERE asm_tsm_name = 'Muhammad Shoaib' AND territory_region = 'North';
+
       UPDATE submitted_orders SET tsm = 'Mukhtiar Hussain' WHERE tsm = 'Mukhtair Hussain';
       UPDATE ob_assignments SET tsm = 'Mukhtiar Hussain' WHERE tsm = 'Mukhtair Hussain';
       UPDATE national_hierarchy SET asm_tsm_name = 'Mukhtiar Hussain' WHERE asm_tsm_name = 'Mukhtair Hussain';
@@ -3241,7 +3245,7 @@ async function startServer() {
             category_productive_data, order_data, targets_data,
             submitted_at, latitude, longitude, accuracy, visit_type
           )
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         for (const row of dataRows) {

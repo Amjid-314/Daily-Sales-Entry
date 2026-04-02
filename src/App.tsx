@@ -83,7 +83,7 @@ const LOGO_STORAGE_KEY = 'app_logo_base64';
 
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
-const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
+const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userEmail, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userEmail?: string | null, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
   const filteredOBs = useMemo(() => {
     const uniqueOBs = new Map();
     hierarchy.forEach(h => {
@@ -1589,12 +1589,12 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         </>
       )}
 
-      {view === 'drilldown' && (
+      {view === 'command_center' && (
       <div className="grid grid-cols-1 gap-6">
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-              Sales Drill Down ({filterLevel}) {categoryWiseCategoryFilter === 'All' ? '(Washing Powder*)' : ''}
+              Command Center ({filterLevel}) {categoryWiseCategoryFilter === 'All' ? '(Washing Powder*)' : ''}
             </h3>
             <div className="flex items-center gap-2">
               <select 
@@ -2832,11 +2832,12 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, u
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
           {APP_TABS.filter(tab => {
-            if (!role) return false;
-            if (!tab.roles.includes(role)) return false;
+            if (!userRole) return false;
+            const normalizedRole = userRole.toUpperCase();
+            if (!tab.roles.map(r => r.toUpperCase()).includes(normalizedRole)) return false;
             // Strict Admin check
             if (tab.id === 'admin') {
-              return ADMIN_EMAILS.includes(userEmail || '');
+              return ADMIN_EMAILS.map(e => e.toLowerCase()).includes((userEmail || '').toLowerCase());
             }
             return true;
           }).map((tab) => {
@@ -6491,7 +6492,7 @@ export default function App() {
     );
   }
 
-  if (view === 'dashboard' || view === 'drilldown' || view === 'insights') {
+  if (view === 'dashboard' || view === 'command_center' || view === 'insights') {
     try {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
@@ -6530,6 +6531,7 @@ export default function App() {
                 isSyncing={isSyncingGlobal}
                 onRefresh={syncEverything}
                 userRole={userRole}
+                userEmail={userEmail}
                 userRegion={userRegion}
                 userName={userName}
                 userContact={userContact}
