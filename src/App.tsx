@@ -18,6 +18,7 @@ import {
   Pie,
   Legend
 } from 'recharts';
+import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import { AIChatBot } from './components/AIChatBot';
 import { MainNav, APP_TABS } from './components/MainNav';
 import { DailyStatusView } from './components/DailyStatusView';
@@ -646,6 +647,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
     const zeroSaleOBs = obPerformance.filter(ob => ob.totalSales === 0).length;
     const lowPerfOBs = obPerformance.filter(ob => ob.achievement < 50).length;
     const avgSalesPerOB = uniqueOBs > 0 ? totalSales / uniqueOBs : 0;
+    const dropSize = totalProductive > 0 ? totalSales / totalProductive : 0;
 
     const brandWiseStats = brands.map(b => ({
       name: b,
@@ -655,7 +657,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       tonnage: brandTonnage[b] || 0
     }));
 
-    return { totalBags, totalCtns, totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, avgSalesPerOB, totalVisited, totalProductive, totalShops, brandWiseStats };
+    return { totalBags, totalCtns, totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, avgSalesPerOB, dropSize, totalVisited, totalProductive, totalShops, brandWiseStats };
   }, [monthStats, filteredHierarchy, brands, skus, obPerformance, topCategoryFilter, topBrandFilter]);
 
   const categoryStats = useMemo(() => {
@@ -980,6 +982,27 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
     })).sort((a, b) => b.totalSales - a.totalSales);
   }, [monthStats, hierarchy, filteredHierarchy, filterLevel, categoryWiseCategoryFilter, categoryWiseBrandFilter]);
 
+  const dayOfWeekData = useMemo(() => {
+    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const data = days.map(day => ({ name: day, sales: 0, productive: 0, visited: 0 }));
+    
+    monthStats.filter(s => !s.isTSMEntry).forEach(s => {
+      const date = new Date(s.date);
+      if (!isNaN(date.getTime())) {
+        const dayIdx = date.getDay();
+        data[dayIdx].sales += (s.totalBags + s.totalCtns);
+        data[dayIdx].productive += s.productive_shops;
+        data[dayIdx].visited += s.visited_shops;
+      }
+    });
+    
+    return data.map(d => ({
+      ...d,
+      dropSize: d.productive > 0 ? d.sales / d.productive : 0,
+      productivity: d.visited > 0 ? (d.productive / d.visited) * 100 : 0
+    }));
+  }, [monthStats]);
+
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
@@ -1208,6 +1231,13 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
             {Math.round(summary.avgSalesPerOB).toLocaleString()}
           </div>
           <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Bags per OB</div>
+        </div>
+        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Drop Size</div>
+          <div className="text-4xl font-black text-emerald-600">
+            {summary.dropSize.toFixed(1)}
+          </div>
+          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Bags / Productive Shop</div>
         </div>
       </div>
 
@@ -1821,6 +1851,38 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
 
       {view === 'insights' && (
         <>
+      {/* Geospatial Sales Distribution Map */}
+      <div className="card-clean bg-white overflow-hidden mb-6">
+        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Geospatial Sales Distribution</h3>
+        </div>
+        <div className="h-[400px] w-full z-0 relative">
+          <MapContainer center={[30.3753, 69.3451]} zoom={5} style={{ height: '100%', width: '100%', zIndex: 0 }}>
+            <TileLayer
+              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+            />
+            {monthStats.filter(s => s.latitude && s.longitude && !s.isTSMEntry).map((loc, i) => (
+              <CircleMarker 
+                key={i} 
+                center={[loc.latitude, loc.longitude]} 
+                radius={Math.max(4, Math.min(20, (loc.totalBags + loc.totalCtns) / 10))}
+                pathOptions={{ color: '#006994', fillColor: '#006994', fillOpacity: 0.6, weight: 1 }}
+              >
+                <Popup>
+                  <div className="text-xs">
+                    <strong>{loc.ob_name}</strong><br/>
+                    {loc.town}<br/>
+                    Sales: {loc.totalBags + loc.totalCtns} bags/ctns<br/>
+                    Date: {loc.date}
+                  </div>
+                </Popup>
+              </CircleMarker>
+            ))}
+          </MapContainer>
+        </div>
+      </div>
+
       <div className="card-clean bg-white overflow-hidden mb-6">
         <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
@@ -1924,6 +1986,51 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
               })()}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="card-clean p-6 bg-white border border-slate-100 mb-6">
+        <div className="flex items-center justify-between mb-6">
+          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Sales by Day of Week</h3>
+        </div>
+        <div className="h-[300px] min-h-[300px]">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={dayOfWeekData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+              <XAxis 
+                dataKey="name" 
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }} 
+                dy={10}
+              />
+              <YAxis 
+                yAxisId="left"
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }}
+                dx={-10}
+                tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value}
+              />
+              <YAxis 
+                yAxisId="right"
+                orientation="right"
+                axisLine={false} 
+                tickLine={false} 
+                tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }}
+                dx={10}
+              />
+              <Tooltip 
+                cursor={{ fill: '#f8fafc' }}
+                contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', padding: '12px 16px' }}
+                labelStyle={{ fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}
+                itemStyle={{ fontSize: '12px', fontWeight: 700, padding: '2px 0' }}
+              />
+              <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 700, color: '#64748b', paddingTop: '20px' }} />
+              <Bar yAxisId="left" dataKey="sales" name="Total Sales (Bags)" fill="#006994" radius={[4, 4, 0, 0]} barSize={30} />
+              <Line yAxisId="right" type="monotone" dataKey="dropSize" name="Drop Size" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} />
+            </BarChart>
+          </ResponsiveContainer>
         </div>
       </div>
 
