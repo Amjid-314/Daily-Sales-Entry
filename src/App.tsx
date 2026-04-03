@@ -647,7 +647,15 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
     const lowPerfOBs = obPerformance.filter(ob => ob.achievement < 50).length;
     const avgSalesPerOB = uniqueOBs > 0 ? totalSales / uniqueOBs : 0;
 
-    return { totalBags, totalCtns, totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, avgSalesPerOB, totalVisited, totalProductive, totalShops };
+    const brandWiseStats = brands.map(b => ({
+      name: b,
+      target: brandTargets[b] || 0,
+      achievement: brandTotals[b] || 0,
+      percentage: (brandTargets[b] || 0) > 0 ? (brandTotals[b] / brandTargets[b]) * 100 : 0,
+      tonnage: brandTonnage[b] || 0
+    }));
+
+    return { totalBags, totalCtns, totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, avgSalesPerOB, totalVisited, totalProductive, totalShops, brandWiseStats };
   }, [monthStats, filteredHierarchy, brands, skus, obPerformance, topCategoryFilter, topBrandFilter]);
 
   const categoryStats = useMemo(() => {
@@ -1180,6 +1188,64 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
           </div>
           <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Productive / Visited</div>
         </div>
+        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost / KG</div>
+          <div className="text-4xl font-black text-rose-600">
+            Rs.{summary.costPerKg.toFixed(1)}
+          </div>
+          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Salary Cost per KG</div>
+        </div>
+        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost / Bag</div>
+          <div className="text-4xl font-black text-rose-600">
+            Rs.{summary.costPerBag.toFixed(1)}
+          </div>
+          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Salary Cost per Bag</div>
+        </div>
+        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Avg Sales / OB</div>
+          <div className="text-4xl font-black text-seablue">
+            {Math.round(summary.avgSalesPerOB).toLocaleString()}
+          </div>
+          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Bags per OB</div>
+        </div>
+      </div>
+
+      {/* Brand-Wise Target & Achievement */}
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        {summary.brandWiseStats.map((brand) => (
+          <div key={brand.name} className="card-clean p-4 bg-white border border-slate-100 space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: CATEGORY_COLORS[brand.name] }}>{brand.name}</span>
+              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brand.percentage >= 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                {brand.percentage.toFixed(1)}%
+              </span>
+            </div>
+            <div className="space-y-1">
+              <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
+                <span>Target</span>
+                <span>{Math.round(brand.target).toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between text-[10px] font-bold text-slate-600 uppercase">
+                <span>Achieved</span>
+                <span>{Math.round(brand.achievement).toLocaleString()}</span>
+              </div>
+              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
+                <div 
+                  className="h-full transition-all duration-1000" 
+                  style={{ 
+                    width: `${Math.min(100, brand.percentage)}%`,
+                    backgroundColor: CATEGORY_COLORS[brand.name]
+                  }}
+                />
+              </div>
+            </div>
+            <div className="pt-2 border-t border-slate-50 flex justify-between items-center">
+              <span className="text-[9px] font-bold text-slate-400 uppercase">Tonnage</span>
+              <span className="text-[10px] font-black text-slate-700">{brand.tonnage.toFixed(3)} T</span>
+            </div>
+          </div>
+        ))}
       </div>
 
       {/* Charts Section */}
@@ -2848,8 +2914,8 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, u
         </div>
         <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
           {APP_TABS.filter(tab => {
-            if (!userRole) return false;
-            const normalizedRole = userRole.toUpperCase();
+            if (!role) return false;
+            const normalizedRole = role.toUpperCase();
             if (!tab.roles.map(r => r.toUpperCase()).includes(normalizedRole)) return false;
             // Strict Admin check
             if (tab.id === 'admin') {
@@ -5042,8 +5108,8 @@ export default function App() {
           });
         },
         (error) => {
-          // Suppress location error as requested
-          // console.error("Error getting location:", error);
+          // Suppress location error as requested but log for debugging
+          console.error("Error getting location:", error);
         }
       );
     }
