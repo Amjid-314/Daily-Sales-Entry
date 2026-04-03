@@ -37,55 +37,58 @@ const CATEGORIES = [
 ];
 const SKUS = [
   // Kite Glow
-  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12, weight_gm_per_pack: 30 },
-  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12, weight_gm_per_pack: 56 },
-  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 165 },
-  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12, weight_gm_per_pack: 350 },
-  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0, weight_gm_per_pack: 500 },
-  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0, weight_gm_per_pack: 1000 },
-  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0, weight_gm_per_pack: 2000 },
+  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12, weight_gm_per_pack: 30, unit: 'Bags' },
+  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12, weight_gm_per_pack: 56, unit: 'Bags' },
+  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 165, unit: 'Bags' },
+  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12, weight_gm_per_pack: 350, unit: 'Bags' },
+  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0, weight_gm_per_pack: 500, unit: 'Bags' },
+  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0, weight_gm_per_pack: 1000, unit: 'Bags' },
+  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0, weight_gm_per_pack: 2000, unit: 'Bags' },
   // Burq Action
-  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12, weight_gm_per_pack: 40 },
-  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12, weight_gm_per_pack: 75 },
-  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 215 },
-  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12, weight_gm_per_pack: 430 },
-  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0, weight_gm_per_pack: 1000 },
-  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0, weight_gm_per_pack: 2300 },
+  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12, weight_gm_per_pack: 40, unit: 'Bags' },
+  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12, weight_gm_per_pack: 75, unit: 'Bags' },
+  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 215, unit: 'Bags' },
+  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12, weight_gm_per_pack: 430, unit: 'Bags' },
+  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0, weight_gm_per_pack: 1000, unit: 'Bags' },
+  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0, weight_gm_per_pack: 2300, unit: 'Bags' },
   // Vero
-  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0, weight_gm_per_pack: 5000 },
-  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0, weight_gm_per_pack: 20000 },
+  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0, weight_gm_per_pack: 5000, unit: 'Bags' },
+  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0, weight_gm_per_pack: 20000, unit: 'Bags' },
   // DWB
-  { id: "dwb-reg", name: "Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 50 },
-  { id: "dwb-large", name: "Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 100 },
-  { id: "dwb-long", name: "Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 210 },
-  { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 240 },
-  { id: "dwb-new", name: "New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 50 },
+  { id: "dwb-reg", name: "Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
+  { id: "dwb-large", name: "Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 100, unit: 'Ctns' },
+  { id: "dwb-long", name: "Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 210, unit: 'Ctns' },
+  { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 240, unit: 'Ctns' },
+  { id: "dwb-new", name: "New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
   // Match
-  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50 },
-  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50 },
-  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50 },
-  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50 },
+  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
+  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
+  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
+  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
 ];
 
 function calculateAchievement(orderData: any) {
-  const totals: Record<string, number> = {};
+  const totals: Record<string, { value: number, unit: string }> = {};
   CATEGORIES.forEach(cat => {
     // Skip "Match" from achievement calculations
     if (cat === 'Match') {
-      totals[cat] = 0;
+      totals[cat] = { value: 0, unit: 'Ctns' };
       return;
     }
-    totals[cat] = SKUS
-      .filter(sku => sku.category === cat)
-      .reduce((sum, sku) => {
-        const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-        const ctn = Number(item.ctn || 0);
-        const dzn = Number(item.dzn || 0);
-        const pks = Number(item.pks || 0);
-        const packs = (ctn * (sku.unitsPerCarton || 0)) + (dzn * (sku.unitsPerDozen || 0)) + pks;
-        const cartons = (sku.unitsPerCarton || 0) > 0 ? packs / sku.unitsPerCarton : 0;
-        return sum + (isNaN(cartons) ? 0 : cartons);
-      }, 0);
+    const catSkus = SKUS.filter(sku => sku.category === cat);
+    const unit = catSkus[0]?.unit || 'Ctns';
+    
+    const value = catSkus.reduce((sum, sku) => {
+      const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+      const ctn = Number(item.ctn || 0);
+      const dzn = Number(item.dzn || 0);
+      const pks = Number(item.pks || 0);
+      const packs = (ctn * (sku.unitsPerCarton || 0)) + (dzn * (sku.unitsPerDozen || 0)) + pks;
+      const cartons = (sku.unitsPerCarton || 0) > 0 ? packs / sku.unitsPerCarton : 0;
+      return sum + (isNaN(cartons) ? 0 : cartons);
+    }, 0);
+    
+    totals[cat] = { value, unit };
   });
   return totals;
 }
@@ -734,8 +737,11 @@ async function startServer() {
       const ctns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
       
       // Weight calculation: (Total Packs * Weight per Pack in gm) / 1000 = Kg
-      const weightKg = (totalPacks * (sku.weight_gm_per_pack || 0)) / 1000;
-      totalTonnageKg += weightKg;
+      // Tonnage: Include only washing powder + DWB ... Exclude Match
+      if (sku.category !== 'Match') {
+        const weightKg = (totalPacks * (sku.weight_gm_per_pack || 0)) / 1000;
+        totalTonnageKg += weightKg;
+      }
       
       return ctns;
     });
@@ -1228,7 +1234,7 @@ async function startServer() {
       const orderAch = calculateAchievement(orderData);
       
       CATEGORIES.forEach(cat => {
-        achievementMap[obContact][cat] = (achievementMap[obContact][cat] || 0) + (orderAch[cat] || 0);
+        achievementMap[obContact][cat] = (achievementMap[obContact][cat] || 0) + (orderAch[cat]?.value || 0);
       });
     });
 
@@ -1495,7 +1501,7 @@ async function startServer() {
       const totalAch = groupOrders.reduce((sum, o) => {
         const data = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
         const ach = calculateAchievement(data);
-        return sum + Object.values(ach).reduce((acc, val) => acc + val, 0);
+        return sum + Object.values(ach).reduce((acc, val) => acc + val.value, 0);
       }, 0);
 
       const avgAch = groupOrders.length > 0 ? (totalAch / groupOrders.length).toFixed(2) : '0.00';
@@ -3111,24 +3117,40 @@ async function startServer() {
     }
   }
 
-  async function pushTeamData(sheets: any, spreadsheetId: string) {
+  async function pushTeamData(sheets: any, spreadsheetId: string, month?: string) {
     const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
-    const currentMonth = new Date().toISOString().slice(0, 7);
-    const headers = ['Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'];
+    const targetMonth = month || new Date().toISOString().slice(0, 7);
+    const headers = ['Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes', 'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target', 'Month'];
     
     const rows = obs.map(ob => {
-      const targets = db.prepare("SELECT brand_name, target_ctn FROM brand_targets WHERE ob_contact = ? AND month = ?").all(ob.contact, currentMonth) as any[];
+      const targets = db.prepare("SELECT brand_name, target_ctn FROM brand_targets WHERE ob_contact = ? AND month = ?").all(ob.contact, targetMonth) as any[];
       const targetMap = targets.reduce((acc, t) => ({ ...acc, [t.brand_name]: t.target_ctn }), {} as any);
       const routes = JSON.parse(ob.routes || '[]');
       return [
         ob.director || '', ob.nsm || '', ob.rsm || '', ob.sc || '', ob.tsm, ob.town, ob.distributor, ob.name, ob.contact, ob.zone || '', ob.region || '', ob.total_shops, routes.join(", "),
-        targetMap["Kite Glow"] || 0, targetMap["Burq Action"] || 0, targetMap["Vero"] || 0, targetMap["DWB"] || 0, targetMap["Match"] || 0
+        targetMap["Kite Glow"] || 0, targetMap["Burq Action"] || 0, targetMap["Vero"] || 0, targetMap["DWB"] || 0, targetMap["Match"] || 0, targetMonth
       ];
     });
 
+    const sheetName = month ? `Team_Data_${month.replace('-', '_')}` : "Team_Data";
+    
+    // Check if historical sheet exists, if not create it
+    if (month) {
+      try {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            requests: [{ addSheet: { properties: { title: sheetName } } }]
+          }
+        });
+      } catch (e) {
+        // Sheet likely already exists
+      }
+    }
+
     await sheets.spreadsheets.values.update({
       spreadsheetId,
-      range: "Team_Data!A1",
+      range: `${sheetName}!A1`,
       valueInputOption: "USER_ENTERED",
       requestBody: { values: [headers, ...rows] },
     });
@@ -3502,6 +3524,24 @@ async function startServer() {
       lastSync: now
     };
   }
+
+  app.post("/api/admin/push-historical-targets", authenticateToken, async (req, res) => {
+    try {
+      const { month } = req.body;
+      if (!month) return res.status(400).json({ error: "Month is required" });
+      
+      const client = await getGoogleSheetsClient();
+      if (!client) return res.status(400).json({ error: "Google Sheets configuration missing" });
+      const { sheets, spreadsheetId } = client;
+
+      await pushTeamData(sheets, spreadsheetId, month);
+      
+      res.json({ success: true, message: `Targets for ${month} pushed to Google Sheets` });
+    } catch (error: any) {
+      console.error("Push Historical Targets Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   app.post("/api/admin/master-sync", authenticateToken, async (req, res) => {
     try {

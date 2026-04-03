@@ -207,6 +207,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       })();
       
       let totalBags = 0;
+      let totalCtns = 0;
       let brandSales: Record<string, number> = {};
       let brandTonnage: Record<string, number> = {};
       let totalWeightKg = 0;
@@ -229,7 +230,11 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         }
         
         if (matchesFilter) {
-          totalBags += ctns;
+          if (sku.unit === 'Bags') {
+            totalBags += ctns;
+          } else {
+            totalCtns += ctns;
+          }
           const weightKg = (packs * (Number(sku.weight_gm_per_pack) || 0)) / 1000;
           
           // Ignore "Match" tonnage for now as per user request
@@ -249,6 +254,14 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
 
       return {
         ...s,
+        totalBags,
+        totalCtns,
+        totalWeightKg,
+        brandSales,
+        brandTonnage,
+        isTSMEntry,
+        visitEfficiency,
+        isFakeVisit,
         region: h?.territory_region || s.region || 'Unassigned',
         tsm: h?.asm_tsm_name || s.tsm || 'Unassigned',
         rsm: h?.rsm_name || s.rsm || 'Unassigned',
@@ -259,14 +272,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         town: h?.town_name || s.town || 'Unassigned',
         distributor: h?.distributor_name || s.distributor || 'Unassigned',
         ob_name: h?.ob_name || s.order_booker || 'Unassigned',
-        month: s.date.slice(0, 7),
-        isTSMEntry,
-        totalBags,
-        brandSales,
-        brandTonnage,
-        totalWeightKg,
-        visitEfficiency,
-        isFakeVisit
+        month: s.date.slice(0, 7)
       };
     });
   }, [stats, hierarchy, skus, userRole, userRegion, userName, userContact, topCategoryFilter, topBrandFilter]);
@@ -339,6 +345,8 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
           tsm: s.tsm, 
           distributor: s.distributor,
           region: s.region,
+          totalBags: 0,
+          totalCtns: 0,
           totalSales: 0,
           totalWeight: 0,
           visited: 0,
@@ -348,7 +356,9 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         };
         CATEGORIES.forEach(b => obs[s.ob_contact].brandSales[b] = 0);
       }
-      obs[s.ob_contact].totalSales += s.totalBags;
+      obs[s.ob_contact].totalBags += (s.totalBags || 0);
+      obs[s.ob_contact].totalCtns += (s.totalCtns || 0);
+      obs[s.ob_contact].totalSales += (s.totalBags || 0) + (s.totalCtns || 0);
       obs[s.ob_contact].totalWeight += s.totalWeightKg;
       obs[s.ob_contact].visited += s.visited_shops;
       obs[s.ob_contact].productive += s.productive_shops;
@@ -414,6 +424,8 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
           tsm: s.tsm, 
           distributor: s.distributor,
           region: s.region,
+          totalBags: 0,
+          totalCtns: 0,
           totalSales: 0,
           totalWeight: 0,
           visited: 0,
@@ -423,7 +435,9 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         };
         CATEGORIES.forEach(b => tsms[s.ob_contact].brandSales[b] = 0);
       }
-      tsms[s.ob_contact].totalSales += s.totalBags;
+      tsms[s.ob_contact].totalBags += (s.totalBags || 0);
+      tsms[s.ob_contact].totalCtns += (s.totalCtns || 0);
+      tsms[s.ob_contact].totalSales += (s.totalBags || 0) + (s.totalCtns || 0);
       tsms[s.ob_contact].totalWeight += s.totalWeightKg;
       tsms[s.ob_contact].visited += s.visited_shops;
       tsms[s.ob_contact].productive += s.productive_shops;
@@ -549,7 +563,8 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
   }, [stockHistory, hierarchy]);
 
   const summary = useMemo(() => {
-    const totalSales = monthStats.reduce((sum, s) => sum + s.totalBags, 0);
+    const totalBags = monthStats.reduce((sum, s) => sum + (s.totalBags || 0), 0);
+    const totalCtns = monthStats.reduce((sum, s) => sum + (s.totalCtns || 0), 0);
     const uniqueOBs = new Set(monthStats.filter(s => !s.isTSMEntry).map(s => s.ob_contact)).size;
     const uniqueTSMs = new Set(monthStats.map(s => s.tsm)).size;
     
@@ -571,6 +586,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         return bSum;
       }, 0);
     }, 0);
+    const totalSales = totalBags + totalCtns;
     const achievementPerc = totalTarget > 0 ? (totalSales / totalTarget) * 100 : 0;
 
     const totalOBSalary = uniqueOBs * 50000;
@@ -631,7 +647,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
     const lowPerfOBs = obPerformance.filter(ob => ob.achievement < 50).length;
     const avgSalesPerOB = uniqueOBs > 0 ? totalSales / uniqueOBs : 0;
 
-    return { totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, avgSalesPerOB, totalVisited, totalProductive, totalShops };
+    return { totalBags, totalCtns, totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, avgSalesPerOB, totalVisited, totalProductive, totalShops };
   }, [monthStats, filteredHierarchy, brands, skus, obPerformance, topCategoryFilter, topBrandFilter]);
 
   const categoryStats = useMemo(() => {
@@ -1181,7 +1197,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
               <option value="SKU">SKU Wise</option>
             </select>
           </div>
-          <div className="h-[300px]">
+          <div className="h-[300px] min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -1257,7 +1273,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
               <option value="SKU">SKU Wise</option>
             </select>
           </div>
-          <div className="h-[300px]">
+          <div className="h-[300px] min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart 
                 data={
@@ -1867,7 +1883,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
             </select>
           </div>
         </div>
-        <div className="h-[300px]">
+        <div className="h-[300px] min-h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={(() => {
               const filteredTSMs = tsmPerformance.map(tsm => {
@@ -2002,7 +2018,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
           <div className="p-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
-                <div className="h-[300px]">
+                <div className="h-[300px] min-h-[300px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={routeAnalysisData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -2137,7 +2153,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="card-clean p-6 bg-white space-y-4">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Monthly Sales Trend</h3>
-          <div className="h-[300px]">
+          <div className="h-[300px] min-h-[300px]">
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart data={trendData}>
                 <defs>
@@ -2159,7 +2175,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         <div className="card-clean p-6 bg-white space-y-4">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">OB Categories</h3>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="h-[250px]">
+            <div className="h-[250px] min-h-[250px]">
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -2368,7 +2384,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
               </select>
             </div>
           </div>
-          <div className="h-64">
+          <div className="h-64 min-h-[256px]">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={monthStats.reduce((acc: any[], s) => {
                 const dateKey = s.date.split('-')[2];
@@ -2408,7 +2424,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">
           {filterLevel === 'National' ? 'National' : `${filterLevel}: ${filterValue}`} Monthly Sales Trend
         </h3>
-        <div className="h-[300px]">
+        <div className="h-[300px] min-h-[300px]">
           <ResponsiveContainer width="100%" height="100%">
             <LineChart data={trendData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -2668,7 +2684,7 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, u
             <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Last 7 Days Sales</h3>
           </div>
         </div>
-        <div className="h-32 w-full">
+        <div className="h-32 w-full min-h-[128px]">
           <ResponsiveContainer width="100%" height="100%">
             <AreaChart data={data.last7DaysSales}>
               <defs>
@@ -3673,37 +3689,50 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                     {Array.from({ length: 31 }, (_, i) => i + 1).map((day, dIdx) => {
                       const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
                       const dayOrders = obStats.filter((h: any) => h.date === dateStr);
-                      const daySales = dayOrders.reduce((sum, h) => {
+                      const daySales = dayOrders.reduce((acc, h) => {
                         const data = h.order_data || {};
                         if (matrixView === 'Total') {
-                          return sum + SKUS.reduce((s, sku) => {
+                          SKUS.forEach(sku => {
                             const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                             const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                            return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                          }, 0);
+                            const val = (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                            if (sku.unit === 'Bags') acc.bags += val;
+                            else acc.ctns += val;
+                          });
                         } else if (matrixView.startsWith('cat_')) {
                           const categoryName = matrixView.replace('cat_', '');
                           const brandsInGroup = BRAND_GROUPS[categoryName] || [];
-                          return sum + SKUS.filter(s => brandsInGroup.includes(s.category)).reduce((s, sku) => {
+                          SKUS.filter(s => brandsInGroup.includes(s.category)).forEach(sku => {
                             const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                             const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                            return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                          }, 0);
+                            const val = (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                            if (sku.unit === 'Bags') acc.bags += val;
+                            else acc.ctns += val;
+                          });
                         } else {
-                          return sum + SKUS.filter(s => s.category === matrixView).reduce((s, sku) => {
+                          SKUS.filter(s => s.category === matrixView).forEach(sku => {
                             const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                             const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                            return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                          }, 0);
+                            const val = (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                            if (sku.unit === 'Bags') acc.bags += val;
+                            else acc.ctns += val;
+                          });
                         }
-                      }, 0);
-                      total += daySales;
+                        return acc;
+                      }, { bags: 0, ctns: 0 });
+
+                      total += (daySales.bags + daySales.ctns);
                       const hasRR = dayOrders.some((h: any) => h.visit_type === 'RR');
                       const hasNormal = dayOrders.some((h: any) => h.visit_type !== 'RR' && h.visit_type !== 'Absent');
                       const cellBg = hasRR ? 'bg-yellow-100' : (hasNormal ? 'bg-green-50' : '');
+                      const hasBags = daySales.bags > 0;
+                      const hasCtns = daySales.ctns > 0;
+
                       return (
-                        <td key={`${ob.contact}-${day}-${dIdx}`} className={`px-2 py-3 text-center text-[10px] border-r border-slate-100/30 font-mono ${cellBg} ${daySales > 0 ? 'font-black text-seablue' : 'text-slate-200'}`}>
-                          {daySales > 0 ? daySales.toFixed(1) : '-'}
+                        <td key={`${ob.contact}-${day}-${dIdx}`} className={`px-1 py-2 text-center text-[9px] border-r border-slate-100/30 font-mono ${cellBg} min-w-[45px]`}>
+                          {hasBags && <p className="font-black text-emerald-600 leading-none">{daySales.bags.toFixed(1)}<span className="text-[7px] opacity-60 ml-0.5">B</span></p>}
+                          {hasCtns && <p className="font-black text-seablue leading-none mt-0.5">{daySales.ctns.toFixed(1)}<span className="text-[7px] opacity-60 ml-0.5">C</span></p>}
+                          {!hasBags && !hasCtns && <span className="text-slate-200">-</span>}
                         </td>
                       );
                     })}
@@ -3756,8 +3785,10 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
               {(targetView === 'Brand' ? CATEGORIES : BRAND_GROUP_NAMES).map(cat => {
                 let catTarget = 0;
                 let catAch = 0;
+                let unit = 'Ctns';
 
                 if (targetView === 'Brand') {
+                  unit = SKUS.find(s => s.category === cat)?.unit || 'Ctns';
                   catTarget = filteredOBs.reduce((sum: number, ob: any) => sum + (ob.targets?.[cat] || 0), 0);
                   const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
                   catAch = history
@@ -3772,6 +3803,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                     }, 0);
                 } else {
                   const brandsInGroup = BRAND_GROUPS[cat] || [];
+                  unit = SKUS.find(s => brandsInGroup.includes(s.category))?.unit || 'Ctns';
                   catTarget = filteredOBs.reduce((sum: number, ob: any) => {
                     return sum + brandsInGroup.reduce((s, brand) => s + (ob.targets?.[brand] || 0), 0);
                   }, 0);
@@ -3792,8 +3824,8 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
                 return (
                   <tr key={cat} className="group hover:bg-slate-50/80 transition-all">
                     <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors whitespace-nowrap">{cat}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500 font-mono whitespace-nowrap">{catTarget.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{catAch.toFixed(1)}</td>
+                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500 font-mono whitespace-nowrap">{catTarget.toFixed(1)} <span className="text-[8px] opacity-60">{unit}</span></td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{catAch.toFixed(1)} <span className="text-[8px] opacity-60">{unit}</span></td>
                     <td className="px-6 py-4 text-right whitespace-nowrap">
                       <span className={`text-[10px] font-black px-3 py-1 rounded-full shadow-sm ${percent > 80 ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
                         {percent.toFixed(1)}%
@@ -3849,7 +3881,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
         {routeAnalysisData ? (
           <div className="space-y-6">
             <div className="px-6 pt-6">
-              <div className="h-48 w-full">
+              <div className="h-48 w-full min-h-[256px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={routeAnalysisData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -4534,7 +4566,7 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
               </div>
               
               <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
-                <div className="h-48 w-full">
+                <div className="h-48 w-full min-h-[192px]">
                   <ResponsiveContainer width="100%" height="100%">
                     <BarChart data={kpiGroups} layout="vertical" margin={{ left: -20, right: 20 }}>
                       <XAxis type="number" hide />
@@ -4937,15 +4969,16 @@ export default function App() {
   });
 
   const calculateAchievement = (orderData: any) => {
-    const ach: Record<string, number> = {};
+    const ach: Record<string, { value: number, unit: string }> = {};
     CATEGORIES.forEach(cat => {
-      ach[cat] = SKUS
-        .filter(sku => sku.category === cat)
-        .reduce((sum, sku) => {
-          const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-          const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
-          return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
-        }, 0);
+      const catSkus = SKUS.filter(sku => sku.category === cat);
+      const unit = catSkus[0]?.unit || 'Ctns';
+      const value = catSkus.reduce((sum, sku) => {
+        const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+        return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
+      }, 0);
+      ach[cat] = { value, unit };
     });
     return ach;
   };
@@ -5009,7 +5042,8 @@ export default function App() {
           });
         },
         (error) => {
-          console.error("Error getting location:", error);
+          // Suppress location error as requested
+          // console.error("Error getting location:", error);
         }
       );
     }
@@ -7051,7 +7085,7 @@ export default function App() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="card-clean p-4">
               <h3 className="text-sm font-bold mb-4 text-seablue uppercase">{targetView} Wise Brand Target vs Achievement Chart</h3>
-              <div className="h-[300px]">
+              <div className="h-[300px] min-h-[300px]">
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chartData}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -7119,7 +7153,7 @@ export default function App() {
                     const tsmAch = tsmOrders.reduce((sum, o) => {
                       const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
                       const ach = calculateAchievement(orderData);
-                      return sum + Object.values(ach).reduce((a: number, b: number) => a + b, 0);
+                      return sum + Object.values(ach).reduce((a: number, b: any) => a + b.value, 0);
                     }, 0);
                     const tsmTarget = tsmOBs.reduce((sum, ob) => sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0), 0);
                     const achPerc = tsmTarget > 0 ? (tsmAch / tsmTarget) * 100 : 0;
@@ -7585,6 +7619,30 @@ export default function App() {
             <div className="card-clean p-4 space-y-2">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admin Actions</h3>
               <div className="grid grid-cols-2 gap-2">
+                <button 
+                  onClick={async () => {
+                    if (window.confirm('Restore March 2026 Targets to Google Sheets? This will create a separate sheet for March.')) {
+                      setIsSyncing(true);
+                      try {
+                        const res = await apiFetch('/api/admin/push-historical-targets', { 
+                          method: 'POST',
+                          body: JSON.stringify({ month: '2026-03' })
+                        });
+                        const data = await res.json();
+                        if (res.ok) alert(data.message);
+                        else alert('Failed: ' + data.error);
+                      } catch (err: any) {
+                        alert('Error: ' + err.message);
+                      } finally {
+                        setIsSyncing(false);
+                      }
+                    }
+                  }}
+                  disabled={isSyncing}
+                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
+                >
+                  <History className="w-3 h-3" /> Restore Mar-26 Targets
+                </button>
                 <button 
                   onClick={async () => {
                     const confirm = window.confirm('Are you sure you want to clean duplicates? This will keep the latest record for each OB/Date/Month combination.');
@@ -8972,11 +9030,30 @@ export default function App() {
                                         return `${cat}: ${mtdTotal.toFixed(2)}`;
                                       }).join('\n');
 
-                                      const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
-                                      const mtdTotal = obMtdOrders.reduce((sum, o) => {
+                                      const totals: Record<string, { value: number, unit: string }> = {};
+                                      CATEGORIES.forEach(cat => {
+                                        const catSkus = SKUS.filter(s => s.category === cat);
+                                        const unit = catSkus[0]?.unit || 'Ctns';
+                                        const value = catSkus.reduce((sum, sku) => {
+                                          const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                                          const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
+                                          return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                                        }, 0);
+                                        totals[cat] = { value, unit };
+                                      });
+
+                                      const totalBags = Object.values(totals).filter(t => t.unit === 'Bags').reduce((a, b) => a + b.value, 0);
+                                      const totalCtns = Object.values(totals).filter(t => t.unit === 'Ctns').reduce((a, b) => a + b.value, 0);
+
+                                      const mtdTotalBags = obMtdOrders.reduce((sum, o) => {
                                         const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
                                         const ach = calculateAchievement(orderData);
-                                        return sum + Object.values(ach).reduce((a, b) => a + b, 0);
+                                        return sum + Object.values(ach).filter(t => t.unit === 'Bags').reduce((a, b) => a + b.value, 0);
+                                      }, 0);
+                                      const mtdTotalCtns = obMtdOrders.reduce((sum, o) => {
+                                        const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
+                                        const ach = calculateAchievement(orderData);
+                                        return sum + Object.values(ach).filter(t => t.unit === 'Ctns').reduce((a, b) => a + b.value, 0);
                                       }, 0);
 
                                       const summary = `*Sales Summary*\n` +
@@ -8989,13 +9066,13 @@ export default function App() {
                                         `*SKU Details:*\n${skuDetails}\n` +
                                         `------------------\n` +
                                         CATEGORIES.map(cat => {
-                                          const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
+                                          const unit = totals[cat].unit;
                                           const mtd = mtdBrandSales.split('\n').find(l => l.startsWith(cat))?.split(': ')[1] || '0.00';
-                                          return `*${cat}:* ${totals[cat].toFixed(2)} ${label}\nMTD: ${mtd}`;
+                                          return `*${cat}:* ${totals[cat].value.toFixed(2)} ${unit}\nMTD: ${mtd}`;
                                         }).join('\n\n') +
                                         `\n------------------\n` +
-                                        `*Total Today:* ${totalAch.toFixed(2)} Bags\n` +
-                                        `*Total MTD:* ${mtdTotal.toFixed(2)} Bags\n` +
+                                        `*Total Today:* ${totalBags.toFixed(2)} Bags, ${totalCtns.toFixed(2)} Ctns\n` +
+                                        `*Total MTD:* ${mtdTotalBags.toFixed(2)} Bags, ${mtdTotalCtns.toFixed(2)} Ctns\n` +
                                         `*Total Target:* ${h.target_ctn || 0} Bags`;
                                       const encodedMsg = encodeURIComponent(summary);
                                       window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
@@ -9386,17 +9463,18 @@ export default function App() {
                         }, 0);
                     });
                     
-                    const totalAch = Object.values(totals).reduce((a, b) => a + b, 0);
+                    const totalBags = CATEGORIES.filter(c => ['Kite Glow', 'Burq Action', 'Vero'].includes(c)).reduce((s, c) => s + totals[c], 0);
+                    const totalCtns = CATEGORIES.filter(c => !['Kite Glow', 'Burq Action', 'Vero'].includes(c)).reduce((s, c) => s + totals[c], 0);
                     
                     const skuDetails = SKUS.map(sku => {
                       const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                       if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
                       
                       const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                      const totalBags = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
-                      const label = sku.category === 'Kite Glow' || sku.category === 'Burq Action' || sku.category === 'Vero' ? 'Bags' : 'Ctns';
+                      const totalBagsVal = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+                      const label = sku.unit || (['Kite Glow', 'Burq Action', 'Vero'].includes(sku.category) ? 'Bags' : 'Ctns');
                       
-                      return `${sku.name}: ${totalBags.toFixed(2)} ${label}`;
+                      return `${sku.name}: ${totalBagsVal.toFixed(2)} ${label}`;
                     }).filter(Boolean).join('\n');
 
                     const brandTotals = CATEGORIES.map(cat => {
@@ -9408,7 +9486,7 @@ export default function App() {
                       }, 0);
                       const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
                       const target = lastSubmittedOrder.targets?.[cat] || 0;
-                      return `${cat}: ${catTotal.toFixed(2)} / ${target.toFixed(2)} ${label} (Brand Target)`;
+                      return `${cat}: ${catTotal.toFixed(2)} / ${target.toFixed(2)} ${label}`;
                     }).join('\n');
 
                     const summary = `Sales Summary\n` +
@@ -9422,7 +9500,7 @@ export default function App() {
                       `------------------\n` +
                       `${brandTotals}\n` +
                       `------------------\n` +
-                      `Total Achievement: ${totalAch.toFixed(2)}`;
+                      `Total: ${totalBags.toFixed(2)} Bags / ${totalCtns.toFixed(2)} Ctns`;
                     
                     const encodedMsg = encodeURIComponent(summary);
                     window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
