@@ -2122,7 +2122,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/targets/:ob_contact", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+  app.get("/api/admin/targets/:ob_contact", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req, res) => {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     try {
       const targets = db.prepare("SELECT * FROM brand_targets WHERE ob_contact = ? AND month = ?").all(req.params.ob_contact, month);
