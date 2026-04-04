@@ -4727,427 +4727,149 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
   }, [user, stats, hierarchy, isLoading, timeGone]);
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center py-12 px-6">
+    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center py-6 px-4">
       <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-2xl w-full space-y-8"
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="max-w-md w-full space-y-4"
       >
-        {/* Logo */}
-        <div className="flex justify-center">
-          <div className="w-20 h-20 bg-white rounded-3xl flex items-center justify-center shadow-xl border border-slate-50 overflow-hidden">
-            {logo ? (
-              <img src={logo} alt="Logo" className="w-full h-full object-contain p-2" />
-            ) : (
-              <div className="w-full h-full bg-seablue flex items-center justify-center">
-                <Waves className="text-white w-10 h-10" />
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Welcome Card */}
-        <div className="bg-white rounded-3xl shadow-2xl p-8 border border-slate-100 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-32 h-32 bg-seablue/5 rounded-full -mr-16 -mt-16" />
-          
-          <div className="relative z-10">
-            <h2 className="text-xs font-black text-seablue uppercase tracking-[0.2em] mb-1">Welcome Back</h2>
-            <h1 className="text-3xl font-black text-slate-800 tracking-tight">{user?.name}</h1>
-            <div className="flex items-center gap-4 mt-4">
-              <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-                <ShieldCheck className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{user?.role}</span>
-              </div>
-              <div className="flex items-center gap-1.5 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-                <Store className="w-3.5 h-3.5 text-slate-400" />
-                <span className="text-[10px] font-black text-slate-600 uppercase tracking-widest">{user?.region || 'National'}</span>
-              </div>
-            </div>
-          </div>
-
-          {/* Proactive Alerts Section */}
-          {obWiseKpis && obWiseKpis.some(ob => ob.isAtRisk) && (
-            <div className="mt-8 p-6 bg-red-50 rounded-3xl border border-red-100 shadow-sm animate-in fade-in slide-in-from-top-4 duration-500">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-red-100 rounded-2xl flex items-center justify-center text-red-600 shadow-sm">
-                  <AlertTriangle className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black text-red-800 uppercase tracking-widest">Proactive Compliance Alerts</h3>
-                  <p className="text-[9px] font-bold text-red-400 uppercase tracking-widest mt-0.5">Critical Attention Required</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {obWiseKpis.filter(ob => ob.isAtRisk).map(ob => (
-                  <div key={ob.obId} className="flex items-center justify-between p-3 bg-white rounded-2xl border border-red-50 shadow-sm group hover:border-red-200 transition-all">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 bg-red-50 rounded-xl flex items-center justify-center text-red-600 text-[10px] font-black">
-                        {ob.obId}
-                      </div>
-                      <span className="text-[11px] font-black text-slate-700">{ob.obName}</span>
-                    </div>
-                    <div className="text-right">
-                      <p className="text-[8px] font-black text-red-500 uppercase tracking-tighter">
-                        {ob.complianceToday < 70 ? 'Low Compliance' : 'Low Projection'}
-                      </p>
-                      <p className="text-[7px] font-bold text-slate-400 uppercase tracking-widest">
-                        {ob.complianceToday < 70 ? `${ob.complianceToday.toFixed(0)}% Visited` : 'Below 85% Proj.'}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Stock Health Section for TSM/ASM */}
-          {obStockHealth && obStockHealth.some(d => d.status === 'Low Stock') && (
-            <div className="mt-8 p-6 bg-amber-50 rounded-3xl border border-amber-100 shadow-sm">
-              <div className="flex items-center gap-3 mb-4">
-                <div className="w-10 h-10 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600 shadow-sm">
-                  <PackageSearch className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black text-amber-800 uppercase tracking-widest">Stock Health Alerts</h3>
-                  <p className="text-[9px] font-bold text-amber-400 uppercase tracking-widest mt-0.5">Inventory Gaps Detected</p>
-                </div>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                {obStockHealth.filter(d => d.status === 'Low Stock').map(d => (
-                  <div key={d.name} className="p-3 bg-white rounded-2xl border border-amber-50 shadow-sm group relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-black text-slate-700 uppercase truncate max-w-[120px]">{d.name}</span>
-                      <button 
-                        onClick={() => {
-                          const text = `*STOCK ALERT*\n\nDistributor: ${d.name}\nStatus: LOW STOCK\n\n*Items:* \n${d.lowStockItems.join('\n')}\n\nPlease check and replenish.`;
-                          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-                        }}
-                        className="opacity-0 group-hover:opacity-100 transition-opacity p-1 bg-emerald-50 text-emerald-600 rounded-lg"
-                      >
-                        <MessageCircle className="w-3 h-3" />
-                      </button>
-                    </div>
-                    <div className="flex flex-wrap gap-1">
-                      {d.lowStockItems.slice(0, 3).map(item => (
-                        <span key={item} className="text-[7px] font-bold bg-slate-50 text-slate-500 px-1.5 py-0.5 rounded uppercase">{item}</span>
-                      ))}
-                      {d.lowStockItems.length > 3 && <span className="text-[7px] font-bold text-slate-300">+{d.lowStockItems.length - 3} more</span>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Live Field Pulse Section */}
-          {livePulseData && (
-            <div className="mt-8 space-y-6">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-emerald-100 rounded-xl flex items-center justify-center text-emerald-600">
-                  <Activity className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Live Field Pulse</h3>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Real-time Field Activity</p>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100">
-                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Total Shops Visited</p>
-                  <p className="text-2xl font-black text-seablue tracking-tighter">{livePulseData.totalVisited}</p>
-                  <p className="text-[7px] font-bold text-slate-400 uppercase mt-1">Today's Total</p>
-                </div>
-                <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100">
-                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Productive Shops</p>
-                  <p className="text-2xl font-black text-emerald-600 tracking-tighter">{livePulseData.totalProductive}</p>
-                  <p className="text-[7px] font-bold text-emerald-400 uppercase mt-1">
-                    {livePulseData.totalVisited > 0 ? ((livePulseData.totalProductive / livePulseData.totalVisited) * 100).toFixed(0) : 0}% Productivity
-                  </p>
-                </div>
-              </div>
-
-              {livePulseData.recentSubmissions.length > 0 && (
-                <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100">
-                  <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-3">Recent Submissions</p>
-                  <div className="space-y-3">
-                    {livePulseData.recentSubmissions.map((s, idx) => (
-                      <div key={idx} className="flex items-center justify-between py-2 border-b border-slate-50 last:border-0">
-                        <div className="flex items-center gap-3">
-                          <div className="w-8 h-8 bg-slate-50 rounded-xl flex items-center justify-center text-[10px] font-black text-slate-400">
-                            {s.ob_contact?.slice(-2)}
-                          </div>
-                          <div>
-                            <p className="text-[10px] font-black text-slate-700">{s.ob_name || 'Unknown OB'}</p>
-                            <p className="text-[7px] font-bold text-slate-400 uppercase">{new Date(s.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <div className="flex items-center gap-1 justify-end">
-                            <div className={`w-1.5 h-1.5 rounded-full ${s.latitude ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                            <p className="text-[8px] font-black text-slate-600 uppercase">{s.latitude ? 'GPS OK' : 'No GPS'}</p>
-                          </div>
-                          <p className="text-[7px] font-bold text-slate-400 uppercase">{s.visited_shops} Shops</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+        {/* Welcome Header */}
+        <div className="bg-white rounded-3xl shadow-xl p-6 border border-slate-100 text-center relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-24 h-24 bg-seablue/5 rounded-full -mr-12 -mt-12" />
+          <div className="flex justify-center mb-4 relative z-10">
+            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-md border border-slate-50 overflow-hidden">
+              {logo ? (
+                <img src={logo} alt="Logo" className="w-full h-full object-contain p-1.5" />
+              ) : (
+                <div className="w-full h-full bg-seablue flex items-center justify-center">
+                  <Waves className="text-white w-8 h-8" />
                 </div>
               )}
             </div>
-          )}
-
-          {/* KPI Section */}
-          <div className="mt-10 space-y-8">
-            <div className="flex items-center justify-between">
-              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Monthly Performance Summary</h3>
-              {isLoading && <Loader2 className="w-3 h-3 text-seablue animate-spin" />}
+          </div>
+          <div className="relative z-10">
+            <h2 className="text-[10px] font-black text-seablue uppercase tracking-[0.2em] mb-1">Welcome Back</h2>
+            <h1 className="text-2xl font-black text-slate-800 tracking-tight">{user?.name}</h1>
+            <div className="flex items-center justify-center gap-2 mt-3">
+              <span className="text-[9px] font-black bg-slate-50 text-slate-600 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-100 flex items-center gap-1">
+                <ShieldCheck className="w-3 h-3" /> {user?.role}
+              </span>
+              <span className="text-[9px] font-black bg-slate-50 text-slate-600 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-100 flex items-center gap-1">
+                <Store className="w-3 h-3" /> {user?.region || 'National'}
+              </span>
             </div>
+          </div>
+        </div>
 
-            {kpiGroups ? (
-              <div className="space-y-6">
-                {kpiGroups.map((group) => (
-                  <div key={group.name} className="space-y-3">
-                    <div className="flex items-center gap-2">
-                      <div className="h-px flex-1 bg-slate-100" />
-                      <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{group.name}</span>
-                      <div className="h-px flex-1 bg-slate-100" />
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                        <p className="text-[7px] font-black text-slate-400 uppercase tracking-widest mb-1">Target</p>
-                        <p className="text-base font-black text-slate-800">{Math.round(group.target).toLocaleString()}</p>
-                      </div>
-                      <div className="p-3 bg-emerald-50 rounded-2xl border border-emerald-100">
-                        <p className="text-[7px] font-black text-emerald-400 uppercase tracking-widest mb-1">Achievement</p>
-                        <p className="text-base font-black text-emerald-600">{Math.round(group.achievement).toLocaleString()}</p>
-                      </div>
-                      <div className="p-3 bg-seablue/5 rounded-2xl border border-seablue/10">
-                        <p className="text-[7px] font-black text-seablue uppercase tracking-widest mb-1">Ach %</p>
-                        <p className="text-base font-black text-seablue">{group.percentage.toFixed(1)}%</p>
-                      </div>
-                      <div className="p-3 bg-amber-50 rounded-2xl border border-amber-100">
-                        <p className="text-[7px] font-black text-amber-400 uppercase tracking-widest mb-1">Remaining</p>
-                        <p className="text-base font-black text-amber-600">{Math.round(group.remainingTarget).toLocaleString()}</p>
-                      </div>
-                      
-                      <div className="col-span-2 grid grid-cols-5 gap-2 pt-2 border-t border-slate-100">
-                        <div className="text-center">
-                          <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Rem. Days</p>
-                          <p className="text-[10px] font-black text-slate-700">{group.remainingDays}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Req/Day</p>
-                          <p className={`text-[10px] font-black ${group.requiredPerDay > group.dailyAvg ? 'text-red-600' : 'text-slate-700'}`}>{Math.round(group.requiredPerDay)}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Daily Avg</p>
-                          <p className="text-[10px] font-black text-slate-700">{Math.round(group.dailyAvg)}</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-[6px] font-black text-seablue uppercase tracking-tighter">Proj %</p>
-                          <p className={`text-[10px] font-black ${group.projectedPercentage < 85 ? 'text-red-500' : 'text-seablue'}`}>{group.projectedPercentage.toFixed(0)}%</p>
-                        </div>
-                        <div className="text-center">
-                          <p className="text-[6px] font-black text-emerald-500 uppercase tracking-tighter">Prod %</p>
-                          <p className="text-[10px] font-black text-emerald-600">{group.productivity.toFixed(0)}%</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                ))}
+        {/* Quick Alerts */}
+        {(obWiseKpis?.some(ob => ob.isAtRisk) || obStockHealth?.some(d => d.status === 'Low Stock')) && (
+          <div className="grid grid-cols-2 gap-3">
+            {obWiseKpis?.some(ob => ob.isAtRisk) && (
+              <div className="bg-red-50 rounded-2xl p-3 border border-red-100 flex flex-col items-center text-center">
+                <AlertTriangle className="w-5 h-5 text-red-500 mb-1" />
+                <span className="text-[10px] font-black text-red-700 uppercase">{obWiseKpis.filter(ob => ob.isAtRisk).length} OBs At Risk</span>
               </div>
-            ) : (
-              <div className="h-40 flex items-center justify-center bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Loading KPIs...</p>
+            )}
+            {obStockHealth?.some(d => d.status === 'Low Stock') && (
+              <div className="bg-amber-50 rounded-2xl p-3 border border-amber-100 flex flex-col items-center text-center">
+                <PackageSearch className="w-5 h-5 text-amber-500 mb-1" />
+                <span className="text-[10px] font-black text-amber-700 uppercase">{obStockHealth.filter(d => d.status === 'Low Stock').length} Low Stock</span>
               </div>
             )}
           </div>
+        )}
 
-          {/* Brand-Mix Analysis */}
-          {kpiGroups && (
-            <div className="mt-12 space-y-6">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-purple-100 rounded-xl flex items-center justify-center text-purple-600">
-                  <Activity className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand-Mix Analysis</h3>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Portfolio Balance & Imbalance</p>
-                </div>
-              </div>
-              
-              <div className="bg-white rounded-3xl p-6 shadow-sm border border-slate-100">
-                <div className="h-48 w-full min-h-[192px]">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={kpiGroups} layout="vertical" margin={{ left: -20, right: 20 }}>
-                      <XAxis type="number" hide />
-                      <YAxis dataKey="name" type="category" axisLine={false} tickLine={false} tick={{ fontSize: 8, fontWeight: 900, fill: '#64748b' }} width={80} />
-                      <Tooltip 
-                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px' }}
-                        formatter={(value: any) => [`${Number(value).toFixed(1)}%`, 'Achievement']}
-                      />
-                      <Bar dataKey="percentage" radius={[0, 4, 4, 0]}>
-                        {kpiGroups.map((entry, index) => (
-                          <Cell key={`cell-${index}`} fill={entry.percentage < 50 ? '#ef4444' : entry.percentage < 80 ? '#f59e0b' : '#0ea5e9'} />
-                        ))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="mt-4 grid grid-cols-3 gap-2">
-                  {kpiGroups.map(g => (
-                    <div key={g.name} className="text-center p-2 rounded-xl bg-slate-50 border border-slate-100">
-                      <p className="text-[6px] font-black text-slate-400 uppercase truncate">{g.name}</p>
-                      <p className={`text-[10px] font-black ${g.percentage < 80 ? 'text-red-500' : 'text-seablue'}`}>{g.percentage.toFixed(0)}%</p>
-                    </div>
-                  ))}
-                </div>
+        {/* Live Pulse (Compact) */}
+        {livePulseData && (
+          <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center">
+            <div>
+              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Today's Field Pulse</p>
+              <div className="flex items-center gap-3 mt-1">
+                <span className="text-sm font-black text-seablue">{livePulseData.totalVisited} <span className="text-[8px] text-slate-400">VISITED</span></span>
+                <span className="text-sm font-black text-emerald-600">{livePulseData.totalProductive} <span className="text-[8px] text-slate-400">PROD</span></span>
               </div>
             </div>
-          )}
-
-          {/* OB Wise Breakdown for TSM/ASM */}
-          {obWiseKpis && obWiseKpis.length > 0 && (
-            <div className="mt-12 space-y-8">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
-                  <Users className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Team Performance (OB Wise)</h3>
-                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Individual OB Breakdown</p>
-                </div>
-                <div className="space-y-6">
-                  {obWiseKpis.map((ob) => (
-                    <div key={ob.obId} className={`bg-slate-50 rounded-3xl p-6 border transition-all ${ob.isAtRisk ? 'border-red-200 bg-red-50/30' : 'border-slate-100'}`}>
-                      <div className="flex items-center justify-between mb-4">
-                        <div className="flex items-center gap-3">
-                          <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shadow-sm border ${ob.isAtRisk ? 'bg-red-100 border-red-200 text-red-600' : 'bg-white border-slate-100 text-seablue'}`}>
-                            <span className="text-xs font-black">{ob.obId}</span>
-                          </div>
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <h4 className="text-sm font-black text-slate-800">{ob.obName}</h4>
-                              {ob.isAtRisk && (
-                                <span className="flex items-center gap-1 px-1.5 py-0.5 bg-red-100 text-red-600 rounded-full text-[7px] font-black uppercase animate-pulse">
-                                  <AlertTriangle className="w-2 h-2" />
-                                  At Risk
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">Order Booker</p>
-                          </div>
-                        </div>
-                        
-                        <div className="flex items-center gap-2">
-                          <button 
-                            onClick={() => {
-                              const text = `*Performance Summary: ${ob.obName}*\n\n` + 
-                                ob.groupKpis.map(g => `*${g.name}*\n- Target: ${Math.round(g.target)}\n- Ach: ${Math.round(g.achievement)} (${g.percentage.toFixed(1)}%)\n- Projected: ${Math.round(g.projectedAchievement)} (${g.projectedPercentage.toFixed(1)}%)\n- Prod: ${g.productivity.toFixed(1)}%`).join('\n\n') +
-                                `\n\n*Compliance Today*\n- Visited: ${ob.visitedToday}/${ob.masterTotalShops}\n- Skipped: ${ob.skippedToday}`;
-                              window.open(`https://wa.me/${ob.obId}?text=${encodeURIComponent(text)}`, '_blank');
-                            }}
-                            className="p-2 bg-emerald-100 text-emerald-600 rounded-xl hover:bg-emerald-200 transition-colors"
-                            title="Share via WhatsApp"
-                          >
-                            <Share2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Compliance Bar */}
-                      <div className="mb-6 p-3 bg-white rounded-2xl border border-slate-100 shadow-sm">
-                        <div className="flex items-center justify-between mb-2">
-                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Route Compliance ({ob.latestDate ? new Date(ob.latestDate).toLocaleDateString() : 'No Data'})</p>
-                          <p className="text-[10px] font-black text-slate-700">{ob.visitedToday} / {ob.masterTotalShops} Shops</p>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden mb-2">
-                          <div 
-                            className={`h-full transition-all duration-500 ${ob.complianceToday < 70 ? 'bg-red-500' : 'bg-seablue'}`}
-                            style={{ width: `${Math.min(100, ob.complianceToday)}%` }}
-                          />
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Productivity</p>
-                          <p className="text-[10px] font-black text-emerald-600">{ob.productiveToday} / {ob.visitedToday} ({ob.productivityToday.toFixed(0)}%)</p>
-                        </div>
-                        <div className="h-1.5 w-full bg-slate-100 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-emerald-500 transition-all duration-500"
-                            style={{ width: `${Math.min(100, ob.productivityToday)}%` }}
-                          />
-                        </div>
-                        {ob.skippedToday > 0 && (
-                          <p className="text-[7px] font-bold text-red-500 mt-1.5 uppercase tracking-tighter flex items-center gap-1">
-                            <AlertCircle className="w-2 h-2" />
-                            {ob.skippedToday} Shops Skipped
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        {ob.groupKpis.map((group) => (
-                          <div key={group.name} className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100">
-                            <div className="flex items-center justify-between mb-2 border-b border-slate-50 pb-1">
-                              <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest">{group.name}</p>
-                              <div className="flex items-center gap-1">
-                                <Target className="w-2 h-2 text-seablue" />
-                                <span className={`text-[8px] font-black ${group.projectedPercentage < 85 ? 'text-red-500' : 'text-seablue'}`}>
-                                  {group.projectedPercentage.toFixed(0)}% Proj.
-                                </span>
-                              </div>
-                            </div>
-                            <div className="grid grid-cols-2 gap-2">
-                              <div>
-                                <p className="text-[6px] font-black text-slate-400 uppercase">Target</p>
-                                <p className="text-[10px] font-black text-slate-800">{Math.round(group.target)}</p>
-                              </div>
-                              <div>
-                                <p className="text-[6px] font-black text-emerald-400 uppercase">Ach</p>
-                                <p className="text-[10px] font-black text-emerald-600">{Math.round(group.achievement)}</p>
-                              </div>
-                              <div>
-                                <p className="text-[6px] font-black text-seablue uppercase">Ach %</p>
-                                <p className="text-[10px] font-black text-seablue">{group.percentage.toFixed(1)}%</p>
-                              </div>
-                              <div>
-                                <p className="text-[6px] font-black text-amber-400 uppercase">Rem</p>
-                                <p className="text-[10px] font-black text-amber-600">{Math.round(group.remainingTarget)}</p>
-                              </div>
-                            </div>
-                            <div className="mt-2 pt-2 border-t border-slate-50 grid grid-cols-3 gap-1">
-                              <div>
-                                <p className="text-[5px] font-black text-slate-400 uppercase">Req/Day</p>
-                                <p className={`text-[8px] font-black ${group.requiredPerDay > group.dailyAvg ? 'text-red-600' : 'text-slate-600'}`}>{Math.round(group.requiredPerDay)}</p>
-                              </div>
-                              <div>
-                                <p className="text-[5px] font-black text-slate-400 uppercase">Daily Avg</p>
-                                <p className="text-[8px] font-black text-slate-600">{Math.round(group.dailyAvg)}</p>
-                              </div>
-                              <div>
-                                <p className="text-[5px] font-black text-seablue uppercase">Prod %</p>
-                                <p className="text-[8px] font-black text-seablue">{group.productivity.toFixed(0)}%</p>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
+              <Activity className="w-5 h-5 text-emerald-500" />
             </div>
-          )}
+          </div>
+        )}
 
-          <button
-            onClick={onEnter}
-            className="w-full mt-10 bg-seablue hover:bg-seablue-light text-white font-black py-4 rounded-2xl shadow-xl shadow-seablue/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98] group"
-          >
-            Enter App
-            <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
-          </button>
-        </div>
+        {/* KPI Summary (Compact Grid) */}
+        {kpiGroups ? (
+          <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">MTD Performance</h3>
+              <span className="text-[9px] font-bold text-slate-400">{timeGone?.passed}/{timeGone?.total} Days</span>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              {kpiGroups.map(group => (
+                <div key={group.name} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
+                  <p className="text-[8px] font-black text-slate-500 uppercase truncate mb-1">{group.name}</p>
+                  <div className="flex items-end justify-between">
+                    <span className={`text-sm font-black ${group.percentage < 85 ? 'text-amber-500' : 'text-emerald-600'}`}>
+                      {group.percentage.toFixed(0)}%
+                    </span>
+                    <span className="text-[8px] font-bold text-slate-400 mb-0.5">
+                      {Math.round(group.achievement)}/{Math.round(group.target)}
+                    </span>
+                  </div>
+                  <div className="w-full bg-slate-200 h-1 rounded-full mt-2 overflow-hidden">
+                    <div 
+                      className={`h-full ${group.percentage < 85 ? 'bg-amber-500' : 'bg-emerald-500'}`} 
+                      style={{ width: `${Math.min(100, group.percentage)}%` }} 
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : (
+          <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100 flex items-center justify-center h-32">
+            <Loader2 className="w-6 h-6 text-seablue animate-spin" />
+          </div>
+        )}
+
+        {/* Compact OB List for TSM/ASM */}
+        {obWiseKpis && obWiseKpis.length > 0 && (
+          <div className="bg-white rounded-3xl p-4 shadow-sm border border-slate-100">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Team Status</h3>
+              <Users className="w-4 h-4 text-slate-400" />
+            </div>
+            <div className="space-y-2 max-h-48 overflow-y-auto pr-1 no-scrollbar">
+              {obWiseKpis.map(ob => (
+                <div key={ob.obId} className={`flex items-center justify-between p-2 rounded-xl border ${ob.isAtRisk ? 'bg-red-50 border-red-100' : 'bg-slate-50 border-slate-100'}`}>
+                  <div className="flex items-center gap-2">
+                    <div className={`w-7 h-7 rounded-lg flex items-center justify-center text-[8px] font-black ${ob.isAtRisk ? 'bg-red-200 text-red-700' : 'bg-white text-slate-600 shadow-sm'}`}>
+                      {ob.obId.slice(-2)}
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-700 truncate max-w-[120px]">{ob.obName}</p>
+                      <p className="text-[7px] font-bold text-slate-400 uppercase">{ob.visitedToday}/{ob.masterTotalShops} Visited</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className={`text-[9px] font-black ${ob.isAtRisk ? 'text-red-600' : 'text-emerald-600'}`}>
+                      {ob.complianceToday.toFixed(0)}% Comp.
+                    </p>
+                    <p className="text-[7px] font-bold text-slate-400 uppercase">
+                      {ob.groupKpis[0]?.projectedPercentage.toFixed(0)}% Proj.
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <button
+          onClick={onEnter}
+          className="w-full bg-seablue hover:bg-seablue-light text-white font-black py-4 rounded-2xl shadow-xl shadow-seablue/20 transition-all flex items-center justify-center gap-2 active:scale-[0.98] group"
+        >
+          Enter Dashboard
+          <ArrowRight className="w-5 h-5 group-hover:translate-x-1 transition-transform" />
+        </button>
       </motion.div>
     </div>
   );
@@ -8327,106 +8049,12 @@ export default function App() {
                 >
                   <Download className="w-3 h-3" /> Local Backup
                 </button>
-                <button 
-                  onClick={() => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = '.csv,.json';
-                    input.onchange = async (e: any) => {
-                      const file = e.target.files[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = async (event: any) => {
-                        try {
-                          const data = JSON.parse(event.target.result);
-                          const res = await fetch('/api/admin/hierarchy/bulk-upload', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                            body: JSON.stringify({ hierarchy: data, clearExisting: true })
-                          });
-                          if (res.ok) alert('Hierarchy updated successfully');
-                          else alert('Failed to update hierarchy');
-                        } catch (err) {
-                          alert('Invalid JSON file');
-                        }
-                      };
-                      reader.readAsText(file);
-                    };
-                    input.click();
-                  }}
-                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
-                >
-                  <Upload className="w-3 h-3" /> Hierarchy
-                </button>
-                <button 
-                  onClick={() => {
-                    const input = document.createElement('input');
-                    input.type = 'file';
-                    input.accept = '.csv,.json';
-                    input.onchange = async (e: any) => {
-                      const file = e.target.files[0];
-                      if (!file) return;
-                      const reader = new FileReader();
-                      reader.onload = async (event: any) => {
-                        try {
-                          const data = JSON.parse(event.target.result);
-                          const res = await fetch('/api/admin/users/bulk-upload', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${localStorage.getItem('token')}` },
-                            body: JSON.stringify({ users: data, clearExisting: false })
-                          });
-                          if (res.ok) alert('Users updated successfully');
-                          else alert('Failed to update users');
-                        } catch (err) {
-                          alert('Invalid JSON file');
-                        }
-                      };
-                      reader.readAsText(file);
-                    };
-                    input.click();
-                  }}
-                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
-                >
-                  <Users className="w-3 h-3" /> Users
-                </button>
-                <button 
-                  onClick={async () => {
-                    const res = await fetch('/api/admin/stock-reports', {
-                      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                    });
-                    if (res.ok) {
-                      const data = await res.json();
-                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'stock-report.json';
-                      a.click();
-                    }
-                  }}
-                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
-                >
-                  <PackageSearch className="w-3 h-3" /> Stocks
-                </button>
-                <button 
-                  onClick={async () => {
-                    const res = await fetch('/api/admin/distributors', {
-                      headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-                    });
-                    if (res.ok) {
-                      const data = await res.json();
-                      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-                      const url = URL.createObjectURL(blob);
-                      const a = document.createElement('a');
-                      a.href = url;
-                      a.download = 'distributors.json';
-                      a.click();
-                    }
-                  }}
-                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
-                >
-                  <Store className="w-3 h-3" /> Distributors
-                </button>
+              </div>
+              <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl mt-2 flex items-start gap-2">
+                <RefreshCw className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
+                <p className="text-[10px] font-medium text-blue-800">
+                  <strong>Single Bulk Uploads:</strong> To update Hierarchy, Targets, Team, or Distributors, simply update your <strong>Google Sheet</strong> and click the <strong className="text-seablue">Master Sync</strong> button at the top right. No need to upload separate files anymore!
+                </p>
               </div>
             </div>
             <div className="card-clean p-4 space-y-2">

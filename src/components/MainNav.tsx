@@ -11,7 +11,10 @@ import {
   Box, 
   ShieldCheck, 
   HelpCircle, 
-  EyeOff 
+  EyeOff,
+  Users,
+  Target,
+  BarChart
 } from 'lucide-react';
 
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
@@ -19,10 +22,10 @@ const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 export const APP_TABS = [
   { id: 'entry', label: 'Entry', icon: ClipboardEdit, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'command_center', label: 'Command Center', icon: Activity, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'tsm_performance', label: 'TSM Performance', icon: Activity, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'command_center', label: 'Command Center', icon: Target, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'tsm_performance', label: 'TSM Perf.', icon: Users, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'insights', label: 'Insights', icon: LineChart, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'stats', label: 'Stats', icon: PieChart, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
+  { id: 'stats', label: 'Stats', icon: BarChart, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
   { id: 'reports', label: 'Reports', icon: FileSpreadsheet, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
   { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'stocks', label: 'Stocks', icon: Box, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
