@@ -995,6 +995,11 @@ async function startServer() {
     return [];
   }
 
+  async function getAppConfig() {
+    const rows = db.prepare("SELECT * FROM app_config").all();
+    return rows.reduce((acc: any, row: any) => ({ ...acc, [row.key]: row.value }), {});
+  }
+
   async function getGoogleSheetsClient() {
     const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
     const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
@@ -1148,7 +1153,7 @@ async function startServer() {
       "Last_Entry_Date": ['OB Name', 'Contact', 'ASM/TSM', 'Distributor', 'Last Submission Date', 'Last Submission Time', 'Total Days Entered'],
       "Visit_Type_Analysis": ['Date', 'OB Name', 'Route', 'Visit Type', 'Total Visits', 'Total Productive', 'Productivity %', 'Avg Achievement (Ctn)'],
       "OB_Performance": ['OB Name', 'OB ID', 'ASM/TSM', 'Distributor', 'Town', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)', 'Achievement %'],
-      "TSM_Performance": ['TSM Name', 'Total OBs', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)'],
+      "TSM_Performance": ['Month', 'Region', 'RSM', 'TSM Name', 'Total OBs', 'Active OBs', 'Target', 'Achievement', 'Achievement %', 'RPD', 'Avg Sales', 'Projected Sales', 'Productivity %'],
       "Product_Config": ['SKU ID', 'SKU Name', 'Category', 'Units Per Carton', 'Units Per Dozen', 'Weight (Kg)'],
       "Users": ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town']
     };
@@ -1309,30 +1314,67 @@ async function startServer() {
     });
 
     // --- NEW SHEET: TSM_Performance ---
-    const tsmPerformanceHeaders = ['TSM Name', ...CATEGORIES.map(cat => `${cat} Ach`), 'Total Ach', 'Total Target', 'Achievement %'];
+    const tsmPerformanceHeaders = ['Month', 'Region', 'RSM', 'TSM Name', 'Total OBs', 'Active OBs', 'Target', 'Achievement', 'Achievement %', 'RPD', 'Avg Sales', 'Projected Sales', 'Productivity %'];
     const tsmList = Array.from(new Set(obs.map(ob => ob.tsm).filter(Boolean))) as string[];
     const tsmPerformanceRows = tsmList.map(tsm => {
       const tsmOBs = obs.filter(ob => ob.tsm === tsm);
-      const tsmAch: Record<string, number> = {};
       let totalT = 0;
+      let totalA = 0;
+      let activeOBs = new Set();
+      let visitedShops = 0;
+      let productiveShops = 0;
       
       tsmOBs.forEach(ob => {
         CATEGORIES.forEach(cat => {
-          tsmAch[cat] = (tsmAch[cat] || 0) + (achievementMap[ob.contact]?.[cat] || 0);
           const obTarget = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ? AND month = ?").get(ob.contact, cat, currentMonth) as any;
           totalT += obTarget?.target_ctn || 0;
         });
+        
+        // Find orders for this OB in current month
+        const obOrders = orders.filter(o => o.ob_contact === ob.contact && !o.isTSMEntry);
+        obOrders.forEach(o => {
+          if (o.visit_type !== 'Absent') activeOBs.add(ob.contact);
+          visitedShops += Number(o.visited_shops) || 0;
+          productiveShops += Number(o.productive_shops) || 0;
+          
+          const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
+          const sales = SKUS.reduce((sum: number, sku: any) => {
+            const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+            return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+          }, 0);
+          totalA += sales;
+        });
       });
 
-      const totalA = Object.values(tsmAch).reduce((a, b) => a + b, 0);
-      const tillDateTarget = totalT * timeInfo.timeGonePercent;
+      const today = new Date();
+      const isCurrentMonth = currentMonth === today.toISOString().slice(0, 7);
+      const dayOfMonth = isCurrentMonth ? today.getDate() : new Date(parseInt(currentMonth.slice(0, 4)), parseInt(currentMonth.slice(5, 7)), 0).getDate();
+      const daysInMonth = new Date(parseInt(currentMonth.slice(0, 4)), parseInt(currentMonth.slice(5, 7)), 0).getDate();
+
+      const achievementPerc = totalT > 0 ? (totalA / totalT) * 100 : 0;
+      const rpd = dayOfMonth > 0 ? totalA / dayOfMonth : 0;
+      const projectedSales = rpd * daysInMonth;
+      const avgSales = activeOBs.size > 0 ? totalA / activeOBs.size : 0;
+      const productivity = visitedShops > 0 ? (productiveShops / visitedShops) * 100 : 0;
+
+      const region = tsmOBs[0]?.region || 'Unassigned';
+      const rsm = tsmOBs[0]?.rsm || 'Unassigned';
 
       return [
+        currentMonth,
+        region,
+        rsm,
         tsm,
-        ...CATEGORIES.map(cat => (tsmAch[cat] || 0).toFixed(2)),
-        totalA.toFixed(2),
+        tsmOBs.length,
+        activeOBs.size,
         totalT.toFixed(2),
-        tillDateTarget > 0 ? ((totalA / tillDateTarget) * 100).toFixed(1) + '%' : '0%'
+        totalA.toFixed(2),
+        achievementPerc.toFixed(1) + '%',
+        rpd.toFixed(2),
+        avgSales.toFixed(2),
+        projectedSales.toFixed(2),
+        productivity.toFixed(1) + '%'
       ];
     });
 
@@ -1558,29 +1600,8 @@ async function startServer() {
 
       await ensureSheetsExist(sheets, spreadsheetId);
 
-      const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all() as any[];
-      const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
-      const obMap: Record<string, any> = {};
-      obs.forEach(ob => {
-        obMap[ob.contact] = ob;
-      });
-
-      // 1. Sales_Data (SKU Wise)
-      const salesHeaders = getSalesDataHeaders();
-      const salesRows = orders.map((order: any) => getSalesDataRow(order, obMap));
-
-      await sheets.spreadsheets.values.clear({
-        spreadsheetId,
-        range: "Sales_Data",
-      });
-
-      await sheets.spreadsheets.values.update({
-        spreadsheetId,
-        range: "Sales_Data!A1",
-        valueInputOption: "USER_ENTERED",
-        requestBody: { values: [salesHeaders, ...salesRows] },
-      });
-
+      // Only refresh summary sheets, do not overwrite Sales_Data
+      // Sales_Data is appended to individually when orders are submitted
       await refreshSummarySheets(sheets, spreadsheetId);
     } catch (err) {
       console.error("Global Sync Error:", err);
@@ -1650,6 +1671,7 @@ async function startServer() {
     console.log(`[BACKUP] Starting backup: ${backupFileName} (Attempt ${retryCount + 1})`);
     
     try {
+      const config = await getAppConfig();
       const client = await getGoogleSheetsClient();
       if (!client || !client.auth) {
         throw new Error("Google API client not initialized");
@@ -1658,8 +1680,8 @@ async function startServer() {
       const drive = google.drive({ version: 'v3', auth: client.auth });
       console.log(`[BACKUP] Drive client initialized.`);
       
-      // Use specific folder ID provided by user
-      const parentFolderId = '1obtuVTe100g6jrvS6ST8-KVUtXYvQVDY';
+      // Use specific folder ID provided by user or default
+      const parentFolderId = config.google_drive_folder_id || '1obtuVTe100g6jrvS6ST8-KVUtXYvQVDY';
       
       // 1. Gather all data
       console.log(`[BACKUP] Gathering database and config...`);
@@ -1681,11 +1703,18 @@ async function startServer() {
       console.log(`[BACKUP] Uploading ${backupFileName} to folder ${parentFolderId}...`);
       const jsonContent = JSON.stringify(backupData, null, 2);
       
-      await drive.files.create({
-        requestBody: { name: backupFileName, parents: [parentFolderId] },
-        media: { mimeType: 'application/json', body: jsonContent },
-        supportsAllDrives: true
-      });
+      try {
+        await drive.files.create({
+          requestBody: { name: backupFileName, parents: [parentFolderId] },
+          media: { mimeType: 'application/json', body: jsonContent },
+          supportsAllDrives: true
+        });
+      } catch (uploadErr: any) {
+        if (uploadErr.message?.includes("storage quota")) {
+          throw new Error("Service Account storage quota exceeded. IMPORTANT: You must share the folder with the Service Account email AND ensure it's a 'Shared Drive' if you're using a Workspace account, or use a folder in a personal drive that has been shared with the Service Account.");
+        }
+        throw uploadErr;
+      }
       
       logAction("SYSTEM", "Backup System", "Admin", "BACKUP_SUCCESS", { file: backupFileName });
       console.log(`[BACKUP] Backup completed successfully: ${backupFileName}`);
@@ -1807,6 +1836,9 @@ async function startServer() {
       }
       if (!config.google_private_key && process.env.GOOGLE_PRIVATE_KEY) {
         config.google_private_key = process.env.GOOGLE_PRIVATE_KEY;
+      }
+      if (!config.google_drive_folder_id && process.env.GOOGLE_DRIVE_FOLDER_ID) {
+        config.google_drive_folder_id = process.env.GOOGLE_DRIVE_FOLDER_ID;
       }
       
       res.json(config);
@@ -2921,6 +2953,19 @@ async function startServer() {
     }
   });
 
+  app.post("/api/admin/trigger-drive-backup", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+    try {
+      const success = await performFullBackup();
+      if (success) {
+        res.json({ message: "Backup to Google Drive triggered successfully. Check logs for status." });
+      } else {
+        res.status(500).json({ error: "Backup failed. Check server logs." });
+      }
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/admin/backup", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     try {
       const dbPath = path.join(process.cwd(), 'orders.db');
@@ -2992,14 +3037,25 @@ async function startServer() {
     }
   });
 
-  async function pullTeamData(sheets: any, spreadsheetId: string, month?: string) {
+  async function pullTeamData(sheets: any, spreadsheetId: string, month?: string, customSheetName?: string) {
     try {
       const targetMonth = month || new Date().toISOString().slice(0, 7);
-      console.log(`Pulling Team Data from ${spreadsheetId} for month ${targetMonth}...`);
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: "Team_Data!A1:ZZ1000",
-      });
+      const sheetName = customSheetName || (month ? `Team_Data_${month.replace('-', '_')}` : "Team_Data");
+      
+      console.log(`Pulling Team Data from ${spreadsheetId} using sheet ${sheetName} for month ${targetMonth}...`);
+      
+      let response;
+      try {
+        response = await sheets.spreadsheets.values.get({
+          spreadsheetId,
+          range: `${sheetName}!A1:ZZ1000`,
+        });
+      } catch (err: any) {
+        if (err.code === 400 || err.message.includes("not found")) {
+          throw new Error(`Sheet '${sheetName}' not found. Please ensure the sheet exists in your Google Spreadsheet.`);
+        }
+        throw err;
+      }
 
       const rows = response.data.values;
       if (!rows || rows.length < 2) {
@@ -3237,9 +3293,9 @@ async function startServer() {
     }
   }
 
-  async function pullSalesHistory(sheets: any, spreadsheetId: string) {
+  async function pullSalesHistory(sheets: any, spreadsheetId: string, ignoreLock = false) {
     try {
-      console.log(`Pulling Sales History from ${spreadsheetId}...`);
+      console.log(`Pulling Sales History from ${spreadsheetId}... (ignoreLock: ${ignoreLock})`);
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
         range: "Sales_Data!A1:ZZ", 
@@ -3321,15 +3377,13 @@ async function startServer() {
           const orderMonth = cleanDate.slice(0, 7);
           
           // Lock previous months
-          if (isMonthLocked(cleanDate)) continue;
+          if (!ignoreLock && isMonthLocked(cleanDate)) continue;
 
           const cleanRoute = getVal(['Route'])?.toString().trim() || '';
 
-          // March and April 2026 are new insert only
-          if (orderMonth === '2026-03' || orderMonth === '2026-04') {
-            const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(cleanContact, cleanDate, cleanRoute);
-            if (existing) continue;
-          }
+          // For historical pull, we use INSERT OR IGNORE or check for existence
+          const existingRecord = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(cleanContact, cleanDate, cleanRoute);
+          if (existingRecord) continue;
 
           const visitTypeLabel = getVal(['Visit Type']);
           let visitType = 'A';
@@ -3488,28 +3542,10 @@ async function startServer() {
     // 5. Pull Sales History
     const pullSalesResult = await pullSalesHistory(sheets, spreadsheetId);
 
-    // 6. Push Local Sales Data
-    const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC").all() as any[];
-    const salesHeaders = getSalesDataHeaders();
-    const salesRows = orders.map(order => getSalesDataRow(order));
-
-    await sheets.spreadsheets.values.update({
-      spreadsheetId,
-      range: "Sales_Data!A1",
-      valueInputOption: "USER_ENTERED",
-      requestBody: { values: [salesHeaders, ...salesRows] },
-    });
-
-    // 7. Push Product Config (to ensure format is there)
+    // 6. Push Product Config (to ensure format is there)
     await pushProductConfig(sheets, spreadsheetId);
 
-    // 8. Push Team Data back
-    await pushTeamData(sheets, spreadsheetId);
-
-    // 9. Push Users Data back
-    await pushUsersData(sheets, spreadsheetId);
-
-    // 10. Refresh summary sheets
+    // 7. Refresh summary sheets
     await refreshSummarySheets(sheets, spreadsheetId);
 
     // Update Last Sync
@@ -3517,10 +3553,10 @@ async function startServer() {
     db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("last_sync_at", now);
 
     return {
-      pulledTeam: pullTeamResult.count,
-      pulledUsers: pullUsersResult.count,
-      pulledSales: pullSalesResult.count,
-      pushedSales: orders.length,
+      pulledTeam: pullTeamResult.success ? pullTeamResult.count : 0,
+      pulledUsers: pullUsersResult.success ? pullUsersResult.count : 0,
+      pulledSales: pullSalesResult.success ? pullSalesResult.count : 0,
+      pushedSales: 0,
       lastSync: now
     };
   }
@@ -3540,6 +3576,50 @@ async function startServer() {
     } catch (error: any) {
       console.error("Push Historical Targets Error:", error);
       res.status(500).json({ error: error.message });
+    }
+  });
+
+  app.post("/api/admin/pull-historical-sales", authenticateToken, async (req, res) => {
+    if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') return res.status(403).json({ error: 'Access denied' });
+    
+    try {
+      const config = await getAppConfig();
+      if (!config.google_spreadsheet_id) return res.status(400).json({ error: 'Spreadsheet ID not configured' });
+
+      const sheets = await getGoogleSheetsClient();
+      const result = await pullSalesHistory(sheets, config.google_spreadsheet_id, true); // true = ignoreLock
+      
+      if (result.success) {
+        res.json({ message: `Successfully pulled full sales history. Found ${result.count} new rows.`, count: result.count });
+      } else {
+        res.status(400).json({ error: (result as any).message });
+      }
+    } catch (err: any) {
+      console.error("Historical Sales Pull Error:", err);
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/admin/pull-historical-targets", authenticateToken, async (req, res) => {
+    if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') return res.status(403).json({ error: 'Access denied' });
+    const { month, sheetName } = req.body;
+    if (!month) return res.status(400).json({ error: 'Month is required' });
+
+    try {
+      const config = await getAppConfig();
+      if (!config.google_spreadsheet_id) return res.status(400).json({ error: 'Spreadsheet ID not configured' });
+
+      const sheets = await getGoogleSheetsClient();
+      const result = await pullTeamData(sheets, config.google_spreadsheet_id, month, sheetName);
+      
+      if (result.success) {
+        res.json({ message: `Successfully pulled targets for ${month} from sheet '${sheetName || 'default'}'. Found ${result.count} rows.`, count: result.count });
+      } else {
+        res.status(400).json({ error: (result as any).message });
+      }
+    } catch (err: any) {
+      console.error("Historical Pull Error:", err);
+      res.status(500).json({ error: err.message });
     }
   });
 
@@ -3913,8 +3993,24 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(PORT, "0.0.0.0", () => {
+  const server = app.listen(PORT, "0.0.0.0", async () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    
+    // Perform initial sync if configured
+    try {
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      if (config.google_spreadsheet_id) {
+        console.log("Performing initial sync from Google Sheets...");
+        const client = await getGoogleSheetsClient();
+        if (client) {
+          await performFullSync(client.sheets, client.spreadsheetId);
+          console.log("Initial sync complete.");
+        }
+      }
+    } catch (err) {
+      console.error("Initial sync failed:", err);
+    }
   });
 
   server.on('error', (e: any) => {

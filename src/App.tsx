@@ -58,6 +58,7 @@ import {
   Link2,
   ExternalLink,
   Cloud,
+  CloudDownload,
   Share2,
   TrendingUp,
   TrendingDown,
@@ -122,6 +123,17 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
     return '';
   });
   const [navHistory, setNavHistory] = useState<{ level: string, value: string }[]>([]);
+
+  useEffect(() => {
+    if (view === 'command_center') {
+      const selectedTsm = localStorage.getItem('cc_selected_tsm');
+      if (selectedTsm) {
+        setFilterLevel('TSM');
+        setFilterValue(selectedTsm);
+        localStorage.removeItem('cc_selected_tsm');
+      }
+    }
+  }, [view]);
 
   const [routeAnalysisCategoryFilter, setRouteAnalysisCategoryFilter] = useState('All');
   const [routeAnalysisBrandFilter, setRouteAnalysisBrandFilter] = useState('All');
@@ -199,7 +211,8 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
 
     return baseStats.map(s => {
       const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-      const isTSMEntry = tsmContacts.has(s.ob_contact) || (s.order_booker && s.tsm && s.order_booker.trim().toLowerCase() === s.tsm.trim().toLowerCase());
+      // Strictly define TSM entry
+      const isTSMEntry = tsmContacts.has(s.ob_contact) || (s.order_booker && s.tsm && s.order_booker.trim().toLowerCase() === s.tsm.trim().toLowerCase()) || (h && (h.role === 'TSM' || h.role === 'ASM' || h.role === 'RSM'));
       const orderData = (() => {
         if (typeof s.order_data === 'string') {
           try { return JSON.parse(s.order_data); } catch (e) { return null; }
@@ -760,15 +773,17 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
     const obOnlyStats = monthStats.filter(s => !s.isTSMEntry);
     
     obOnlyStats.forEach(s => {
-      if (!s.tsm) return;
+      if (!s.tsm || s.tsm === 'Unassigned') return;
       if (!tsms[s.tsm]) {
         tsms[s.tsm] = {
           name: s.tsm,
           region: s.region,
           town: s.town,
+          rsm: s.rsm,
           totalSales: 0,
           totalTarget: 0,
           activeOBs: 0,
+          totalOBs: hierarchy.filter(h => h.asm_tsm_name === s.tsm && h.role !== 'TSM' && h.role !== 'ASM').length,
           averageOBAchievement: 0,
           averageOBSales: 0,
           totalVisited: 0,
@@ -788,6 +803,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       tsms[tsm].activeOBs = activeOBs;
       tsms[tsm].averageOBSales = activeOBs > 0 ? tsms[tsm].totalSales / activeOBs : 0;
       tsms[tsm].rpd = tsms[tsm].totalVisited > 0 ? (tsms[tsm].totalProductive / tsms[tsm].totalVisited) * 100 : 0;
+      tsms[tsm].productivity = tsms[tsm].totalVisited > 0 ? (tsms[tsm].totalProductive / tsms[tsm].totalVisited) * 100 : 0;
       
       const obContacts = Array.from(obStatsByTsm[tsm]);
       let tsmTotalTarget = 0;
@@ -798,9 +814,22 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         return obTarget > 0 ? (obSales / obTarget) * 100 : 0;
       });
       
+      // Add targets for inactive OBs as well
+      const allTsmOBs = hierarchy.filter(h => h.asm_tsm_name === tsm && h.role !== 'TSM' && h.role !== 'ASM');
+      allTsmOBs.forEach(ob => {
+        if (!obStatsByTsm[tsm].has(ob.ob_id)) {
+           tsmTotalTarget += (Number(ob.target_ctn) || 0);
+        }
+      });
+
       tsms[tsm].totalTarget = tsmTotalTarget;
       tsms[tsm].achievementPerc = tsmTotalTarget > 0 ? (tsms[tsm].totalSales / tsmTotalTarget) * 100 : 0;
       tsms[tsm].averageOBAchievement = achievements.length > 0 ? achievements.reduce((a, b) => a + b, 0) / achievements.length : 0;
+      
+      // Projected Sales
+      const workingDays = 25; // Default
+      const daysPassed = new Set(obOnlyStats.map(s => s.date)).size || 1;
+      tsms[tsm].projectedSales = (tsms[tsm].totalSales / daysPassed) * workingDays;
     });
 
     return Object.values(tsms)
@@ -1293,7 +1322,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
               <option value="SKU">SKU Wise</option>
             </select>
           </div>
-          <div className="h-[300px] min-h-[300px]">
+          <div className="h-[300px] min-h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
                 <Pie
@@ -1369,7 +1398,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
               <option value="SKU">SKU Wise</option>
             </select>
           </div>
-          <div className="h-[300px] min-h-[300px]">
+          <div className="h-[300px] min-h-[300px] w-full">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart 
                 data={
@@ -1993,7 +2022,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         <div className="flex items-center justify-between mb-6">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Sales by Day of Week</h3>
         </div>
-        <div className="h-[300px] min-h-[300px]">
+        <div className="h-[300px] min-h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={dayOfWeekData}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -2056,7 +2085,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
             </select>
           </div>
         </div>
-        <div className="h-[300px] min-h-[300px]">
+        <div className="h-[300px] min-h-[300px] w-full">
           <ResponsiveContainer width="100%" height="100%">
             <BarChart data={(() => {
               const filteredTSMs = tsmPerformance.map(tsm => {
@@ -2191,7 +2220,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
           <div className="p-6">
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               <div className="lg:col-span-2">
-                <div className="h-[300px] min-h-[300px]">
+                <div className="h-[300px] min-h-[300px] w-full">
                   <ResponsiveContainer width="100%" height="100%">
                     <LineChart data={routeAnalysisData}>
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
@@ -3650,6 +3679,201 @@ const StatsView = ({
   );
 };
 
+const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, userName, userRegion, selectedMonth, setSelectedMonth, setView, onRefresh, isSyncing }: any) => {
+  const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'achievementPerc', direction: 'asc' });
+
+  const tsmPerformanceData = useMemo(() => {
+    const monthStats = history.filter((h: any) => h.date.startsWith(selectedMonth));
+    const tsms: Record<string, any> = {};
+
+    // Filter hierarchy based on role
+    const filteredHierarchy = hierarchy.filter((h: any) => {
+      if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
+      if (userRole === 'RSM' || userRole === 'SC') return (h.territory_region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase();
+      if (userRole === 'TSM' || userRole === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+      return false;
+    });
+
+    // Initialize TSMs from hierarchy
+    filteredHierarchy.forEach((h: any) => {
+      const tsmName = h.asm_tsm_name || 'Unassigned';
+      if (!tsms[tsmName]) {
+        tsms[tsmName] = {
+          month: selectedMonth,
+          region: h.territory_region || 'Unassigned',
+          rsm: h.rsm_name || 'Unassigned',
+          tsmName: tsmName,
+          totalOBs: new Set(),
+          activeOBs: new Set(),
+          target: 0,
+          achievement: 0,
+          visitedShops: 0,
+          productiveShops: 0,
+        };
+      }
+      if (h.ob_id) tsms[tsmName].totalOBs.add(h.ob_id);
+      
+      const target = CATEGORIES.reduce((sum: number, cat: string) => {
+        const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+        return sum + (Number(h[targetKey]) || 0);
+      }, 0);
+      tsms[tsmName].target += target;
+    });
+
+    // Process sales data
+    monthStats.forEach((s: any) => {
+      if (s.isTSMEntry) return; // Exclude TSM direct entries
+      
+      const tsmName = s.tsm || 'Unassigned';
+      if (!tsms[tsmName]) return; // Only process TSMs visible to user
+
+      const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : (s.order_data || {});
+      const sales = SKUS.reduce((sum: number, sku: any) => {
+        const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+        return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+      }, 0);
+
+      tsms[tsmName].achievement += sales;
+      tsms[tsmName].visitedShops += (Number(s.visited_shops) || 0);
+      tsms[tsmName].productiveShops += (Number(s.productive_shops) || 0);
+      if (s.visit_type !== 'Absent') {
+        tsms[tsmName].activeOBs.add(s.ob_contact);
+      }
+    });
+
+    const today = new Date();
+    const isCurrentMonth = selectedMonth === today.toISOString().slice(0, 7);
+    const dayOfMonth = isCurrentMonth ? today.getDate() : new Date(parseInt(selectedMonth.slice(0, 4)), parseInt(selectedMonth.slice(5, 7)), 0).getDate();
+    const daysInMonth = new Date(parseInt(selectedMonth.slice(0, 4)), parseInt(selectedMonth.slice(5, 7)), 0).getDate();
+
+    return Object.values(tsms).map(tsm => {
+      const achievementPerc = tsm.target > 0 ? (tsm.achievement / tsm.target) * 100 : 0;
+      const rpd = dayOfMonth > 0 ? tsm.achievement / dayOfMonth : 0;
+      const projectedSales = rpd * daysInMonth;
+      const avgSales = tsm.activeOBs.size > 0 ? tsm.achievement / tsm.activeOBs.size : 0;
+      const productivity = tsm.visitedShops > 0 ? (tsm.productiveShops / tsm.visitedShops) * 100 : 0;
+
+      return {
+        ...tsm,
+        totalOBs: tsm.totalOBs.size,
+        activeOBs: tsm.activeOBs.size,
+        achievementPerc,
+        rpd,
+        projectedSales,
+        avgSales,
+        productivity
+      };
+    }).filter(tsm => tsm.totalOBs > 0 || tsm.achievement > 0);
+  }, [history, hierarchy, selectedMonth, userRole, userName, userRegion, CATEGORIES, SKUS]);
+
+  const sortedData = useMemo(() => {
+    let sortableItems = [...tsmPerformanceData];
+    if (sortConfig !== null) {
+      sortableItems.sort((a, b) => {
+        if (a[sortConfig.key] < b[sortConfig.key]) {
+          return sortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (a[sortConfig.key] > b[sortConfig.key]) {
+          return sortConfig.direction === 'asc' ? 1 : -1;
+        }
+        return 0;
+      });
+    }
+    return sortableItems;
+  }, [tsmPerformanceData, sortConfig]);
+
+  const requestSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (sortConfig && sortConfig.key === key && sortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setSortConfig({ key, direction });
+  };
+
+  const handleTSMClick = (tsmName: string) => {
+    // We need to set some global filter for command center, but for now we can just navigate
+    // A better way is to pass the TSM name to the command center view.
+    // Since we don't have a global state for selected TSM in command center, 
+    // we might need to add it or just set view to command_center.
+    // Let's set a local storage item or dispatch an event that command center can pick up.
+    localStorage.setItem('cc_selected_tsm', tsmName);
+    setView('command_center');
+  };
+
+  return (
+    <div className="p-4 space-y-6 max-w-7xl mx-auto">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
+        <div>
+          <h1 className="text-xl font-black text-slate-800">TSM Performance</h1>
+          <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Monthly Summary</p>
+        </div>
+        <div className="flex items-center gap-2">
+          <input 
+            type="month" 
+            value={selectedMonth}
+            onChange={(e) => setSelectedMonth(e.target.value)}
+            className="text-sm font-bold text-slate-700 bg-slate-50 border-none rounded-xl px-4 py-2 focus:ring-2 focus:ring-seablue/20"
+          />
+          <button onClick={onRefresh} disabled={isSyncing} className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 transition-colors disabled:opacity-50">
+            <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100">
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100" onClick={() => requestSort('month')}>Month</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100" onClick={() => requestSort('region')}>Region</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100" onClick={() => requestSort('rsm')}>RSM</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100" onClick={() => requestSort('tsmName')}>TSM Name</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestSort('totalOBs')}>Total OBs</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestSort('activeOBs')}>Active OBs</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestSort('target')}>Target</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestSort('achievement')}>Achievement</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestSort('achievementPerc')}>Ach %</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestSort('rpd')}>RPD</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestSort('avgSales')}>Avg Sales</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestSort('projectedSales')}>Proj. Sales</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestSort('productivity')}>Prod %</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {sortedData.map((row, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/80 transition-colors cursor-pointer" onClick={() => handleTSMClick(row.tsmName)}>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600">{row.month}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600">{row.region}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600">{row.rsm}</td>
+                  <td className="px-4 py-3 text-xs font-bold text-seablue hover:underline">{row.tsmName}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.totalOBs}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.activeOBs}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.target.toFixed(0)}</td>
+                  <td className="px-4 py-3 text-xs font-bold text-slate-800 text-right">{row.achievement.toFixed(1)}</td>
+                  <td className={`px-4 py-3 text-xs font-bold text-right ${row.achievementPerc >= 100 ? 'text-emerald-600' : row.achievementPerc >= 80 ? 'text-amber-600' : 'text-rose-600'}`}>
+                    {row.achievementPerc.toFixed(1)}%
+                  </td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.rpd.toFixed(1)}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.avgSales.toFixed(1)}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.projectedSales.toFixed(1)}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.productivity.toFixed(1)}%</td>
+                </tr>
+              ))}
+              {sortedData.length === 0 && (
+                <tr>
+                  <td colSpan={13} className="px-4 py-8 text-center text-sm text-slate-500">No TSM performance data found for the selected month.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing, selectedMonth, setSelectedMonth }: any) => {
   const currentMonth = selectedMonth || getPSTDate().slice(0, 7);
   const today = getPSTDate();
@@ -4941,7 +5165,7 @@ const normalizeRole = (role: string): any => {
 };
 
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'intro' | 'help'>(() => {
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'intro' | 'help' | 'tsm_performance' | 'command_center' | 'insights' | 'stats'>(() => {
     const saved = localStorage.getItem('user_data');
     if (saved) {
       try {
@@ -7685,6 +7909,37 @@ export default function App() {
     );
   }
 
+  if (view === 'tsm_performance') {
+    return (
+      <div className="min-h-screen bg-slate-50 pb-40">
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} />
+        {isLoadingNational ? (
+          <div className="flex-1 flex items-center justify-center min-h-[80vh]">
+            <div className="flex flex-col items-center gap-4">
+              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading TSM Performance...</p>
+            </div>
+          </div>
+        ) : (
+          <TSMPerformanceView 
+            history={nationalStats} 
+            hierarchy={hierarchy} 
+            CATEGORIES={CATEGORIES} 
+            SKUS={SKUS}
+            userRole={userRole}
+            userName={userName}
+            userRegion={userRegion}
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+            setView={setView}
+            onRefresh={syncEverything}
+            isSyncing={isSyncingGlobal}
+          />
+        )}
+      </div>
+    );
+  }
+
   if (view === 'admin') {
     if (!isAdminAuthenticated) {
       return (
@@ -7789,6 +8044,101 @@ export default function App() {
                 <span className="text-[10px] font-bold text-emerald-600 uppercase">Never Delete data</span>
               </div>
             </div>
+            <div className="card-clean p-4 space-y-4">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Recovery & History</h3>
+              <div className="grid grid-cols-1 gap-3">
+                <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-amber-800">
+                    <History className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-tight">Restore Historical Targets</span>
+                  </div>
+                  <p className="text-[9px] text-amber-700 font-medium">Pull targets from a specific month's sheet. By default it looks for 'Team_Data_YYYY_MM'. You can override the sheet name if needed.</p>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex gap-2">
+                      <div className="flex flex-col gap-1 flex-1">
+                        <label className="text-[8px] font-bold text-amber-700 uppercase">Month</label>
+                        <input 
+                          type="month" 
+                          id="restoreMonth"
+                          defaultValue="2026-03"
+                          className="text-[10px] p-1 border border-amber-200 rounded bg-white outline-none"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1 flex-1">
+                        <label className="text-[8px] font-bold text-amber-700 uppercase">Sheet Name (Optional)</label>
+                        <input 
+                          type="text" 
+                          id="restoreSheetName"
+                          placeholder="e.g. Mar-26"
+                          className="text-[10px] p-1 border border-amber-200 rounded bg-white outline-none"
+                        />
+                      </div>
+                    </div>
+                    <button 
+                      onClick={async () => {
+                        const month = (document.getElementById('restoreMonth') as HTMLInputElement).value;
+                        const sheetName = (document.getElementById('restoreSheetName') as HTMLInputElement).value;
+                        if (!month) return alert('Please select a month');
+                        if (window.confirm(`Restore targets for ${month} ${sheetName ? `from sheet '${sheetName}'` : ''}?`)) {
+                          setIsSyncing(true);
+                          try {
+                            const res = await apiFetch('/api/admin/pull-historical-targets', { 
+                              method: 'POST',
+                              body: JSON.stringify({ month, sheetName })
+                            });
+                            const data = await res.json();
+                            if (res.ok) alert(data.message);
+                            else alert('Failed: ' + data.error);
+                          } catch (err: any) {
+                            alert('Error: ' + err.message);
+                          } finally {
+                            setIsSyncing(false);
+                            fetchAdminData();
+                          }
+                        }
+                      }}
+                      disabled={isSyncing}
+                      className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                    >
+                      {isSyncing ? 'Restoring...' : 'Restore Now'}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-xl space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-800">
+                    <CloudDownload className="w-4 h-4" />
+                    <span className="text-[10px] font-black uppercase tracking-tight">Full History Pull</span>
+                  </div>
+                  <p className="text-[9px] text-emerald-700 font-medium">Pull ALL sales data from Google Sheets, ignoring the safety month locks. Use this to verify complete data from day 1.</p>
+                  <button 
+                    onClick={async () => {
+                      if (window.confirm('Pull ALL historical sales data? This will ignore month locks and might take a while.')) {
+                        setIsSyncingGlobal(true);
+                        try {
+                          const res = await apiFetch('/api/admin/pull-historical-sales', { method: 'POST' });
+                          const data = await res.json();
+                          if (res.ok) {
+                            alert(data.message);
+                            fetchHistory(true);
+                            fetchNationalData();
+                          } else alert('Failed: ' + data.error);
+                        } catch (err: any) {
+                          alert('Error: ' + err.message);
+                        } finally {
+                          setIsSyncingGlobal(false);
+                        }
+                      }
+                    }}
+                    disabled={isSyncingGlobal}
+                    className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
+                  >
+                    {isSyncingGlobal ? 'Pulling...' : 'Pull Full History'}
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div className="card-clean p-4 space-y-2">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admin Actions</h3>
               <div className="grid grid-cols-2 gap-2">
@@ -7840,6 +8190,28 @@ export default function App() {
                   <Trash2 className="w-3 h-3" /> Clean Duplicates
                 </button>
                 <button 
+                  onClick={async () => {
+                    if (window.confirm('Trigger a full backup to Google Drive?')) {
+                      setIsSyncing(true);
+                      try {
+                        const res = await apiFetch('/api/admin/trigger-drive-backup', { method: 'POST' });
+                        const data = await res.json();
+                        if (res.ok) alert(data.message);
+                        else alert('Drive Backup Failed: ' + data.error);
+                      } catch (err: any) {
+                        alert('Error: ' + err.message);
+                      } finally {
+                        setIsSyncing(false);
+                        fetchAdminData();
+                      }
+                    }
+                  }}
+                  disabled={isSyncing}
+                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
+                >
+                  <Cloud className="w-3 h-3" /> Drive Backup
+                </button>
+                <button 
                   onClick={() => {
                     const confirm = window.confirm('Are you sure you want to backup the database?');
                     if (confirm) {
@@ -7848,7 +8220,7 @@ export default function App() {
                   }}
                   className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
                 >
-                  <Download className="w-3 h-3" /> Backup
+                  <Download className="w-3 h-3" /> Local Backup
                 </button>
                 <button 
                   onClick={() => {
@@ -7991,6 +8363,20 @@ export default function App() {
                     onChange={(e) => updateConfig('google_service_account_email', e.target.value)}
                     className="input-clean w-full text-[10px]"
                   />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[8px] font-bold text-slate-400 uppercase">Backup Folder ID (Google Drive)</label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter Folder ID"
+                    value={appConfig.google_drive_folder_id || ''} 
+                    onChange={(e) => updateConfig('google_drive_folder_id', e.target.value)}
+                    className="input-clean w-full text-[10px]"
+                  />
+                  <p className="text-[7px] text-slate-400 italic mt-1">
+                    Share this folder with <span className="font-bold text-seablue select-all">{appConfig.google_service_account_email}</span> as an <b>Editor</b>. 
+                    If you get a "storage quota" error, use a <b>Shared Drive</b>.
+                  </p>
                 </div>
                 <div className="space-y-1">
                   <label className="text-[8px] font-bold text-slate-400 uppercase flex justify-between items-center">
@@ -8705,59 +9091,198 @@ export default function App() {
   }
 
   if (view === 'help') {
+    const helpContent = [
+      {
+        id: 'entry',
+        title: 'Entry (Daily Sales)',
+        roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'],
+        color: 'border-emerald-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">This is where you enter your daily sales data.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Date & Location:</strong> Select the date, your town, and distributor.</li>
+              <li><strong>Shops Data:</strong> Enter Total Shops, Visited Shops, and Productive Shops.</li>
+              <li><strong>Sales Quantities:</strong> For each product, enter the number of Cartons (Ctn), Dozens (Dzn), or Packs (Pks) sold.</li>
+              <li><strong>Save as Draft:</strong> If you don't have internet, click "Save as Draft". It will be saved on your phone.</li>
+              <li><strong>Submit:</strong> When you have internet, click "Submit" to send the data to the server.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'dashboard',
+        title: 'Dashboard',
+        roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'],
+        color: 'border-seablue',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">View your performance and sales statistics at a glance.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Overview:</strong> Shows a summary of your sales, targets, and achievements.</li>
+              <li><strong>KPIs:</strong> Track key metrics like Productivity %, Drop Size, and Avg Sales.</li>
+              <li><strong>Filters:</strong> Use the breadcrumb navigation to drill down from National to Region, TSM, Town, and OB levels (depending on your role).</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'command_center',
+        title: 'Command Center',
+        roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'],
+        color: 'border-indigo-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">Detailed performance tracking for TSMs and above.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>OB Performance:</strong> View detailed metrics for each Order Booker under your supervision.</li>
+              <li><strong>Target vs Achievement:</strong> Compare actual sales against set targets for different brands.</li>
+              <li><strong>Productivity:</strong> Monitor visited vs productive shops for your team.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'tsm_performance',
+        title: 'TSM Performance',
+        roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'],
+        color: 'border-violet-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">High-level overview of TSM performance for regional and national managers.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Summary Table:</strong> Compare all TSMs based on achievement %, productivity, and active OBs.</li>
+              <li><strong>Drill Down:</strong> Click on any TSM row to open their specific Command Center view.</li>
+              <li><strong>Sorting:</strong> Click column headers to sort by different metrics (e.g., lowest achievement to highest).</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'insights',
+        title: 'Insights',
+        roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'],
+        color: 'border-fuchsia-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">Advanced analytics and trends.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Route Analysis:</strong> Analyze performance by specific routes over the last 3 months.</li>
+              <li><strong>Brand Trends:</strong> View sales trends for different brands and categories.</li>
+              <li><strong>WhatsApp Reporting:</strong> Generate formatted text reports to easily share via WhatsApp.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'stats',
+        title: 'Stats',
+        roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'],
+        color: 'border-pink-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">Detailed statistical breakdown of sales data.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Category Breakdown:</strong> See sales distribution across different product categories.</li>
+              <li><strong>SKU Performance:</strong> Identify top-selling and low-performing SKUs.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'reports',
+        title: 'Reports',
+        roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'],
+        color: 'border-rose-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">Comprehensive tabular reports for deep data analysis.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Data Tables:</strong> View raw data organized by date, region, TSM, and OB.</li>
+              <li><strong>Export:</strong> Use these tables to verify data accuracy and track daily submissions.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'history',
+        title: 'History',
+        roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'],
+        color: 'border-amber-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">View your previously submitted orders and drafts.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Drafts:</strong> Orders saved without internet appear here. They will automatically sync when you connect to the internet.</li>
+              <li><strong>Submitted Orders:</strong> View all orders you have successfully sent.</li>
+              <li><strong>Filters:</strong> Use the quick filters (Today, Yesterday, This Week) to find specific entries.</li>
+              <li><strong>Delete:</strong> You can delete drafts if you made a mistake.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'stocks',
+        title: 'Stocks',
+        roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'],
+        color: 'border-orange-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">Manage and track distributor stock levels.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Stock Entry:</strong> Enter current stock levels (in Cartons) for each SKU at the distributor level.</li>
+              <li><strong>Submission:</strong> Submit stock data to keep the central system updated.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'admin',
+        title: 'Admin',
+        roles: ['Super Admin', 'Admin'],
+        color: 'border-slate-800',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">System configuration and data management.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Data Sync:</strong> Manually trigger sync with Google Sheets.</li>
+              <li><strong>Configuration:</strong> Manage users, hierarchy, targets, and product configurations.</li>
+            </ul>
+          </>
+        )
+      }
+    ];
+
+    const visibleHelpContent = helpContent.filter(item => {
+      if (!userRole) return false;
+      const normalizedRole = userRole.toUpperCase();
+      const isAdmin = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'].includes((userEmail || '').toLowerCase());
+      return item.roles.map(r => r.toUpperCase()).includes(normalizedRole) || isAdmin;
+    });
+
     return (
       <div className="min-h-screen bg-slate-50 pb-20">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} />
         <main className="max-w-4xl mx-auto p-4 space-y-6">
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
             <h1 className="text-2xl font-black text-seablue uppercase tracking-tight mb-2">User Manual</h1>
-            <p className="text-sm text-slate-500 mb-6">A simple guide to using the SalesPulse application.</p>
+            <p className="text-sm text-slate-500 mb-6">A detailed guide to using the SalesPulse application based on your role ({userRole}).</p>
             
             <div className="space-y-6">
-              <div className="border-l-4 border-seablue pl-4">
-                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">1. Login</h2>
+              <div className="border-l-4 border-slate-400 pl-4">
+                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">Getting Started</h2>
                 <p className="text-sm text-slate-600">
                   Open the app and click the <strong>"Sign in with Google"</strong> button. Use your official company email address. If you are not registered, contact your admin.
-                </p>
-              </div>
-
-              <div className="border-l-4 border-emerald-500 pl-4">
-                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">2. Entry Tab (Daily Sales)</h2>
-                <p className="text-sm text-slate-600 mb-2">This is where you enter your daily sales data.</p>
-                <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-                  <li><strong>Date & Location:</strong> Select the date, your town, and distributor.</li>
-                  <li><strong>Shops Data:</strong> Enter Total Shops, Visited Shops, and Productive Shops.</li>
-                  <li><strong>Sales Quantities:</strong> For each product, enter the number of Cartons (Ctn), Dozens (Dzn), or Packs (Pks) sold.</li>
-                  <li><strong>Save as Draft:</strong> If you don't have internet, click "Save as Draft". It will be saved on your phone.</li>
-                  <li><strong>Submit:</strong> When you have internet, click "Submit" to send the data to the server.</li>
-                </ul>
-              </div>
-
-              <div className="border-l-4 border-amber-500 pl-4">
-                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">3. History Tab</h2>
-                <p className="text-sm text-slate-600 mb-2">View your previously submitted orders and drafts.</p>
-                <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-                  <li><strong>Drafts:</strong> Orders saved without internet appear here. They will automatically sync when you connect to the internet.</li>
-                  <li><strong>Submitted Orders:</strong> View all orders you have successfully sent.</li>
-                  <li><strong>Delete:</strong> You can delete drafts if you made a mistake.</li>
-                </ul>
-              </div>
-
-              <div className="border-l-4 border-purple-500 pl-4">
-                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">4. Dashboard & Reports</h2>
-                <p className="text-sm text-slate-600 mb-2">View your performance and sales statistics.</p>
-                <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-                  <li><strong>Dashboard:</strong> Shows a summary of your sales, targets, and achievements.</li>
-                  <li><strong>Reports:</strong> Detailed breakdown of sales by product and category.</li>
-                </ul>
-              </div>
-
-              <div className="border-l-4 border-rose-500 pl-4">
-                <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">5. Logout</h2>
-                <p className="text-sm text-slate-600">
                   To log out, use the <strong>Logout</strong> button in the navigation bar.
                 </p>
               </div>
+
+              {visibleHelpContent.map((item, index) => (
+                <div key={item.id} className={`border-l-4 ${item.color} pl-4`}>
+                  <h2 className="text-lg font-bold text-slate-800 uppercase tracking-widest mb-2">{item.title}</h2>
+                  {item.content}
+                </div>
+              ))}
             </div>
           </div>
         </main>
