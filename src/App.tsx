@@ -204,6 +204,13 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
     let baseStats = stats;
     
     const tsmContacts = new Set(hierarchy.map(h => (h.asm_tsm_contact || '').trim()).filter(Boolean));
+    // Add contacts starting with TSM- to tsmContacts
+    stats.forEach(s => {
+      if ((s.ob_contact || '').startsWith('TSM-')) {
+        tsmContacts.add(s.ob_contact);
+      }
+    });
+
     const testOBIds = new Set(hierarchy.filter(h => (h.ob_name || '').toLowerCase().includes('test')).map(h => h.ob_id));
     
     // Global exclusion of test OBs
@@ -211,8 +218,16 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
 
     return baseStats.map(s => {
       const h = hierarchy.find(h => h.ob_id === s.ob_contact);
-      // Strictly define TSM entry
-      const isTSMEntry = tsmContacts.has(s.ob_contact) || (s.order_booker && s.tsm && s.order_booker.trim().toLowerCase() === s.tsm.trim().toLowerCase()) || (h && (h.role === 'TSM' || h.role === 'ASM' || h.role === 'RSM'));
+      // Strictly define TSM entry - handle *TSM - prefix and TSM- contact prefix
+      const obNameClean = (s.order_booker || '').replace(/^\*TSM\s*-\s*/i, '').trim().toLowerCase();
+      const tsmNameClean = (s.tsm || '').trim().toLowerCase();
+      
+      const isTSMEntry = 
+        (s.ob_contact || '').startsWith('TSM-') || 
+        tsmContacts.has(s.ob_contact) || 
+        (obNameClean && tsmNameClean && (obNameClean === tsmNameClean || obNameClean.includes(tsmNameClean) || tsmNameClean.includes(obNameClean))) || 
+        (h && (h.role === 'TSM' || h.role === 'ASM' || h.role === 'RSM'));
+
       const orderData = (() => {
         if (typeof s.order_data === 'string') {
           try { return JSON.parse(s.order_data); } catch (e) { return null; }
@@ -5233,6 +5248,90 @@ export default function App() {
     window.location.href = '/';
   };
 
+  const generateWhatsAppMessage = (orderData: any, isFromHistory: boolean = false) => {
+    const date = orderData.date;
+    const obName = orderData.order_booker || orderData.orderBooker;
+    const town = orderData.town;
+    const route = orderData.route;
+    const totalShops = orderData.total_shops || orderData.totalShops || 50;
+    const visitedShops = orderData.visited_shops || orderData.visitedShops || 0;
+    const productiveShops = orderData.productive_shops || orderData.productiveShops || 0;
+    
+    const catProdData = isFromHistory 
+      ? (typeof orderData.category_productive_data === 'string' ? JSON.parse(orderData.category_productive_data) : (orderData.category_productive_data || {}))
+      : (orderData.categoryProductiveShops || {});
+
+    const items = isFromHistory 
+      ? (typeof orderData.order_data === 'string' ? JSON.parse(orderData.order_data) : (orderData.order_data || {}))
+      : (orderData.items || {});
+
+    const brandWiseProductive = CATEGORIES.map(cat => {
+      return `${cat}: ${catProdData[cat] || 0}`;
+    }).join('\n');
+
+    const skuDetails = SKUS.map(sku => {
+      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+      if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
+      
+      const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+      const totalVal = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
+      const label = sku.unit || (['Kite Glow', 'Burq Action', 'Vero'].includes(sku.category) ? 'Bags' : 'Ctns');
+      
+      return `${sku.name}: ${totalVal.toFixed(2).replace(/\.00$/, '')} ${label}`;
+    }).filter(Boolean).join('\n');
+
+    let totalBags = 0;
+    let totalCtns = 0;
+    const brandSales = CATEGORIES.map(cat => {
+      const catSkus = SKUS.filter(s => s.category === cat);
+      const catTotal = catSkus.reduce((sum, sku) => {
+        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+        return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
+      }, 0);
+      const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
+      if (label === 'Bags') totalBags += catTotal;
+      else totalCtns += catTotal;
+      return `${cat}: ${catTotal.toFixed(2).replace(/\.00$/, '')} ${label}`;
+    }).join('\n');
+
+    const obContact = orderData.ob_contact || orderData.obContact;
+    const month = date.slice(0, 7);
+    const obMtdOrders = history.filter(o => o.ob_contact === obContact && o.date.startsWith(month));
+    
+    const mtdBrandSales = CATEGORIES.map(cat => {
+      const catSkus = SKUS.filter(s => s.category === cat);
+      const mtdTotal = obMtdOrders.reduce((sum, o) => {
+        const oItems = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
+        const catSum = catSkus.reduce((s2, sku) => {
+          const item = oItems[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+          return s2 + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
+        }, 0);
+        return sum + catSum;
+      }, 0);
+      const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
+      return `${cat}: ${mtdTotal.toFixed(2).replace(/\.00$/, '')} ${label}`;
+    }).join('\n');
+
+    const summary = `*Sales Summary*\n` +
+      `*${date}*\n\n` +
+      `OB: ${obName}\n` +
+      `Town: ${town}\n` +
+      `Route: ${route}\n\n` +
+      `Shops T/V/P: ${totalShops}/${visitedShops}/${productiveShops}\n\n` +
+      `*Brand Wise Productive:*\n${brandWiseProductive}\n\n` +
+      `------------------\n\n` +
+      `*SKU Details:*\n${skuDetails || 'No SKUs sold'}\n\n` +
+      `------------------\n\n` +
+      `*Brand Sales:*\n${brandSales}\n\n` +
+      `------------------\n\n` +
+      `*Today Execution:* ${totalBags.toFixed(2).replace(/\.00$/, '')} Bags, ${totalCtns.toFixed(2).replace(/\.00$/, '')} Ctns\n\n` +
+      `*MTD Brand Sales:*\n${mtdBrandSales}`;
+
+    return summary;
+  };
+
   const apiFetch = async (url: string, options: any = {}) => {
     const currentToken = token || localStorage.getItem('auth_token');
     if (!currentToken || currentToken === 'null') {
@@ -5254,7 +5353,13 @@ export default function App() {
     }
     if (response.status === 403) {
       console.warn(`apiFetch: 403 on ${url}. Access denied.`);
-      const errorMsg = "Access denied. You don't have permission for this action.";
+      let errorMsg = "Access denied. You don't have permission for this action.";
+      try {
+        const data = await response.json();
+        if (data && data.error) {
+          errorMsg = data.error;
+        }
+      } catch (e) {}
       setMessage({ text: errorMsg, type: 'error' });
       setTimeout(() => setMessage(null), 5000);
       throw new Error(errorMsg);
@@ -7073,7 +7178,7 @@ export default function App() {
         });
         
         const totalAch = Object.values(totals).reduce((a: number, b: number) => a + b, 0);
-        const tsmOBs = obAssignments.filter(ob => ob.tsm === tsmName);
+        const tsmOBs = obAssignments.filter(ob => ob.tsm === tsmName && !isTSMEntry(ob.name, ob.tsm) && !(ob.contact || '').startsWith('TSM-'));
         const totalTarget = tsmOBs.reduce((sum, ob) => {
           return sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0);
         }, 0);
@@ -7541,7 +7646,7 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {tsmList.map(tsm => {
-                    const tsmOBs = obAssignments.filter(ob => ob.tsm === tsm);
+                    const tsmOBs = obAssignments.filter(ob => ob.tsm === tsm && !isTSMEntry(ob.name, ob.tsm) && !(ob.contact || '').startsWith('TSM-'));
                     const tsmOrders = mtdOrders.filter(o => tsmOBs.some(ob => ob.contact === o.ob_contact));
                     const activeOBs = new Set(tsmOrders.map(o => o.ob_contact)).size;
                     const totalVisited = tsmOrders.reduce((sum, o) => sum + (o.visited_shops || 0), 0);
@@ -8369,7 +8474,7 @@ export default function App() {
                   <input 
                     type="text" 
                     placeholder="Enter Folder ID"
-                    value={appConfig.google_drive_folder_id || ''} 
+                    value={appConfig.google_drive_folder_id || '1obtuVTe100g6jrvS6ST8-KVUtXYvQVDY'} 
                     onChange={(e) => updateConfig('google_drive_folder_id', e.target.value)}
                     className="input-clean w-full text-[10px]"
                   />
@@ -9701,77 +9806,7 @@ export default function App() {
                                 <td className="px-4 py-3 text-center">
                                   <button 
                                     onClick={() => {
-                                      const items = h.order_data || {};
-                                      const skuDetails = SKUS.map(sku => {
-                                        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                        const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                                        const totalCtns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
-                                        if (totalCtns === 0) return null;
-                                        const label = sku.category === 'Kite Glow' || sku.category === 'Burq Action' || sku.category === 'Vero' ? 'Bags' : 'Ctns';
-                                        const prefix = (sku.category === 'DWB' || sku.category === 'Kite Glow' || sku.category === 'Burq Action' || sku.category === 'Vero') ? 'DWB ' : (sku.category === 'Match' ? 'Match ' : '');
-                                        return `${prefix}${sku.name}: ${totalCtns.toFixed(2)} ${label}`;
-                                      }).filter(Boolean).join('\n');
-
-                                      const currentMonth = h.date.slice(0, 7);
-                                      const obMtdOrders = history.filter(o => o.ob_contact === h.ob_contact && o.date.startsWith(currentMonth));
-                                      const mtdBrandSales = CATEGORIES.map(cat => {
-                                        const catSkus = SKUS.filter(s => s.category === cat);
-                                        const mtdTotal = obMtdOrders.reduce((sum, o) => {
-                                          const hData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : o.order_data;
-                                          const hCatTotal = catSkus.reduce((sSum, sku) => {
-                                            const item = hData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                            const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
-                                            return sSum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
-                                          }, 0);
-                                          return sum + hCatTotal;
-                                        }, 0);
-                                        return `${cat}: ${mtdTotal.toFixed(2)}`;
-                                      }).join('\n');
-
-                                      const totals: Record<string, { value: number, unit: string }> = {};
-                                      CATEGORIES.forEach(cat => {
-                                        const catSkus = SKUS.filter(s => s.category === cat);
-                                        const unit = catSkus[0]?.unit || 'Ctns';
-                                        const value = catSkus.reduce((sum, sku) => {
-                                          const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                                          const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                                          return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                                        }, 0);
-                                        totals[cat] = { value, unit };
-                                      });
-
-                                      const totalBags = Object.values(totals).filter(t => t.unit === 'Bags').reduce((a, b) => a + b.value, 0);
-                                      const totalCtns = Object.values(totals).filter(t => t.unit === 'Ctns').reduce((a, b) => a + b.value, 0);
-
-                                      const mtdTotalBags = obMtdOrders.reduce((sum, o) => {
-                                        const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
-                                        const ach = calculateAchievement(orderData);
-                                        return sum + Object.values(ach).filter(t => t.unit === 'Bags').reduce((a, b) => a + b.value, 0);
-                                      }, 0);
-                                      const mtdTotalCtns = obMtdOrders.reduce((sum, o) => {
-                                        const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
-                                        const ach = calculateAchievement(orderData);
-                                        return sum + Object.values(ach).filter(t => t.unit === 'Ctns').reduce((a, b) => a + b.value, 0);
-                                      }, 0);
-
-                                      const summary = `*Sales Summary*\n` +
-                                        `*${h.date}*\n` +
-                                        `*OB:* ${h.order_booker}\n` +
-                                        `*Town:* ${h.town}\n` +
-                                        `*Route:* ${h.route}\n` +
-                                        `*Shops T/V/P:* ${h.total_shops}/${h.visited_shops}/${h.productive_shops}\n` +
-                                        `------------------\n` +
-                                        `*SKU Details:*\n${skuDetails}\n` +
-                                        `------------------\n` +
-                                        CATEGORIES.map(cat => {
-                                          const unit = totals[cat].unit;
-                                          const mtd = mtdBrandSales.split('\n').find(l => l.startsWith(cat))?.split(': ')[1] || '0.00';
-                                          return `*${cat}:* ${totals[cat].value.toFixed(2)} ${unit}\nMTD: ${mtd}`;
-                                        }).join('\n\n') +
-                                        `\n------------------\n` +
-                                        `*Total Today:* ${totalBags.toFixed(2)} Bags, ${totalCtns.toFixed(2)} Ctns\n` +
-                                        `*Total MTD:* ${mtdTotalBags.toFixed(2)} Bags, ${mtdTotalCtns.toFixed(2)} Ctns\n` +
-                                        `*Total Target:* ${h.target_ctn || 0} Bags`;
+                                      const summary = generateWhatsAppMessage(h, true);
                                       const encodedMsg = encodeURIComponent(summary);
                                       window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
                                     }}
@@ -10149,57 +10184,7 @@ export default function App() {
               <div className="space-y-3">
                 <button 
                   onClick={() => {
-                    const items = lastSubmittedOrder.items || {};
-                    const totals: Record<string, number> = {};
-                    CATEGORIES.forEach(cat => {
-                      totals[cat] = SKUS
-                        .filter(sku => sku.category === cat)
-                        .reduce((sum, sku) => {
-                          const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                          const packs = (item.ctn * sku.unitsPerCarton) + (item.dzn * sku.unitsPerDozen) + item.pks;
-                          return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                        }, 0);
-                    });
-                    
-                    const totalBags = CATEGORIES.filter(c => ['Kite Glow', 'Burq Action', 'Vero'].includes(c)).reduce((s, c) => s + totals[c], 0);
-                    const totalCtns = CATEGORIES.filter(c => !['Kite Glow', 'Burq Action', 'Vero'].includes(c)).reduce((s, c) => s + totals[c], 0);
-                    
-                    const skuDetails = SKUS.map(sku => {
-                      const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                      if (item.ctn === 0 && item.dzn === 0 && item.pks === 0) return null;
-                      
-                      const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                      const totalBagsVal = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
-                      const label = sku.unit || (['Kite Glow', 'Burq Action', 'Vero'].includes(sku.category) ? 'Bags' : 'Ctns');
-                      
-                      return `${sku.name}: ${totalBagsVal.toFixed(2)} ${label}`;
-                    }).filter(Boolean).join('\n');
-
-                    const brandTotals = CATEGORIES.map(cat => {
-                      const catSkus = SKUS.filter(s => s.category === cat);
-                      const catTotal = catSkus.reduce((sum, sku) => {
-                        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
-                        return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
-                      }, 0);
-                      const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
-                      const target = lastSubmittedOrder.targets?.[cat] || 0;
-                      return `${cat}: ${catTotal.toFixed(2)} / ${target.toFixed(2)} ${label}`;
-                    }).join('\n');
-
-                    const summary = `Sales Summary\n` +
-                      `${lastSubmittedOrder.date}\n` +
-                      `OB: ${lastSubmittedOrder.order_booker || lastSubmittedOrder.orderBooker}\n` +
-                      `Town Name: ${lastSubmittedOrder.town}\n` +
-                      `Route: ${lastSubmittedOrder.route}\n` +
-                      `Shops T/V/P: ${lastSubmittedOrder.totalShops || 50}/${lastSubmittedOrder.visitedShops}/${lastSubmittedOrder.productiveShops}\n` +
-                      `------------------\n` +
-                      `SKU Details:\n${skuDetails}\n` +
-                      `------------------\n` +
-                      `${brandTotals}\n` +
-                      `------------------\n` +
-                      `Total: ${totalBags.toFixed(2)} Bags / ${totalCtns.toFixed(2)} Ctns`;
-                    
+                    const summary = generateWhatsAppMessage(lastSubmittedOrder, false);
                     const encodedMsg = encodeURIComponent(summary);
                     window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
                   }}

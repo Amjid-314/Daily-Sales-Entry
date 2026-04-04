@@ -35,7 +35,9 @@ export const getWorkingDays = (year: number, month: number, holidaysStr: string,
 
 export const isTSMEntry = (obName: string, tsmName: string) => {
   if (!obName || !tsmName) return false;
-  return obName.trim().toLowerCase() === tsmName.trim().toLowerCase();
+  const obNameClean = obName.replace(/^\*TSM\s*-\s*/i, '').trim().toLowerCase();
+  const tsmNameClean = tsmName.trim().toLowerCase();
+  return obNameClean === tsmNameClean || obNameClean.includes(tsmNameClean) || tsmNameClean.includes(obNameClean);
 };
 
 export const calculateTotalBags = (order: any, SKUS: any[]) => {

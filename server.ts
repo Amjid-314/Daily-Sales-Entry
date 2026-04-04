@@ -1054,10 +1054,11 @@ async function startServer() {
         return { sheets, spreadsheetId, auth };
       } catch (err: any) {
         console.error("JWT Initialization Error:", err);
-        if (err.message.includes("DECODER routines::unsupported")) {
+        const errMsg = err.message || String(err);
+        if (typeof errMsg === 'string' && errMsg.includes("DECODER routines::unsupported")) {
           throw new Error("Invalid Private Key format. Please ensure you copied the entire 'private_key' from the JSON file, including the BEGIN and END headers.");
         }
-        if (err.message.includes("invalid_grant: Invalid JWT Signature")) {
+        if (typeof errMsg === 'string' && errMsg.includes("invalid_grant: Invalid JWT Signature")) {
           throw new Error("Invalid JWT Signature. This means the Private Key does not match the Service Account Email. Please ensure you are using the correct pair from the same JSON file.");
         }
         throw err;
@@ -2203,12 +2204,12 @@ async function startServer() {
       res.json({ success: true, title: response.data.properties?.title });
     } catch (err: any) {
       console.error("Google Test Error:", err);
-      let message = err.message;
+      let message = err.message || String(err);
       if (err.code === 404) {
         message = `Spreadsheet not found. Please check the ID and ensure it doesn't have extra slashes. Current ID: ${spreadsheetId}`;
       } else if (err.code === 403) {
         message = "Permission denied. Please ensure the Service Account email is shared as an 'Editor' on the Google Sheet.";
-      } else if (message.includes("invalid_grant: Invalid JWT Signature")) {
+      } else if (typeof message === 'string' && message.includes("invalid_grant: Invalid JWT Signature")) {
         message = "Invalid JWT Signature. The Private Key does not match the Service Account Email. Please copy both from the SAME JSON file.";
       }
       res.status(500).json({ error: message });
@@ -2541,7 +2542,11 @@ async function startServer() {
 
       // RBAC check: TSM can only submit for their assigned OBs
       const { role } = req.user;
-      if ((role === 'TSM' || role === 'ASM') && tsm !== req.user.name) {
+      const cleanName = (name: string) => (name || '').trim().toLowerCase().replace(/\s*\(?(asm|tsm)\)?\s*$/i, '');
+      const normalizedTsm = cleanName(tsm);
+      const normalizedUserName = cleanName(req.user.name);
+      
+      if ((role === 'TSM' || role === 'ASM') && normalizedTsm !== normalizedUserName) {
         return res.status(403).json({ error: "You can only submit orders for your assigned OBs." });
       }
 
@@ -3040,7 +3045,7 @@ async function startServer() {
   async function pullTeamData(sheets: any, spreadsheetId: string, month?: string, customSheetName?: string) {
     try {
       const targetMonth = month || new Date().toISOString().slice(0, 7);
-      const sheetName = customSheetName || (month ? `Team_Data_${month.replace('-', '_')}` : "Team_Data");
+      let sheetName = customSheetName || (month ? `Team_Data_${month.replace('-', '_')}` : "Team_Data");
       
       console.log(`Pulling Team Data from ${spreadsheetId} using sheet ${sheetName} for month ${targetMonth}...`);
       
@@ -3051,10 +3056,26 @@ async function startServer() {
           range: `${sheetName}!A1:ZZ1000`,
         });
       } catch (err: any) {
-        if (err.code === 400 || err.message.includes("not found")) {
-          throw new Error(`Sheet '${sheetName}' not found. Please ensure the sheet exists in your Google Spreadsheet.`);
+        const errMsg = err.message || String(err);
+        if (err.code === 400 || (typeof errMsg === 'string' && errMsg.includes("not found"))) {
+          // Fallback to base Team_Data if month-specific sheet is missing
+          if (sheetName !== "Team_Data") {
+            console.log(`Sheet '${sheetName}' not found, falling back to 'Team_Data'...`);
+            sheetName = "Team_Data";
+            try {
+              response = await sheets.spreadsheets.values.get({
+                spreadsheetId,
+                range: `${sheetName}!A1:ZZ1000`,
+              });
+            } catch (fallbackErr: any) {
+              throw new Error(`Sheet '${sheetName}' not found. Please ensure the sheet exists in your Google Spreadsheet.`);
+            }
+          } else {
+            throw new Error(`Sheet '${sheetName}' not found. Please ensure the sheet exists in your Google Spreadsheet.`);
+          }
+        } else {
+          throw err;
         }
-        throw err;
       }
 
       const rows = response.data.values;
@@ -3635,7 +3656,8 @@ async function startServer() {
         // Verify spreadsheet access first
         await sheets.spreadsheets.get({ spreadsheetId });
       } catch (err: any) {
-        if (err.code === 404 || err.message.includes("not found")) {
+        const errMsg = err.message || String(err);
+        if (err.code === 404 || (typeof errMsg === 'string' && errMsg.includes("not found"))) {
           return res.status(404).json({ error: `Spreadsheet ID '${spreadsheetId}' not found. Please check the ID and ensure the service account is shared as Editor.` });
         }
         throw err;
@@ -3651,12 +3673,12 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("Master Sync Error:", err);
-      let message = err.message;
+      let message = err.message || String(err);
       if (err.code === 404) {
         message = "Spreadsheet not found. Please check the Spreadsheet ID in settings.";
       } else if (err.code === 403) {
         message = "Permission denied. Please ensure the Service Account email is shared as an 'Editor' on the Google Sheet.";
-      } else if (message.includes("invalid_grant: Invalid JWT Signature")) {
+      } else if (typeof message === 'string' && message.includes("invalid_grant: Invalid JWT Signature")) {
         message = "Invalid JWT Signature. The Private Key does not match the Service Account Email. Please copy both from the SAME JSON file.";
       }
       res.status(500).json({ error: message });
@@ -3705,8 +3727,8 @@ async function startServer() {
       res.json({ success: true, message: `Exported ${obs.length} team members to 'Team_Targets' sheet` });
     } catch (err: any) {
       console.error("Team Export Error:", err);
-      let errorMessage = err.message;
-      if (errorMessage.includes("API has not been used") || errorMessage.includes("disabled")) {
+      let errorMessage = err.message || String(err);
+      if (typeof errorMessage === 'string' && (errorMessage.includes("API has not been used") || errorMessage.includes("disabled"))) {
         errorMessage = "Google Sheets API is disabled. Please enable it in your Google Cloud Console.";
       }
       res.status(500).json({ error: errorMessage });
@@ -3729,8 +3751,8 @@ async function startServer() {
       res.json({ success: true, message: `Imported ${result.count} team members from Google Sheets` });
     } catch (err: any) {
       console.error("Team Import Error:", err);
-      let errorMessage = err.message;
-      if (errorMessage.includes("API has not been used") || errorMessage.includes("disabled")) {
+      let errorMessage = err.message || String(err);
+      if (typeof errorMessage === 'string' && (errorMessage.includes("API has not been used") || errorMessage.includes("disabled"))) {
         errorMessage = "Google Sheets API is disabled. Please enable it in your Google Cloud Console.";
       }
       res.status(500).json({ error: errorMessage });
