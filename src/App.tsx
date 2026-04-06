@@ -103,7 +103,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
                (h.rsm_name || '').trim().toLowerCase() === normalizedName || 
                (h.sc_name || '').trim().toLowerCase() === normalizedName;
       }
-      if (userRole === 'TSM' || userRole === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+      if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
       if (userRole === 'OB') return h.ob_id === userContact;
       return false;
     }).filter(h => !(h.ob_name || '').toLowerCase().includes('test'));
@@ -112,7 +112,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
   const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'OB' | 'Route'>(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return 'National';
     if (userRole === 'RSM' || userRole === 'SC') return 'Region';
-    if (userRole === 'TSM' || userRole === 'ASM') return 'TSM';
+    if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return 'TSM';
     if (userRole === 'OB') return 'OB';
     return 'National';
   });
@@ -149,7 +149,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       setFilterLevel(visibleFilterLevels[0] as any);
       setFilterValue(() => {
         if (userRole === 'RSM' || userRole === 'SC') return userRegion || '';
-        if (userRole === 'TSM' || userRole === 'ASM') return userName || '';
+        if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return userName || '';
         if (userRole === 'OB') return userContact || '';
         return '';
       });
@@ -181,7 +181,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       return ['National', 'Region', 'TSM', 'Town', 'OB', 'Route'];
     } else if (userRole === 'RSM' || userRole === 'SC') {
       return ['Region', 'TSM', 'Town', 'OB', 'Route'];
-    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+    } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
       return ['TSM', 'Town', 'OB', 'Route'];
     } else {
       return ['OB', 'Route'];
@@ -3118,7 +3118,7 @@ const StatsView = ({
       obs = obAssignments.filter((ob: any) => ob && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'RSM' || userRole === 'SC') {
       obs = obAssignments.filter((ob: any) => ob && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
-    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+    } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
       obs = obAssignments.filter((ob: any) => ob && (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'OB') {
       obs = obAssignments.filter((ob: any) => ob && (ob.contact || '').trim() === (userContact || '').trim());
@@ -3744,7 +3744,7 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
     const filteredHierarchy = hierarchy.filter((h: any) => {
       if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
       if (userRole === 'RSM' || userRole === 'SC') return (h.territory_region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase();
-      if (userRole === 'TSM' || userRole === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+      if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
       return false;
     });
 
@@ -3933,7 +3933,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
   const normalizedRole = (userRole || '').trim().toUpperCase();
-  const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
+  const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB', 'TSM ENTRY'].includes(normalizedRole);
   
   const [selectedAnalysisRoute, setSelectedAnalysisRoute] = useState('');
   const [selectedAnalysisOB, setSelectedAnalysisOB] = useState('');
@@ -3950,7 +3950,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
       obs = obAssignments.filter((ob: any) => ob && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'RSM' || userRole === 'SC') {
       obs = obAssignments.filter((ob: any) => ob && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
-    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+    } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
       obs = obAssignments.filter((ob: any) => ob && (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'OB') {
       obs = obAssignments.filter((ob: any) => ob && (ob.contact || '').trim() === (userContact || '').trim());
@@ -5737,32 +5737,14 @@ export default function App() {
   };
 
   const submitOrder = () => {
-    if (!order.date) {
-      setMessage({ text: 'Date is required', type: 'error' });
-      setTimeout(() => setMessage(null), 3000);
-      return;
-    }
-    if (!order.obContact) {
-      setMessage({ text: 'Order Booker is not selected', type: 'error' });
-      setTimeout(() => setMessage(null), 3000);
-      return;
-    }
-    if (!order.visitType) {
-      setMessage({ text: 'Missing Visit Type', type: 'error' });
-      setTimeout(() => setMessage(null), 3000);
-      return;
-    }
-    if (!order.route) {
-      setMessage({ text: 'Route not selected', type: 'error' });
-      setTimeout(() => setMessage(null), 3000);
-      return;
-    }
     const totalPacks = (Object.values(categoryTotals) as number[]).reduce((a, b) => a + b, 0);
-    if (order.visitType !== 'Absent' && totalPacks === 0) {
-      setMessage({ text: 'SKU values cannot be empty', type: 'error' });
+    
+    if (!order.date || !order.obContact || !order.visitType || !order.route || (order.visitType !== 'Absent' && totalPacks === 0)) {
+      setMessage({ text: 'Please complete all required fields', type: 'error' });
       setTimeout(() => setMessage(null), 3000);
       return;
     }
+    
     setIsConfirming(true);
   };
 
@@ -6085,7 +6067,7 @@ export default function App() {
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isRegisteringUser, setIsRegisteringUser] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '' });
+  const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '', tsm: '', ob: '' });
 
   const fetchUsers = async () => {
     if (!token || token === 'null') return;
@@ -6111,7 +6093,7 @@ export default function App() {
       });
       if (res.ok) {
         setMessage({ text: "User registered successfully", type: 'success' });
-        setNewUser({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '' });
+        setNewUser({ username: '', email: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '', tsm: '', ob: '' });
         fetchUsers();
       } else {
         const data = await res.json();
@@ -6186,7 +6168,7 @@ export default function App() {
     try {
       const normalizedRole = (userRole || '').toUpperCase();
       const isAdmin = (normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN') && ADMIN_EMAILS.includes(userEmail || '');
-      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
+      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB', 'TSM ENTRY'].includes(normalizedRole);
       
       const requests = [
         apiFetch('/api/stocks'),
@@ -6795,7 +6777,7 @@ export default function App() {
     if (userRole === 'RSM' || userRole === 'SC') {
       return allTsms.filter(tsm => obAssignments.some(ob => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
     }
-    if ((userRole === 'TSM' || userRole === 'ASM')) {
+    if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
       const trimmedName = (userName || '').trim().toLowerCase();
       return allTsms.filter(tsm => {
         const tsmLower = tsm.toLowerCase();
@@ -6829,7 +6811,7 @@ export default function App() {
       obs = obs.filter(ob => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'RSM' || userRole === 'SC') {
       obs = obs.filter(ob => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+    } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
       const trimmedName = (userName || '').trim().toLowerCase();
       obs = obs.filter(ob => {
         const tsmName = (ob.tsm || '').trim().toLowerCase();
@@ -6996,20 +6978,20 @@ export default function App() {
       }
 
       const normalizedRole = (userRole || '').trim().toUpperCase();
-      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
+      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB', 'TSM ENTRY'].includes(normalizedRole);
       const today = new Date().toISOString().split('T')[0];
       const currentMonth = today.slice(0, 7);
       
       // Role-based data filtering for TSM/OB
       const filteredHistory = history.filter(h => {
-        if ((userRole === 'TSM' || userRole === 'ASM')) return h.tsm === userName;
+        if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return h.tsm === userName;
         if (userRole === 'OB') return h.ob_contact === userContact;
         return false;
       });
 
       const filteredOBAssignments = obAssignments.filter(ob => {
         if (isStaff) return true; // Include all for Admin/National/RSM/NSM/Director/SC
-        if ((userRole === 'TSM' || userRole === 'ASM')) return ob.tsm === userName;
+        if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return ob.tsm === userName;
         if (userRole === 'OB') return ob.contact === userContact;
         return false;
       }).map((ob: any) => {
@@ -7166,7 +7148,7 @@ export default function App() {
 
       // Route Sales Analysis
       const routeAnalysis = mtdOrders.reduce((acc: any[], h) => {
-        if ((userRole === 'TSM' || userRole === 'ASM') && h.tsm !== userName) return acc;
+        if ((userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') && h.tsm !== userName) return acc;
         if (userRole === 'OB' && h.ob_contact !== userContact) return acc;
         const route = h.route || 'Unknown';
         let routeData = acc.find(r => r.name === route);
@@ -9765,7 +9747,7 @@ export default function App() {
                 <label className="text-[7px] font-black text-seablue uppercase tracking-widest whitespace-nowrap">TSM:</label>
                 <select 
                   value={selectedTSM} 
-                  disabled={(userRole === 'TSM' || userRole === 'ASM')}
+                  disabled={(userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry')}
                   onChange={(e) => {
                     setSelectedTSM(e.target.value);
                     setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50 }));

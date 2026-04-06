@@ -165,7 +165,7 @@ function initDB() {
         WHERE id NOT IN (
           SELECT MAX(id) 
           FROM submitted_orders 
-          GROUP BY ob_contact, date
+          GROUP BY ob_contact, date, route
         )
       `);
     } catch (e) {
@@ -335,6 +335,8 @@ try {
     contact TEXT,
     region TEXT,
     town TEXT,
+    tsm TEXT,
+    ob TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 
@@ -423,6 +425,8 @@ const logAction = (userId: string, userName: string, role: string, action: strin
   }
 };
 try { db.exec("ALTER TABLE users ADD COLUMN email TEXT UNIQUE"); } catch (e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN tsm TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN ob TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE distributors ADD COLUMN zone TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE distributors ADD COLUMN region TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE ob_assignments ADD COLUMN zone TEXT"); } catch (e) {}
@@ -1004,7 +1008,7 @@ async function startServer() {
       const hierarchy = (trimmedName || trimmedRegion) ? db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE (LOWER(TRIM(rsm_name)) LIKE ? AND ?) OR (LOWER(TRIM(sc_name)) LIKE ? AND ?) OR (LOWER(TRIM(territory_region)) LIKE ? AND ?)").all(`%${trimmedName}%`, trimmedName ? 1 : 0, `%${trimmedName}%`, trimmedName ? 1 : 0, `%${trimmedRegion}%`, trimmedRegion ? 1 : 0) as any[] : [];
       const dists = trimmedRegion ? db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(region)) LIKE ?").all(`%${trimmedRegion}%`) as any[] : [];
       return Array.from(new Set([...hierarchy.map(h => h.distributor_name), ...dists.map(d => d.name)])).filter(d => d);
-    } else if (role === 'TSM' || role === 'ASM') {
+    } else if (role === 'TSM' || role === 'ASM' || role === 'TSM Entry') {
       const hierarchy = trimmedName ? db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(asm_tsm_name)) LIKE ?").all(`%${trimmedName}%`) as any[] : [];
       const dists = trimmedName ? db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(tsm)) LIKE ?").all(`%${trimmedName}%`) as any[] : [];
       return Array.from(new Set([...hierarchy.map(h => h.distributor_name), ...dists.map(d => d.name)])).filter(d => d);
@@ -1176,7 +1180,8 @@ async function startServer() {
       "OB_Performance": ['OB Name', 'OB ID', 'ASM/TSM', 'Distributor', 'Town', 'Total Shops', 'Visited', 'Productive', 'Prod %', 'Total Ach (Ctn)', 'Achievement %'],
       "TSM_Performance": ['Month', 'Region', 'RSM', 'TSM Name', 'Total OBs', 'Active OBs', 'Target', 'Achievement', 'Achievement %', 'RPD', 'Avg Sales', 'Projected Sales', 'Productivity %'],
       "Product_Config": ['SKU ID', 'SKU Name', 'Category', 'Units Per Carton', 'Units Per Dozen', 'Weight (Kg)'],
-      "Users": ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town']
+      "Users": ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town'],
+      "Error_Log": ['Timestamp', 'Error Message', 'Context', 'User', 'Role']
     };
 
     try {
@@ -1230,6 +1235,27 @@ async function startServer() {
     } catch (e: any) {
       console.error("ensureSheetsExist Error:", e.message);
       throw e; // Re-throw to handle in caller
+    }
+  }
+
+  async function logErrorToSheet(errorMsg: string, context: string, user: string = 'Unknown', role: string = 'Unknown') {
+    try {
+      const client = await getGoogleSheetsClient();
+      if (!client) return;
+      const { sheets, spreadsheetId } = client;
+      await ensureSheetsExist(sheets, spreadsheetId);
+
+      const timestamp = getPSTTimestamp();
+      const row = [timestamp, errorMsg, context, user, role];
+
+      await sheets.spreadsheets.values.append({
+        spreadsheetId,
+        range: 'Error_Log!A:E',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: { values: [row] },
+      });
+    } catch (err) {
+      console.error("Failed to log error to sheet:", err);
     }
   }
 
@@ -1777,7 +1803,7 @@ async function startServer() {
             .run(username, username === ADMIN_EMAIL ? username : 'admin@salespulse.local', role, name, hashedPassword);
           user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid) as any;
         } else {
-          return res.status(401).json({ error: "Invalid credentials" });
+          return res.status(401).json({ error: "User not registered. Contact Admin" });
         }
       } else {
         // If password is provided, check it. If not, allow login if it's an email-only request
@@ -1799,6 +1825,12 @@ async function startServer() {
 
       let finalRole = user.role;
       let finalRegion = user.region;
+      
+      // Fallback: If role mismatch or empty, allow limited access (OB)
+      if (!finalRole || finalRole.trim() === '') {
+        finalRole = 'OB';
+      }
+
       if (user.email === 'amjid.bisconni@gmail.com' && requestedRole) {
         if (requestedRole === 'RSM North') {
           finalRole = 'RSM';
@@ -1839,15 +1871,15 @@ async function startServer() {
   });
 
   app.post("/api/auth/register", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
-    const { username, password, role, name, contact, region, town } = req.body;
+    const { username, email, password, role, name, contact, region, town, tsm, ob } = req.body;
     try {
       const pass = password || 'nopassword';
       const hashedPassword = await bcrypt.hash(pass, 10);
-      db.prepare("INSERT INTO users (username, password, role, name, contact, region, town) VALUES (?, ?, ?, ?, ?, ?, ?)")
-        .run(username, hashedPassword, role, name, contact, region, town);
+      db.prepare("INSERT INTO users (username, email, password, role, name, contact, region, town, tsm, ob) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+        .run(username, email || username, hashedPassword, role, name, contact, region, town, tsm, ob);
       res.json({ success: true });
     } catch (err) {
-      res.status(500).json({ error: "Registration failed. Username might already exist." });
+      res.status(500).json({ error: "Registration failed. Username or email might already exist." });
     }
   });
 
@@ -2224,7 +2256,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
+  app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), async (req, res) => {
     let spreadsheetId = '';
     try {
       const client = await getGoogleSheetsClient();
@@ -2578,20 +2610,18 @@ async function startServer() {
         latitude, longitude, accuracy, visitType
       } = data;
 
+      // Backend Validation
+      if (!date) return res.status(400).json({ error: "Date is required" });
+      if (!obContact) return res.status(400).json({ error: "Order Booker is not selected" });
+      if (!route) return res.status(400).json({ error: "Route not selected" });
+      if (!visitType) return res.status(400).json({ error: "Missing Visit Type" });
+
       const orderDate = date || getPSTDate();
       const orderMonth = orderDate.slice(0, 7);
 
       // Lock previous months
       if (isMonthLocked(orderDate)) {
         return res.status(403).json({ error: "Previous months' data is locked and cannot be modified." });
-      }
-
-      // March and April 2026 are new insert only
-      if (orderMonth === '2026-03' || orderMonth === '2026-04') {
-        const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, orderDate, route);
-        if (existing) {
-          return res.status(403).json({ error: `${orderMonth} data is set to 'New Insert Only'. Existing records cannot be updated.` });
-        }
       }
 
       // RBAC check: TSM can only submit for their assigned OBs
@@ -2607,10 +2637,18 @@ async function startServer() {
       // Duplicate check: Prevent same OB + same date + same route duplicate
       const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, orderDate, route);
       
-      const submittedAt = getPSTTimestamp();
       if (existing) {
         return res.status(409).json({ error: "Duplicate entry: Order already exists for this OB, date, and route." });
       }
+
+      // March and April 2026 are new insert only (redundant but kept for safety)
+      if (orderMonth === '2026-03' || orderMonth === '2026-04') {
+        if (existing) {
+          return res.status(403).json({ error: `${orderMonth} data is set to 'New Insert Only'. Existing records cannot be updated.` });
+        }
+      }
+
+      const submittedAt = getPSTTimestamp();
       
       const info = db.prepare(`
         INSERT INTO submitted_orders (
@@ -2656,8 +2694,9 @@ async function startServer() {
       appendToSheet(newOrder).catch(console.error);
       
       res.json({ success: true, message: "Order submitted successfully" });
-    } catch (err) {
+    } catch (err: any) {
       console.error("Submission error:", err);
+      logErrorToSheet(err.message || String(err), "Submit Order", req.user?.name, req.user?.role).catch(console.error);
       res.status(500).json({ error: "Failed to submit order: " + err.message });
     }
   });
