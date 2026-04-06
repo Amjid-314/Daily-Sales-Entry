@@ -319,10 +319,11 @@ try {
   WHERE id NOT IN (
     SELECT MIN(id) 
     FROM submitted_orders 
-    GROUP BY ob_contact, date
+    GROUP BY ob_contact, date, route
   );
 
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_ob_date ON submitted_orders (ob_contact, date);
+  DROP INDEX IF EXISTS idx_ob_date;
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_ob_date_route ON submitted_orders (ob_contact, date, route);
 
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -382,6 +383,7 @@ const authenticateToken = (req: any, res: any, next: any) => {
       else if (r === 'RSM' || r === 'REGIONAL SALES MANAGER') user.role = 'RSM';
       else if (r === 'SC' || r === 'SALES CONTROLLER' || r === 'SALES COORDINATOR') user.role = 'SC';
       else if (r === 'TSM' || r === 'TERRITORY SALES MANAGER') user.role = 'TSM';
+      else if (r === 'TSM ENTRY' || r === 'TSM_ENTRY') user.role = 'TSM Entry';
       else if (r === 'ASM' || r === 'AREA SALES MANAGER') user.role = 'ASM';
       else if (r === 'OB' || r === 'ORDER BOOKER') user.role = 'OB';
       else user.role = user.role.trim();
@@ -396,7 +398,7 @@ const authorizeRoles = (...roles: string[]) => {
   return (req: any, res: any, next: any) => {
     if (!req.user) {
       console.error("authorizeRoles: No user found in request");
-      return res.status(401).json({ error: "Unauthorized" });
+      return res.status(401).json({ error: "Unauthorized. Contact admin if access issue." });
     }
     
     const userRole = (req.user.role || '').trim().toUpperCase();
@@ -408,7 +410,7 @@ const authorizeRoles = (...roles: string[]) => {
     if (normalizedRoles.includes(userRole)) return next();
 
     console.warn(`authorizeRoles: Access denied for user ${req.user.name} (${req.user.email}). Role: ${userRole}, Required: ${normalizedRoles.join(', ')}`);
-    return res.status(403).json({ error: `Unauthorized access for role: ${userRole}` });
+    return res.status(403).json({ error: `Unauthorized access for role: ${userRole}. Contact admin if access issue.` });
   };
 };
 
@@ -939,24 +941,42 @@ async function startServer() {
     let visibleIds: string[] = [];
     
     if (role === 'NSM') {
-      const ids = hierarchy.filter(h => trimmedName && (h.nsm_name || '').trim().toLowerCase().includes(trimmedName)).map(h => h.ob_id);
-      const assignmentIds = assignments.filter(a => trimmedName && (a.nsm || '').trim().toLowerCase().includes(trimmedName)).map(a => a.contact);
+      const ids = hierarchy.filter(h => {
+        const hName = (h.nsm_name || '').trim().toLowerCase();
+        return trimmedName && (hName.includes(trimmedName) || trimmedName.includes(hName));
+      }).map(h => h.ob_id);
+      const assignmentIds = assignments.filter(a => {
+        const aName = (a.nsm || '').trim().toLowerCase();
+        return trimmedName && (aName.includes(trimmedName) || trimmedName.includes(aName));
+      }).map(a => a.contact);
       visibleIds = [...ids, ...assignmentIds];
     } else if (role === 'RSM' || role === 'SC') {
-      const ids = hierarchy.filter(h => 
-        (trimmedName && (h.rsm_name || '').trim().toLowerCase().includes(trimmedName)) || 
-        (trimmedName && (h.sc_name || '').trim().toLowerCase().includes(trimmedName)) || 
-        (trimmedRegion && (h.territory_region || '').trim().toLowerCase().includes(trimmedRegion))
-      ).map(h => h.ob_id);
-      const assignmentIds = assignments.filter(a => 
-        (trimmedName && (a.rsm || '').trim().toLowerCase().includes(trimmedName)) || 
-        (trimmedName && (a.sc || '').trim().toLowerCase().includes(trimmedName)) || 
-        (trimmedRegion && (a.region || '').trim().toLowerCase().includes(trimmedRegion))
-      ).map(a => a.contact);
+      const ids = hierarchy.filter(h => {
+        const rsmName = (h.rsm_name || '').trim().toLowerCase();
+        const scName = (h.sc_name || '').trim().toLowerCase();
+        const hRegion = (h.territory_region || '').trim().toLowerCase();
+        return (trimmedName && (rsmName.includes(trimmedName) || trimmedName.includes(rsmName))) || 
+               (trimmedName && (scName.includes(trimmedName) || trimmedName.includes(scName))) || 
+               (trimmedRegion && (hRegion.includes(trimmedRegion) || trimmedRegion.includes(hRegion)));
+      }).map(h => h.ob_id);
+      const assignmentIds = assignments.filter(a => {
+        const rsmName = (a.rsm || '').trim().toLowerCase();
+        const scName = (a.sc || '').trim().toLowerCase();
+        const aRegion = (a.region || '').trim().toLowerCase();
+        return (trimmedName && (rsmName.includes(trimmedName) || trimmedName.includes(rsmName))) || 
+               (trimmedName && (scName.includes(trimmedName) || trimmedName.includes(scName))) || 
+               (trimmedRegion && (aRegion.includes(trimmedRegion) || trimmedRegion.includes(aRegion)));
+      }).map(a => a.contact);
       visibleIds = [...ids, ...assignmentIds];
-    } else if (role === 'TSM' || role === 'ASM') {
-      const ids = hierarchy.filter(h => trimmedName && (h.asm_tsm_name || '').trim().toLowerCase().includes(trimmedName)).map(h => h.ob_id);
-      const assignmentIds = assignments.filter(a => trimmedName && (a.tsm || '').trim().toLowerCase().includes(trimmedName)).map(a => a.contact);
+    } else if (role === 'TSM' || role === 'ASM' || role === 'TSM Entry') {
+      const ids = hierarchy.filter(h => {
+        const tsmName = (h.asm_tsm_name || '').trim().toLowerCase();
+        return trimmedName && (tsmName.includes(trimmedName) || trimmedName.includes(tsmName));
+      }).map(h => h.ob_id);
+      const assignmentIds = assignments.filter(a => {
+        const tsmName = (a.tsm || '').trim().toLowerCase();
+        return trimmedName && (tsmName.includes(trimmedName) || trimmedName.includes(tsmName));
+      }).map(a => a.contact);
       visibleIds = [...ids, ...assignmentIds];
     } else if (role === 'OB') {
       visibleIds = [contact];
@@ -1661,9 +1681,11 @@ async function startServer() {
   }
 
   // Daily Backup Cron (9:00 AM PST / 5:00 PM UTC)
-  cron.schedule('0 17 * * *', async () => {
-    console.log("Starting daily backup at 9:00 AM PST (5:00 PM UTC)...");
+  cron.schedule('0 9 * * *', async () => {
+    console.log("Starting daily backup at 9:00 AM PKT...");
     await performFullBackup();
+  }, {
+    timezone: "Asia/Karachi"
   });
 
   async function performFullBackup(retryCount = 0): Promise<boolean> {
@@ -1734,7 +1756,7 @@ async function startServer() {
 
   // Auth Routes
   app.post("/api/auth/login", async (req, res) => {
-    let { username, password } = req.body;
+    let { username, password, requestedRole } = req.body;
     try {
       if (!username) {
         return res.status(400).json({ error: "Username or email is required" });
@@ -1775,17 +1797,28 @@ async function startServer() {
         // If no password provided, we still allow login as requested by the user
       }
 
+      let finalRole = user.role;
+      let finalRegion = user.region;
+      if (user.email === 'amjid.bisconni@gmail.com' && requestedRole) {
+        if (requestedRole === 'RSM North') {
+          finalRole = 'RSM';
+          finalRegion = 'North';
+        } else {
+          finalRole = requestedRole;
+        }
+      }
+
       const token = jwt.sign({ 
         id: user.id, 
         username: user.username, 
         email: user.email,
-        role: user.role, 
+        role: finalRole, 
         name: user.name, 
         contact: user.contact, 
-        region: user.region 
+        region: finalRegion 
       }, JWT_SECRET, { expiresIn: '30d' });
       
-      logAction(user.id.toString(), user.name, user.role, "LOGIN_SIMPLE", { username });
+      logAction(user.id.toString(), user.name, finalRole, "LOGIN_SIMPLE", { username });
       
       res.json({ 
         token, 
@@ -1793,7 +1826,7 @@ async function startServer() {
           id: user.id, 
           username: user.username, 
           email: user.email,
-          role: user.role, 
+          role: finalRole, 
           name: user.name, 
           contact: user.contact, 
           region: user.region 
@@ -1823,7 +1856,7 @@ async function startServer() {
   });
 
   // API Routes for Admin
-  app.get("/api/admin/config", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req, res) => {
+  app.get("/api/admin/config", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), (req, res) => {
     try {
       const rows = db.prepare("SELECT * FROM app_config").all();
       const config = rows.reduce((acc: any, row: any) => ({ ...acc, [row.key]: row.value }), {});
@@ -1900,7 +1933,7 @@ async function startServer() {
     res.json({ success: true, config });
   });
 
-  app.get("/api/admin/hierarchy-targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req, res) => {
+  app.get("/api/admin/hierarchy-targets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), (req, res) => {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     try {
       const targets = db.prepare("SELECT * FROM hierarchy_targets WHERE month = ?").all(month);
@@ -1930,7 +1963,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/obs", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req: any, res) => {
+  app.get("/api/admin/obs", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), (req: any, res) => {
     try {
       const currentMonth = new Date().toISOString().slice(0, 7);
       const { role, name, contact } = req.user;
@@ -2059,7 +2092,28 @@ async function startServer() {
     res.json({ success: true });
   });
 
-  app.get("/api/admin/distributors", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req: any, res) => {
+  app.get("/api/admin/route-analysis", authenticateToken, (req: any, res) => {
+    try {
+      const { ob_contact, route } = req.query;
+      if (!ob_contact || !route) {
+        return res.status(400).json({ error: "ob_contact and route are required" });
+      }
+
+      // Fetch last 16 visits for this OB and route, ordered by date descending
+      const visits = db.prepare(`
+        SELECT * FROM submitted_orders 
+        WHERE ob_contact = ? AND route = ?
+        ORDER BY date DESC 
+        LIMIT 16
+      `).all(ob_contact, route);
+
+      res.json(visits);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/distributors", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), (req: any, res) => {
     try {
       const { role, name } = req.user;
       let dists;
@@ -2122,7 +2176,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/targets/:ob_contact", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req, res) => {
+  app.get("/api/admin/targets/:ob_contact", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), (req, res) => {
     const month = req.query.month || new Date().toISOString().slice(0, 7);
     try {
       const targets = db.prepare("SELECT * FROM brand_targets WHERE ob_contact = ? AND month = ?").all(req.params.ob_contact, month);
@@ -2542,20 +2596,20 @@ async function startServer() {
 
       // RBAC check: TSM can only submit for their assigned OBs
       const { role } = req.user;
-      const cleanName = (name: string) => (name || '').trim().toLowerCase().replace(/\s*\(?(asm|tsm)\)?\s*$/i, '');
-      const normalizedTsm = cleanName(tsm);
-      const normalizedUserName = cleanName(req.user.name);
+      const visibleOBIds = getVisibleOBIds(req.user);
       
-      if ((role === 'TSM' || role === 'ASM') && normalizedTsm !== normalizedUserName) {
-        return res.status(403).json({ error: "You can only submit orders for your assigned OBs." });
+      if (role !== 'Super Admin' && role !== 'Admin' && role !== 'Director') {
+        if (!visibleOBIds.includes(obContact)) {
+          return res.status(403).json({ error: "Access Denied: You can only submit orders for your assigned OBs. Contact admin if access issue." });
+        }
       }
 
-      // Duplicate check: NEVER overwrite existing records as per request
-      const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, orderDate);
+      // Duplicate check: Prevent same OB + same date + same route duplicate
+      const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, orderDate, route);
       
       const submittedAt = getPSTTimestamp();
       if (existing) {
-        return res.status(409).json({ error: "Order already exists for this OB and date. Overwriting is not allowed to protect historical data." });
+        return res.status(409).json({ error: "Duplicate entry: Order already exists for this OB, date, and route." });
       }
       
       const info = db.prepare(`
@@ -2718,7 +2772,7 @@ async function startServer() {
   });
 
   // National Hierarchy APIs
-  app.get("/api/admin/hierarchy", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), (req: any, res) => {
+  app.get("/api/admin/hierarchy", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), (req: any, res) => {
     try {
       const { month } = req.query;
       const currentMonth = month || new Date().toISOString().slice(0, 7);
@@ -3029,18 +3083,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/distributors", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
-    try {
-      const distributors = db.prepare(`
-        SELECT DISTINCT distributor_name, distributor_code, town_name, territory_region
-        FROM national_hierarchy
-        WHERE distributor_name IS NOT NULL AND distributor_name != ''
-      `).all();
-      res.json(distributors);
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
+
 
   async function pullTeamData(sheets: any, spreadsheetId: string, month?: string, customSheetName?: string) {
     try {
@@ -3685,7 +3728,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-team-to-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
+  app.post("/api/admin/sync-team-to-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), async (req, res) => {
     try {
       const client = await getGoogleSheetsClient();
       if (!client) {
@@ -3735,7 +3778,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-team-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
+  app.post("/api/admin/sync-team-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), async (req, res) => {
     try {
       const client = await getGoogleSheetsClient();
       if (!client) {
@@ -3759,7 +3802,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/import-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
+  app.post("/api/admin/import-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), async (req, res) => {
     try {
       const client = await getGoogleSheetsClient();
       if (!client) {
@@ -3779,7 +3822,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-sales-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
+  app.post("/api/admin/sync-sales-from-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), async (req, res) => {
     try {
       const client = await getGoogleSheetsClient();
       if (!client) {
@@ -3891,7 +3934,7 @@ async function startServer() {
     }
   });
 
-  app.post("/api/admin/sync-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB'), async (req, res) => {
+  app.post("/api/admin/sync-sheets", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), async (req, res) => {
     // Redirect to master sync for simplicity
     return res.redirect(307, "/api/admin/master-sync");
   });

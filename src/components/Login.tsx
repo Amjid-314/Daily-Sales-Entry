@@ -11,6 +11,9 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
   const [username, setUsername] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [requestedRole, setRequestedRole] = useState<string>('Super Admin');
+
+  const isAmjid = username.toLowerCase() === 'amjid.bisconni@gmail.com' || username.toLowerCase() === 'amjid';
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,7 +23,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
       const res = await fetch('/api/auth/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username })
+        body: JSON.stringify({ username, requestedRole: isAmjid ? requestedRole : undefined })
       });
       const data = await res.json();
       if (res.ok) {
@@ -43,12 +46,31 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
         className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 border border-slate-100"
       >
         <div className="flex flex-col items-center mb-10">
-          <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-slate-200/20 overflow-hidden border border-slate-50">
+          <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-slate-200/20 overflow-hidden border border-slate-50 relative group">
             {logo ? (
               <img src={logo} alt="App Logo" className="w-full h-full object-contain p-2" />
             ) : (
-              <div className="w-full h-full bg-seablue flex items-center justify-center">
-                <Waves className="text-white w-12 h-12" />
+              <div className="w-full h-full bg-gradient-to-br from-seablue to-indigo-600 flex items-center justify-center relative overflow-hidden">
+                <motion.div
+                  animate={{ 
+                    scale: [1, 1.2, 1],
+                    rotate: [0, 10, -10, 0]
+                  }}
+                  transition={{ 
+                    duration: 4,
+                    repeat: Infinity,
+                    ease: "easeInOut"
+                  }}
+                  className="relative z-10"
+                >
+                  <Waves className="text-white w-12 h-12 drop-shadow-lg" />
+                </motion.div>
+                <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                <motion.div 
+                  animate={{ opacity: [0.1, 0.3, 0.1] }}
+                  transition={{ duration: 2, repeat: Infinity }}
+                  className="absolute -bottom-4 -right-4 w-16 h-16 bg-white rounded-full blur-2xl"
+                />
               </div>
             )}
           </div>
@@ -71,6 +93,20 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
               />
             </div>
           </div>
+
+          {isAmjid && (
+            <div className="space-y-2">
+              <label className="block text-xs font-black text-slate-400 uppercase tracking-widest ml-1">Select Role</label>
+              <select
+                value={requestedRole}
+                onChange={(e) => setRequestedRole(e.target.value)}
+                className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all text-sm font-bold"
+              >
+                <option value="Super Admin">Super Admin</option>
+                <option value="RSM North">RSM North</option>
+              </select>
+            </div>
+          )}
 
           {error && (
             <motion.div 

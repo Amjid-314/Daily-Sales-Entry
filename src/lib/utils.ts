@@ -61,6 +61,7 @@ export const normalizeRole = (role: string): any => {
   if (r === 'RSM' || r === 'REGIONAL SALES MANAGER') return 'RSM';
   if (r === 'SC' || r === 'SALES CONTROLLER' || r === 'SALES COORDINATOR') return 'SC';
   if (r === 'TSM' || r === 'TERRITORY SALES MANAGER') return 'TSM';
+  if (r === 'TSM ENTRY' || r === 'TSM_ENTRY') return 'TSM Entry';
   if (r === 'ASM' || r === 'AREA SALES MANAGER') return 'ASM';
   if (r === 'OB' || r === 'ORDER BOOKER') return 'OB';
   return role;

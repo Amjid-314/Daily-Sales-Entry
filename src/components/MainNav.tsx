@@ -20,7 +20,7 @@ import {
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
 export const APP_TABS = [
-  { id: 'entry', label: 'Entry', icon: ClipboardEdit, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
+  { id: 'entry', label: 'Entry', icon: ClipboardEdit, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director', 'TSM Entry'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'command_center', label: 'Command Center', icon: Target, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'tsm_performance', label: 'TSM Perf.', icon: Users, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
@@ -60,6 +60,9 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
       // Hide Admin panel, Settings, Source (Source is not a tab but we ensure it's not here)
       if (['admin', 'settings'].includes(tab.id)) return false;
       
+      // TSM Entry only sees the Entry tab
+      if (normalizedRole === 'TSM ENTRY' && tab.id !== 'entry') return false;
+
       // Allowed for all users: Entry, Reports, Dashboard, Help, History
       if (['entry', 'reports', 'dashboard', 'command_center', 'insights', 'help', 'history', 'stocks', 'stats'].includes(tab.id)) {
         // Still check if role is allowed for this specific tab
