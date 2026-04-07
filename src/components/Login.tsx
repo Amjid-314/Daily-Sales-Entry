@@ -103,7 +103,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
                 className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all text-sm font-bold"
               >
                 <option value="Super Admin">Super Admin</option>
+                <option value="Admin">Admin</option>
+                <option value="Director">Director</option>
+                <option value="NSM">NSM</option>
                 <option value="RSM North">RSM North</option>
+                <option value="SC">SC</option>
+                <option value="TSM">TSM</option>
+                <option value="ASM">ASM</option>
+                <option value="OB">OB</option>
               </select>
             </div>
           )}

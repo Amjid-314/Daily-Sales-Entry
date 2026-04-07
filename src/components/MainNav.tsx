@@ -21,6 +21,7 @@ const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
 export const APP_TABS = [
   { id: 'entry', label: 'Entry', icon: ClipboardEdit, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director', 'TSM Entry'] },
+  { id: 'missing_entries', label: 'Missing', icon: EyeOff, roles: ['Super Admin', 'Admin', 'SC', 'RSM', 'NSM', 'Director'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'command_center', label: 'Command Center', icon: Target, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'tsm_performance', label: 'TSM Perf.', icon: Users, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },

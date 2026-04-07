@@ -1,11 +1,6 @@
 const Database = require('better-sqlite3');
 const db = new Database('orders.db');
-
-const yesterday = '2026-04-03';
-
-try {
-  const submissions = db.prepare('SELECT * FROM submitted_orders WHERE date = ?').all(yesterday);
-  console.log("Submissions yesterday:", JSON.stringify(submissions, null, 2));
-} catch (e) {
-  console.error("Database check failed:", e.message);
-}
+const count = db.prepare("SELECT count(*) as count FROM submitted_orders").get();
+console.log(JSON.stringify(count, null, 2));
+const recent = db.prepare("SELECT date, count(*) as count FROM submitted_orders GROUP BY date ORDER BY date DESC LIMIT 5").all();
+console.log(JSON.stringify(recent, null, 2));

@@ -27,6 +27,7 @@ import { EntryForm } from './components/EntryForm';
 import { SubmissionModals } from './components/SubmissionModals';
 import { Login } from './components/Login';
 import { WhatsAppIcon } from './components/WhatsAppIcon';
+import { MissingEntriesReport } from './components/MissingEntriesReport';
 import { 
   Save, 
   Send, 
@@ -75,7 +76,9 @@ import {
   Key,
   User,
   HelpCircle,
-  Activity
+  Activity,
+  Database,
+  Wrench
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
 import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry } from './lib/utils';
@@ -85,7 +88,7 @@ const LOGO_STORAGE_KEY = 'app_logo_base64';
 
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
-const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userEmail, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userEmail?: string | null, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
+const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userEmail, userRegion, userName, userContact, userTsm, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userEmail?: string | null, userRegion?: string | null, userName?: string | null, userContact?: string | null, userTsm?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
   const filteredOBs = useMemo(() => {
     const uniqueOBs = new Map();
     hierarchy.forEach(h => {
@@ -103,7 +106,10 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
                (h.rsm_name || '').trim().toLowerCase() === normalizedName || 
                (h.sc_name || '').trim().toLowerCase() === normalizedName;
       }
-      if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+      if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
+        const targetTsmName = (userRole === 'TSM Entry' && userTsm) ? userTsm.trim().toLowerCase() : (userName || '').trim().toLowerCase();
+        return (h.asm_tsm_name || '').trim().toLowerCase() === targetTsmName;
+      }
       if (userRole === 'OB') return h.ob_id === userContact;
       return false;
     }).filter(h => !(h.ob_name || '').toLowerCase().includes('test'));
@@ -118,7 +124,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
   });
   const [filterValue, setFilterValue] = useState<string>(() => {
     if (userRole === 'RSM' || userRole === 'SC') return userRegion || '';
-    if (userRole === 'TSM' || userRole === 'ASM') return userName || '';
+    if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return userName || '';
     if (userRole === 'OB') return userContact || '';
     return '';
   });
@@ -3099,7 +3105,7 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, u
 };
 
 const StatsView = ({ 
-  history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, 
+  history, obAssignments, hierarchy, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, 
   userRole, userName, userRegion, userContact, onRefresh, isSyncing, 
   selectedMonth, setSelectedMonth,
   dailyStatus, fetchDailyStatus, isLoadingDailyStatus
@@ -3110,18 +3116,20 @@ const StatsView = ({
 
   const filteredOBs = useMemo(() => {
     let obs = [];
+    const source = hierarchy.length > 0 ? hierarchy : obAssignments;
+    
     if (userRole === 'Admin' || userRole === 'Super Admin') {
-      obs = obAssignments;
+      obs = source;
     } else if (userRole === 'Director') {
-      obs = obAssignments.filter((ob: any) => ob && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+      obs = source.filter((ob: any) => ob && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'NSM') {
-      obs = obAssignments.filter((ob: any) => ob && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+      obs = source.filter((ob: any) => ob && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'RSM' || userRole === 'SC') {
-      obs = obAssignments.filter((ob: any) => ob && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
+      obs = source.filter((ob: any) => ob && ((ob.region || ob.territory_region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || ob.rsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
     } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
-      obs = obAssignments.filter((ob: any) => ob && (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+      obs = source.filter((ob: any) => ob && (ob.tsm || ob.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'OB') {
-      obs = obAssignments.filter((ob: any) => ob && (ob.contact || '').trim() === (userContact || '').trim());
+      obs = source.filter((ob: any) => ob && (ob.contact || ob.ob_id || '').trim() === (userContact || '').trim());
     }
     
     // Exclude TSM entries and Test OBs from OB reports
@@ -3131,30 +3139,38 @@ const StatsView = ({
       const tsm = ob.tsm || ob.asm_tsm_name || '';
       return !isTSMEntry(name, tsm) && !name.toLowerCase().includes('test');
     });
-  }, [obAssignments, userRole, userRegion, userName, userContact]);
+  }, [obAssignments, hierarchy, userRole, userRegion, userName, userContact]);
 
   const filteredTSMList = useMemo(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin') {
       return tsmList;
     }
+    const source = hierarchy.length > 0 ? hierarchy : obAssignments;
     if (userRole === 'Director') {
-      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
+      return tsmList.filter((tsm: string) => source.some((ob: any) => (ob.tsm || ob.asm_tsm_name || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
     }
     if (userRole === 'NSM') {
-      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
+      return tsmList.filter((tsm: string) => source.some((ob: any) => (ob.tsm || ob.asm_tsm_name || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
     }
     if (userRole === 'RSM' || userRole === 'SC') {
-      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
+      return tsmList.filter((tsm: string) => source.some((ob: any) => (ob.tsm || ob.asm_tsm_name || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || ob.territory_region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || ob.rsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
     }
-    if ((userRole === 'TSM' || userRole === 'ASM')) {
+    if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
       return tsmList.filter((tsm: string) => tsm.toLowerCase() === (userName || '').trim().toLowerCase());
     }
     return [];
-  }, [tsmList, obAssignments, userRole, userRegion, userName]);
+  }, [tsmList, obAssignments, hierarchy, userRole, userRegion, userName]);
 
-  const calculateWorkingDaysTillDate = () => {
-    const now = new Date(today);
-    return getWorkingDays(now.getFullYear(), now.getMonth(), appConfig.holidays || '', dayOfMonth);
+  const calculateWorkingDaysTillDate = (targetDate?: string) => {
+    const dateObj = targetDate ? new Date(targetDate) : new Date(today);
+    const isCurrentMonth = dateObj.getFullYear() === new Date(today).getFullYear() && dateObj.getMonth() === new Date(today).getMonth();
+    
+    if (isCurrentMonth) {
+      const dayLimit = dateObj.getDate();
+      return getWorkingDays(dateObj.getFullYear(), dateObj.getMonth(), appConfig.holidays || '', dayLimit);
+    } else {
+      return getWorkingDays(dateObj.getFullYear(), dateObj.getMonth(), appConfig.holidays || '');
+    }
   };
 
   const workingDaysTillDate = calculateWorkingDaysTillDate();
@@ -3397,8 +3413,7 @@ const StatsView = ({
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {dailyStatus.map(ob => {
-                  const totalWorkingDays = Number(appConfig.total_working_days) || 26;
-                  const missedDays = Math.max(0, totalWorkingDays - (ob.entryDaysCount || 0));
+                  const missedDays = Math.max(0, workingDaysTillDate - (ob.entryDaysCount || 0));
                   
                   return (
                     <tr key={ob.contact} className="hover:bg-slate-50 transition-colors">
@@ -3733,7 +3748,7 @@ const StatsView = ({
   );
 };
 
-const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, userName, userRegion, selectedMonth, setSelectedMonth, setView, onRefresh, isSyncing }: any) => {
+const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, userName, userRegion, userTsm, selectedMonth, setSelectedMonth, setView, onRefresh, isSyncing }: any) => {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'achievementPerc', direction: 'asc' });
 
   const tsmPerformanceData = useMemo(() => {
@@ -3744,8 +3759,10 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
     const filteredHierarchy = hierarchy.filter((h: any) => {
       if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
       if (userRole === 'RSM' || userRole === 'SC') return (h.territory_region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase();
-      if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
-      return false;
+      if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
+        const targetTsmName = (userRole === 'TSM Entry' && userTsm) ? userTsm.trim().toLowerCase() : (userName || '').trim().toLowerCase();
+        return (h.asm_tsm_name || '').trim().toLowerCase() === targetTsmName;
+      }
     });
 
     // Initialize TSMs from hierarchy
@@ -5104,7 +5121,10 @@ export default function App() {
   const [userContact, setUserContact] = useState<string | null>(() => user?.contact || null);
   const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
   const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
+  const [userTsm, setUserTsm] = useState<string | null>(() => user?.tsm || null);
+  const [userOb, setUserOb] = useState<string | null>(() => user?.ob || null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  const [adminSubTab, setAdminSubTab] = useState<'overview' | 'sync' | 'users' | 'tools'>('overview');
   const [matrixView, setMatrixView] = useState<string>('Total');
   const [targetView, setTargetView] = useState('Brand');
   const [showUserManual, setShowUserManual] = useState(false);
@@ -5119,6 +5139,8 @@ export default function App() {
     setUserContact(userData.contact);
     setUserEmail(userData.email);
     setUserRegion(userData.region);
+    setUserTsm(userData.tsm);
+    setUserOb(userData.ob);
     localStorage.setItem('auth_token', token);
     localStorage.setItem('user_data', JSON.stringify(userData));
     
@@ -5136,13 +5158,18 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user_data');
+    localStorage.clear();
     setToken(null);
     setUser(null);
     setUserRole(null);
     setUserName(null);
-    setUserContact(null);
     setUserEmail(null);
+    setUserContact(null);
     setUserRegion(null);
+    setUserTsm(null);
+    setUserOb(null);
+    setIsAdminAuthenticated(false);
+    setView('dashboard');
     window.location.href = '/';
   };
 
@@ -5405,6 +5432,9 @@ export default function App() {
   const [selectedStockTown, setSelectedStockTown] = useState<string>('');
   const [isSubmittingStocks, setIsSubmittingStocks] = useState(false);
   const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
+  const [dbStatus, setDbStatus] = useState('Checking...');
+  const [missingEntriesReport, setMissingEntriesReport] = useState<any[]>([]);
+  const [isFetchingMissingReport, setIsFetchingMissingReport] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupLogs, setBackupLogs] = useState<any[]>([]);
 
@@ -6163,6 +6193,20 @@ export default function App() {
     }
   };
 
+  const fetchMissingEntriesReport = async (month?: string) => {
+    setIsFetchingMissingReport(true);
+    try {
+      const res = await apiFetch(`/api/reports/missing-entries?month=${month || selectedMonth}`);
+      if (res.ok) {
+        setMissingEntriesReport(await res.json());
+      }
+    } catch (err) {
+      console.error("Error fetching missing entries report:", err);
+    } finally {
+      setIsFetchingMissingReport(false);
+    }
+  };
+
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
@@ -6179,10 +6223,12 @@ export default function App() {
         requests.push(apiFetch('/api/admin/distributors'));
         requests.push(apiFetch('/api/admin/config'));
         requests.push(apiFetch(`/api/admin/hierarchy?month=${selectedMonth}`));
+        requests.push(apiFetch(`/api/reports/missing-entries?month=${selectedMonth}`));
       }
       
       if (isAdmin) {
         requests.push(apiFetch('/api/google/status'));
+        requests.push(apiFetch('/api/admin/db-status'));
       }
 
       const results = await Promise.all(requests);
@@ -6201,10 +6247,19 @@ export default function App() {
         nextIdx++;
         if (results[nextIdx]?.ok) setHierarchy(await results[nextIdx].json());
         nextIdx++;
+        if (results[nextIdx]?.ok) setMissingEntriesReport(await results[nextIdx].json());
+        nextIdx++;
       }
       
       if (isAdmin) {
         if (results[nextIdx]?.ok) setGoogleStatus(await results[nextIdx].json());
+        nextIdx++;
+        if (results[nextIdx]?.ok) {
+          const data = await results[nextIdx].json();
+          setDbStatus(data.status === 'ok' ? 'Connected' : 'Error');
+        } else {
+          setDbStatus('Disconnected');
+        }
         nextIdx++;
       }
       fetchBackupLogs();
@@ -6812,10 +6867,10 @@ export default function App() {
     } else if (userRole === 'RSM' || userRole === 'SC') {
       obs = obs.filter(ob => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
-      const trimmedName = (userName || '').trim().toLowerCase();
+      const targetTsmName = (userRole === 'TSM Entry' && userTsm) ? userTsm.trim().toLowerCase() : (userName || '').trim().toLowerCase();
       obs = obs.filter(ob => {
         const tsmName = (ob.tsm || '').trim().toLowerCase();
-        return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
+        return tsmName === targetTsmName || tsmName.includes(targetTsmName) || targetTsmName.includes(tsmName);
       });
     } else if (userRole === 'OB') {
       obs = obs.filter(ob => (ob.contact || '').trim() === (userContact || '').trim());
@@ -6964,6 +7019,7 @@ export default function App() {
                 userRegion={userRegion}
                 userName={userName}
                 userContact={userContact}
+                userTsm={userTsm}
                 timeGone={timeGone.percentage}
                 holidays={appConfig.holidays || ''}
                 lastSync={appConfig.last_sync_at}
@@ -7237,6 +7293,7 @@ export default function App() {
                      userRole === 'NSM' ? 'National Sales Manager' : 
                      userRole === 'TSM' ? 'Territory Sales Manager' : 
                      userRole === 'ASM' ? 'Area Sales Manager' : 
+                     userRole === 'TSM Entry' ? 'TSM Entry' : 
                      userRole === 'OB' ? 'Order Booker' : 
                      userRole}
                   </span>
@@ -7869,26 +7926,38 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <StatsView 
-            history={nationalStats} 
-            obAssignments={obAssignments} 
-            tsmList={tsmList} 
-            appConfig={appConfig} 
-            getPSTDate={getPSTDate} 
-            SKUS={SKUS} 
-            CATEGORIES={CATEGORIES} 
-            userRole={userRole}
-            userName={userName}
-            userRegion={userRegion}
-            userContact={userContact}
-            onRefresh={syncEverything}
-            isSyncing={isSyncingGlobal}
-            selectedMonth={selectedMonth}
-            setSelectedMonth={setSelectedMonth}
-            dailyStatus={dailyStatus}
-            fetchDailyStatus={fetchDailyStatus}
-            isLoadingDailyStatus={isLoadingDailyStatus}
-          />
+          <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
+            <StatsView 
+              history={nationalStats} 
+              obAssignments={obAssignments} 
+              hierarchy={hierarchy}
+              tsmList={tsmList} 
+              appConfig={appConfig} 
+              getPSTDate={getPSTDate} 
+              SKUS={SKUS} 
+              CATEGORIES={CATEGORIES} 
+              userRole={userRole}
+              userName={userName}
+              userRegion={userRegion}
+              userContact={userContact}
+              onRefresh={syncEverything}
+              isSyncing={isSyncingGlobal}
+              selectedMonth={selectedMonth}
+              setSelectedMonth={setSelectedMonth}
+              dailyStatus={dailyStatus}
+              fetchDailyStatus={fetchDailyStatus}
+              isLoadingDailyStatus={isLoadingDailyStatus}
+            />
+            
+            <div className="mt-8">
+              <MissingEntriesReport 
+                report={missingEntriesReport} 
+                onRefresh={fetchMissingEntriesReport} 
+                isLoading={isFetchingMissingReport} 
+                selectedMonth={selectedMonth}
+              />
+            </div>
+          </div>
         )}
       </div>
     );
@@ -7949,6 +8018,7 @@ export default function App() {
             userRole={userRole}
             userName={userName}
             userRegion={userRegion}
+            userTsm={userTsm}
             selectedMonth={selectedMonth}
             setSelectedMonth={setSelectedMonth}
             setView={setView}
@@ -7956,6 +8026,50 @@ export default function App() {
             isSyncing={isSyncingGlobal}
           />
         )}
+      </div>
+    );
+  }
+
+  if (view === 'missing_entries') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} />
+        <div className="flex-1 p-4 max-w-7xl mx-auto w-full">
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-3">
+              <div className="p-3 bg-red-100 text-red-600 rounded-xl">
+                <EyeOff className="w-6 h-6" />
+              </div>
+              <div>
+                <h2 className="text-xl font-black uppercase tracking-tight text-slate-800">Missing Entries Report</h2>
+                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tracking OB performance & consistency for {selectedMonth}</p>
+              </div>
+            </div>
+            <div className="flex gap-2">
+              <input 
+                type="month" 
+                value={selectedMonth} 
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="p-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-seablue/20"
+              />
+              <button 
+                onClick={fetchNationalData}
+                className="p-2 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all"
+                title="Refresh Report"
+              >
+                <RefreshCw className={`w-5 h-5 ${isLoadingHistory ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+          </div>
+          <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
+            <MissingEntriesReport 
+              report={missingEntriesReport} 
+              isLoading={isLoadingHistory} 
+              onRefresh={fetchMissingEntriesReport} 
+              selectedMonth={selectedMonth}
+            />
+          </div>
+        </div>
       </div>
     );
   }
@@ -8051,7 +8165,7 @@ export default function App() {
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">System Status</h3>
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-600">Database:</span>
-                <span className="text-[10px] font-bold text-emerald-600 uppercase">Connected</span>
+                <span className={`text-[10px] font-bold uppercase ${dbStatus === 'Connected' ? 'text-emerald-600' : 'text-red-600'}`}>{dbStatus}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-600">Google Sheets:</span>
@@ -8064,7 +8178,8 @@ export default function App() {
                 <span className="text-[10px] font-bold text-emerald-600 uppercase">Never Delete data</span>
               </div>
             </div>
-            <div className="card-clean p-4 space-y-4">
+
+            <div className="card-clean p-4 space-y-4 md:col-span-2">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Recovery & History</h3>
               <div className="grid grid-cols-1 gap-3">
                 <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl space-y-2">
@@ -8599,11 +8714,13 @@ export default function App() {
             <div className="p-4 space-y-4">
               <form onSubmit={handleRegisterUser} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
                 <input type="text" placeholder="Username" value={newUser.username || ''} onChange={e => setNewUser({...newUser, username: e.target.value})} className="input-clean text-[10px]" required />
+                <input type="email" placeholder="Email" value={newUser.email || ''} onChange={e => setNewUser({...newUser, email: e.target.value})} className="input-clean text-[10px]" />
                 <input type="text" placeholder="Full Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="input-clean text-[10px]" required />
                 <input type="text" placeholder="Contact/ID" value={newUser.contact} onChange={e => setNewUser({...newUser, contact: e.target.value})} className="input-clean text-[10px]" />
                   <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="input-clean text-[10px]">
                     <option value="OB">Order Booker (OB)</option>
                     <option value="TSM">Territory Sales Manager (TSM)</option>
+                    <option value="TSM Entry">TSM Entry</option>
                     <option value="ASM">Area Sales Manager (ASM)</option>
                     <option value="RSM">Regional Sales Manager (RSM)</option>
                     <option value="NSM">National Sales Manager (NSM)</option>
@@ -8613,6 +8730,9 @@ export default function App() {
                     <option value="Super Admin">Super Admin</option>
                   </select>
                 <input type="text" placeholder="Region" value={newUser.region} onChange={e => setNewUser({...newUser, region: e.target.value})} className="input-clean text-[10px]" />
+                <input type="text" placeholder="Town" value={newUser.town} onChange={e => setNewUser({...newUser, town: e.target.value})} className="input-clean text-[10px]" />
+                <input type="text" placeholder="TSM Name" value={newUser.tsm || ''} onChange={e => setNewUser({...newUser, tsm: e.target.value})} className="input-clean text-[10px]" />
+                <input type="text" placeholder="OB Name" value={newUser.ob || ''} onChange={e => setNewUser({...newUser, ob: e.target.value})} className="input-clean text-[10px]" />
                 <button type="submit" disabled={isRegisteringUser} className="btn-seablue text-[10px] py-1">
                   {isRegisteringUser ? '...' : '+ Register'}
                 </button>

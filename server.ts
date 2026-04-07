@@ -158,6 +158,27 @@ function initDB() {
       console.warn("Migration for month column in submitted_orders failed:", err.message);
     }
 
+    // Normalize regions and TSM names in submitted_orders based on ob_assignments
+    try {
+      console.log("Normalizing submitted_orders based on ob_assignments...");
+      const assignments = db.prepare("SELECT contact, region, tsm, nsm, rsm, sc, director, zone, town, distributor FROM ob_assignments").all() as any[];
+      const updateStmt = db.prepare(`
+        UPDATE submitted_orders 
+        SET region = ?, tsm = ?, nsm = ?, rsm = ?, sc = ?, director = ?, zone = ?, town = ?, distributor = ?
+        WHERE ob_contact = ? AND (region IS NULL OR region = '' OR region = 'Unassigned')
+      `);
+      
+      const transaction = db.transaction(() => {
+        for (const a of assignments) {
+          updateStmt.run(a.region, a.tsm, a.nsm, a.rsm, a.sc, a.director, a.zone, a.town, a.distributor, a.contact);
+        }
+      });
+      transaction();
+      console.log("Normalization complete.");
+    } catch (err) {
+      console.warn("Normalization of submitted_orders failed:", err.message);
+    }
+
     // Remove duplicate orders (keep the latest one based on id)
     try {
       db.exec(`
@@ -466,7 +487,7 @@ async function startServer() {
 
   app.get("/api/user/profile", authenticateToken, (req, res) => {
     try {
-      const user = db.prepare("SELECT id, username, email, role, name, contact, region, town FROM users WHERE id = ?").get(req.user!.id) as any;
+      const user = db.prepare("SELECT id, username, email, role, name, contact, region, town, tsm, ob FROM users WHERE id = ?").get(req.user!.id) as any;
       if (!user) return res.status(404).json({ error: "User not found" });
       res.json(user);
     } catch (err) {
@@ -973,15 +994,30 @@ async function startServer() {
       }).map(a => a.contact);
       visibleIds = [...ids, ...assignmentIds];
     } else if (role === 'TSM' || role === 'ASM' || role === 'TSM Entry') {
-      const ids = hierarchy.filter(h => {
-        const tsmName = (h.asm_tsm_name || '').trim().toLowerCase();
-        return trimmedName && (tsmName.includes(trimmedName) || trimmedName.includes(tsmName));
-      }).map(h => h.ob_id);
-      const assignmentIds = assignments.filter(a => {
-        const tsmName = (a.tsm || '').trim().toLowerCase();
-        return trimmedName && (tsmName.includes(trimmedName) || trimmedName.includes(tsmName));
-      }).map(a => a.contact);
-      visibleIds = [...ids, ...assignmentIds];
+      const targetTsmName = (role === 'TSM Entry' && user.tsm) ? user.tsm.trim().toLowerCase() : (role === 'TSM Entry' ? '' : trimmedName);
+      console.log(`[getVisibleOBIds] Role: ${role}, Target TSM: ${targetTsmName || 'ALL (TSM Entry without assigned TSM)'}`);
+      
+      if (role === 'TSM Entry' && !targetTsmName) {
+        // If TSM Entry has no assigned TSM, give access to all OBs (as requested for "Any Situation")
+        const submissions = db.prepare("SELECT DISTINCT ob_contact FROM submitted_orders").all() as any[];
+        const allOBs = new Set([
+          ...hierarchy.map(h => h.ob_id), 
+          ...assignments.map(a => a.contact),
+          ...submissions.map(s => s.ob_contact)
+        ]);
+        visibleIds = Array.from(allOBs).filter(id => id);
+      } else {
+        const ids = hierarchy.filter(h => {
+          const tsmName = (h.asm_tsm_name || '').trim().toLowerCase();
+          return targetTsmName && (tsmName.includes(targetTsmName) || targetTsmName.includes(tsmName));
+        }).map(h => h.ob_id);
+        const assignmentIds = assignments.filter(a => {
+          const tsmName = (a.tsm || '').trim().toLowerCase();
+          return targetTsmName && (tsmName.includes(targetTsmName) || targetTsmName.includes(tsmName));
+        }).map(a => a.contact);
+        visibleIds = [...ids, ...assignmentIds];
+      }
+      console.log(`[getVisibleOBIds] Found ${visibleIds.length} OBs for TSM ${targetTsmName || 'ALL'}`);
     } else if (role === 'OB') {
       visibleIds = [contact];
     }
@@ -1009,8 +1045,9 @@ async function startServer() {
       const dists = trimmedRegion ? db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(region)) LIKE ?").all(`%${trimmedRegion}%`) as any[] : [];
       return Array.from(new Set([...hierarchy.map(h => h.distributor_name), ...dists.map(d => d.name)])).filter(d => d);
     } else if (role === 'TSM' || role === 'ASM' || role === 'TSM Entry') {
-      const hierarchy = trimmedName ? db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(asm_tsm_name)) LIKE ?").all(`%${trimmedName}%`) as any[] : [];
-      const dists = trimmedName ? db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(tsm)) LIKE ?").all(`%${trimmedName}%`) as any[] : [];
+      const targetTsmName = (role === 'TSM Entry' && user.tsm) ? user.tsm.trim().toLowerCase() : trimmedName;
+      const hierarchy = targetTsmName ? db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE LOWER(TRIM(asm_tsm_name)) LIKE ?").all(`%${targetTsmName}%`) as any[] : [];
+      const dists = targetTsmName ? db.prepare("SELECT name FROM distributors WHERE LOWER(TRIM(tsm)) LIKE ?").all(`%${targetTsmName}%`) as any[] : [];
       return Array.from(new Set([...hierarchy.map(h => h.distributor_name), ...dists.map(d => d.name)])).filter(d => d);
     } else if (role === 'OB') {
       const hierarchy = db.prepare("SELECT DISTINCT distributor_name FROM national_hierarchy WHERE ob_id = ?").all(contact) as any[];
@@ -1847,7 +1884,9 @@ async function startServer() {
         role: finalRole, 
         name: user.name, 
         contact: user.contact, 
-        region: finalRegion 
+        region: finalRegion,
+        tsm: user.tsm,
+        ob: user.ob
       }, JWT_SECRET, { expiresIn: '30d' });
       
       logAction(user.id.toString(), user.name, finalRole, "LOGIN_SIMPLE", { username });
@@ -1861,7 +1900,9 @@ async function startServer() {
           role: finalRole, 
           name: user.name, 
           contact: user.contact, 
-          region: user.region 
+          region: user.region,
+          tsm: user.tsm,
+          ob: user.ob
         } 
       });
     } catch (err) {
@@ -2002,7 +2043,7 @@ async function startServer() {
       let obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       
       // Filter based on role
-      if ((role === 'TSM' || role === 'ASM')) {
+      if (role === 'TSM' || role === 'ASM' || role === 'TSM Entry') {
         const trimmedName = (name || '').trim().toLowerCase();
         obs = obs.filter((ob: any) => {
           const tsmName = (ob.tsm || '').trim().toLowerCase();
@@ -2158,7 +2199,7 @@ async function startServer() {
         } else {
           dists = [];
         }
-      } else if ((role === 'TSM' || role === 'ASM')) {
+      } else if (role === 'TSM' || role === 'ASM' || role === 'TSM Entry') {
         
         const trimmedName = (name || '').trim().toLowerCase();
         const allDists = db.prepare("SELECT * FROM distributors").all();
@@ -2625,12 +2666,16 @@ async function startServer() {
       }
 
       // RBAC check: TSM can only submit for their assigned OBs
-      const { role } = req.user;
+      const { role, name } = req.user;
       const visibleOBIds = getVisibleOBIds(req.user);
       
       if (role !== 'Super Admin' && role !== 'Admin' && role !== 'Director') {
         if (!visibleOBIds.includes(obContact)) {
-          return res.status(403).json({ error: "Access Denied: You can only submit orders for your assigned OBs. Contact admin if access issue." });
+          console.warn(`[RBAC] Access Denied for ${name} (${role}). Trying to submit for OB ${obContact}. Visible OBs count: ${visibleOBIds.length}`);
+          return res.status(403).json({ 
+            error: "Access Denied: You can only submit orders for your assigned OBs. Contact admin if access issue.",
+            debug: { user: name, role, obContact, visibleCount: visibleOBIds.length }
+          });
         }
       }
 
@@ -2642,9 +2687,14 @@ async function startServer() {
       }
 
       // March and April 2026 are new insert only (redundant but kept for safety)
+      // Allow update if it's within the last 2 days to fix mistakes
       if (orderMonth === '2026-03' || orderMonth === '2026-04') {
-        if (existing) {
-          return res.status(403).json({ error: `${orderMonth} data is set to 'New Insert Only'. Existing records cannot be updated.` });
+        const today = new Date(getPSTDate());
+        const orderDate = new Date(existing.date);
+        const diffDays = Math.ceil(Math.abs(today.getTime() - orderDate.getTime()) / (1000 * 60 * 60 * 24));
+        
+        if (existing && diffDays > 2) {
+          return res.status(403).json({ error: `${orderMonth} data is set to 'New Insert Only'. Existing records older than 2 days cannot be updated.` });
         }
       }
 
@@ -2870,17 +2920,25 @@ async function startServer() {
         return res.json({ stats: [], hierarchy: [], timeInfo: calculateTimeGone() });
       }
 
-      // 2. Fetch stats for visible OBs and selected month
+      // 2. Fetch stats for visible OBs and last 6 months for trend
+      const last6Months = [];
+      for (let i = 0; i < 6; i++) {
+        const d = new Date(targetMonth + '-01');
+        d.setMonth(d.getMonth() - i);
+        last6Months.push(d.toISOString().slice(0, 7));
+      }
+      const monthPlaceholders = last6Months.map(() => '?').join(',');
+
       let stats;
       if (isAdmin) {
-        stats = db.prepare("SELECT * FROM submitted_orders WHERE month = ?").all(targetMonth);
+        stats = db.prepare(`SELECT * FROM submitted_orders WHERE month IN (${monthPlaceholders})`).all(...last6Months);
       } else {
         const placeholders = visibleOBIds.map(() => '?').join(',');
         const query = `
           SELECT * FROM submitted_orders 
-          WHERE ob_contact IN (${placeholders}) AND month = ?
+          WHERE ob_contact IN (${placeholders}) AND month IN (${monthPlaceholders})
         `;
-        stats = db.prepare(query).all(...visibleOBIds, targetMonth);
+        stats = db.prepare(query).all(...visibleOBIds, ...last6Months);
       }
 
       const timeInfo = calculateTimeGone();
@@ -2897,8 +2955,10 @@ async function startServer() {
   });
 
   app.post("/api/admin/hierarchy/bulk-upload", authenticateToken, (req, res) => {
-    const { hierarchy, clearExisting } = req.body;
+    const { hierarchy, clearExisting, month } = req.body;
     if (!Array.isArray(hierarchy)) return res.status(400).json({ error: "Invalid data" });
+    
+    const targetMonth = month || getPSTDate().slice(0, 7);
 
     const transaction = db.transaction(() => {
       // clearExisting is disabled to protect historical data
@@ -2909,8 +2969,8 @@ async function startServer() {
       const insert = db.prepare(`
         INSERT OR IGNORE INTO national_hierarchy (
           director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, town_name, 
-          distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn, month
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `);
 
       const insertOB = db.prepare(`
@@ -2923,7 +2983,7 @@ async function startServer() {
         insert.run(
           item.director_sales, item.nsm_name, item.rsm_name, item.sc_name, item.asm_tsm_name, item.town_name,
           item.distributor_name, item.distributor_code, item.ob_name, item.ob_id, item.territory_region,
-          item.target_ctn || 0
+          item.target_ctn || 0, targetMonth
         );
         
         insertOB.run(
@@ -2935,7 +2995,7 @@ async function startServer() {
 
     try {
       transaction();
-      res.json({ success: true, message: "Hierarchy processed (new records inserted, existing skipped to protect historical data)." });
+      res.json({ success: true, message: `Hierarchy processed for ${targetMonth} (new records inserted, existing skipped to protect historical data).` });
     } catch (err) {
       res.status(500).json({ error: err.message });
     }
@@ -4053,6 +4113,67 @@ async function startServer() {
       const commands = db.prepare("SELECT * FROM pending_commands ORDER BY created_at DESC").all();
       res.json(commands);
     } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/db-status", (req, res) => {
+    try {
+      db.prepare("SELECT 1").get();
+      res.json({ status: 'ok' });
+    } catch (err) {
+      res.status(500).json({ status: 'error', message: (err as any).message });
+    }
+  });
+
+  app.get("/api/reports/missing-entries", authenticateToken, (req, res) => {
+    try {
+      const month = (req.query.month as string) || getPSTDate().slice(0, 7);
+      const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+      const submissions = db.prepare("SELECT ob_contact, date FROM submitted_orders WHERE month = ?").all(month) as any[];
+      
+      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+      const holidays = (config.holidays || '').split(',').map((d: string) => d.trim());
+      
+      // Calculate working days for the month
+      const [year, monthNum] = month.split('-').map(Number);
+      const daysInMonth = new Date(year, monthNum, 0).getDate();
+      const workingDays: string[] = [];
+      const today = getPSTDate();
+      
+      for (let d = 1; d <= daysInMonth; d++) {
+        const dateStr = `${year}-${monthNum.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
+        // Use local date construction to avoid timezone shifts
+        const dateObj = new Date(year, monthNum - 1, d);
+        const dayOfWeek = dateObj.getDay(); // 0 = Sunday
+        
+        if (dayOfWeek !== 0 && !holidays.includes(dateStr)) {
+          workingDays.push(dateStr);
+        }
+      }
+
+      const workingDaysUntilToday = workingDays.filter(d => d <= today);
+
+      const report = obs.map(ob => {
+        const obSubmissions = submissions.filter(s => s.ob_contact === ob.contact).map(s => s.date);
+        const missingDays = workingDaysUntilToday.filter(d => !obSubmissions.includes(d));
+        
+        return {
+          ob_name: ob.name,
+          ob_contact: ob.contact,
+          tsm: ob.tsm,
+          asm: ob.tsm, 
+          total_working_days: workingDaysUntilToday.length,
+          entries_count: obSubmissions.filter(d => d <= today).length,
+          missing_days_count: missingDays.length,
+          missing_dates: missingDays
+        };
+      });
+
+      res.json(report);
+    } catch (err: any) {
+      console.error("Missing Entries Report Error:", err);
       res.status(500).json({ error: err.message });
     }
   });
