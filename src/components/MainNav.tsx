@@ -11,23 +11,20 @@ import {
   Box, 
   ShieldCheck, 
   HelpCircle, 
-  EyeOff,
-  Users,
-  Target,
-  BarChart
+  EyeOff 
 } from 'lucide-react';
 
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
 export const APP_TABS = [
-  { id: 'entry', label: 'Entry', icon: ClipboardEdit, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director', 'TSM Entry'] },
-  { id: 'missing_entries', label: 'Missing', icon: EyeOff, roles: ['Super Admin', 'Admin', 'SC', 'RSM', 'NSM', 'Director'] },
+  { id: 'entry', label: 'Entry', icon: ClipboardEdit, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'command_center', label: 'Command Center', icon: Target, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'tsm_performance', label: 'TSM Perf.', icon: Users, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'command_center', label: 'Command Center', icon: Activity, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'tsm_performance', label: 'TSM Performance', icon: Activity, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'insights', label: 'Insights', icon: LineChart, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'stats', label: 'Stats', icon: BarChart, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
+  { id: 'stats', label: 'Stats', icon: PieChart, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
   { id: 'reports', label: 'Reports', icon: FileSpreadsheet, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
+  { id: 'missing_entries', label: 'Missing Entries', icon: FileSpreadsheet, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'] },
   { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'stocks', label: 'Stocks', icon: Box, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'admin', label: 'Admin', icon: ShieldCheck, roles: ['Super Admin', 'Admin'] },
@@ -61,11 +58,8 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
       // Hide Admin panel, Settings, Source (Source is not a tab but we ensure it's not here)
       if (['admin', 'settings'].includes(tab.id)) return false;
       
-      // TSM Entry only sees the Entry tab
-      if (normalizedRole === 'TSM ENTRY' && tab.id !== 'entry') return false;
-
       // Allowed for all users: Entry, Reports, Dashboard, Help, History
-      if (['entry', 'reports', 'dashboard', 'command_center', 'insights', 'help', 'history', 'stocks', 'stats'].includes(tab.id)) {
+      if (['entry', 'reports', 'dashboard', 'command_center', 'insights', 'help', 'history', 'stocks', 'stats', 'missing_entries'].includes(tab.id)) {
         // Still check if role is allowed for this specific tab
         return tab.roles.map(r => r.toUpperCase()).includes(normalizedRole);
       }

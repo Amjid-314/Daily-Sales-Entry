@@ -27,7 +27,6 @@ import { EntryForm } from './components/EntryForm';
 import { SubmissionModals } from './components/SubmissionModals';
 import { Login } from './components/Login';
 import { WhatsAppIcon } from './components/WhatsAppIcon';
-import { MissingEntriesReport } from './components/MissingEntriesReport';
 import { 
   Save, 
   Send, 
@@ -76,9 +75,7 @@ import {
   Key,
   User,
   HelpCircle,
-  Activity,
-  Database,
-  Wrench
+  Activity
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
 import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry } from './lib/utils';
@@ -88,7 +85,7 @@ const LOGO_STORAGE_KEY = 'app_logo_base64';
 
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
-const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userEmail, userRegion, userName, userContact, userTsm, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userEmail?: string | null, userRegion?: string | null, userName?: string | null, userContact?: string | null, userTsm?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
+const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userEmail, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userEmail?: string | null, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
   const filteredOBs = useMemo(() => {
     const uniqueOBs = new Map();
     hierarchy.forEach(h => {
@@ -106,10 +103,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
                (h.rsm_name || '').trim().toLowerCase() === normalizedName || 
                (h.sc_name || '').trim().toLowerCase() === normalizedName;
       }
-      if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
-        const targetTsmName = (userRole === 'TSM Entry' && userTsm) ? userTsm.trim().toLowerCase() : (userName || '').trim().toLowerCase();
-        return (h.asm_tsm_name || '').trim().toLowerCase() === targetTsmName;
-      }
+      if (userRole === 'TSM' || userRole === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
       if (userRole === 'OB') return h.ob_id === userContact;
       return false;
     }).filter(h => !(h.ob_name || '').toLowerCase().includes('test'));
@@ -118,13 +112,13 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
   const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'OB' | 'Route'>(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return 'National';
     if (userRole === 'RSM' || userRole === 'SC') return 'Region';
-    if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return 'TSM';
+    if (userRole === 'TSM' || userRole === 'ASM') return 'TSM';
     if (userRole === 'OB') return 'OB';
     return 'National';
   });
   const [filterValue, setFilterValue] = useState<string>(() => {
     if (userRole === 'RSM' || userRole === 'SC') return userRegion || '';
-    if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return userName || '';
+    if (userRole === 'TSM' || userRole === 'ASM') return userName || '';
     if (userRole === 'OB') return userContact || '';
     return '';
   });
@@ -155,7 +149,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       setFilterLevel(visibleFilterLevels[0] as any);
       setFilterValue(() => {
         if (userRole === 'RSM' || userRole === 'SC') return userRegion || '';
-        if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return userName || '';
+        if (userRole === 'TSM' || userRole === 'ASM') return userName || '';
         if (userRole === 'OB') return userContact || '';
         return '';
       });
@@ -187,7 +181,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       return ['National', 'Region', 'TSM', 'Town', 'OB', 'Route'];
     } else if (userRole === 'RSM' || userRole === 'SC') {
       return ['Region', 'TSM', 'Town', 'OB', 'Route'];
-    } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
+    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
       return ['TSM', 'Town', 'OB', 'Route'];
     } else {
       return ['OB', 'Route'];
@@ -1058,13 +1052,8 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 bg-gradient-to-br from-seablue to-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200 overflow-hidden relative group">
-              <motion.div
-                animate={{ scale: [1, 1.1, 1] }}
-                transition={{ duration: 4, repeat: Infinity }}
-              >
-                <Waves className="w-6 h-6" />
-              </motion.div>
+            <div className="w-12 h-12 bg-seablue rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
+              <LayoutDashboard className="w-6 h-6" />
             </div>
             <div>
               <h1 className="text-2xl font-black text-seablue uppercase tracking-tight">SalesPulse Intelligence</h1>
@@ -3105,7 +3094,7 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, u
 };
 
 const StatsView = ({ 
-  history, obAssignments, hierarchy, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, 
+  history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, 
   userRole, userName, userRegion, userContact, onRefresh, isSyncing, 
   selectedMonth, setSelectedMonth,
   dailyStatus, fetchDailyStatus, isLoadingDailyStatus
@@ -3116,20 +3105,18 @@ const StatsView = ({
 
   const filteredOBs = useMemo(() => {
     let obs = [];
-    const source = hierarchy.length > 0 ? hierarchy : obAssignments;
-    
     if (userRole === 'Admin' || userRole === 'Super Admin') {
-      obs = source;
+      obs = obAssignments;
     } else if (userRole === 'Director') {
-      obs = source.filter((ob: any) => ob && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+      obs = obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'NSM') {
-      obs = source.filter((ob: any) => ob && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+      obs = obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'RSM' || userRole === 'SC') {
-      obs = source.filter((ob: any) => ob && ((ob.region || ob.territory_region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || ob.rsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
-    } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
-      obs = source.filter((ob: any) => ob && (ob.tsm || ob.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+      obs = obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+      obs = obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'OB') {
-      obs = source.filter((ob: any) => ob && (ob.contact || ob.ob_id || '').trim() === (userContact || '').trim());
+      obs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
     }
     
     // Exclude TSM entries and Test OBs from OB reports
@@ -3139,38 +3126,30 @@ const StatsView = ({
       const tsm = ob.tsm || ob.asm_tsm_name || '';
       return !isTSMEntry(name, tsm) && !name.toLowerCase().includes('test');
     });
-  }, [obAssignments, hierarchy, userRole, userRegion, userName, userContact]);
+  }, [obAssignments, userRole, userRegion, userName, userContact]);
 
   const filteredTSMList = useMemo(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin') {
       return tsmList;
     }
-    const source = hierarchy.length > 0 ? hierarchy : obAssignments;
     if (userRole === 'Director') {
-      return tsmList.filter((tsm: string) => source.some((ob: any) => (ob.tsm || ob.asm_tsm_name || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
+      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
     }
     if (userRole === 'NSM') {
-      return tsmList.filter((tsm: string) => source.some((ob: any) => (ob.tsm || ob.asm_tsm_name || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
+      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
     }
     if (userRole === 'RSM' || userRole === 'SC') {
-      return tsmList.filter((tsm: string) => source.some((ob: any) => (ob.tsm || ob.asm_tsm_name || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || ob.territory_region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || ob.rsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
+      return tsmList.filter((tsm: string) => obAssignments.some((ob: any) => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
     }
-    if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
+    if ((userRole === 'TSM' || userRole === 'ASM')) {
       return tsmList.filter((tsm: string) => tsm.toLowerCase() === (userName || '').trim().toLowerCase());
     }
     return [];
-  }, [tsmList, obAssignments, hierarchy, userRole, userRegion, userName]);
+  }, [tsmList, obAssignments, userRole, userRegion, userName]);
 
-  const calculateWorkingDaysTillDate = (targetDate?: string) => {
-    const dateObj = targetDate ? new Date(targetDate) : new Date(today);
-    const isCurrentMonth = dateObj.getFullYear() === new Date(today).getFullYear() && dateObj.getMonth() === new Date(today).getMonth();
-    
-    if (isCurrentMonth) {
-      const dayLimit = dateObj.getDate();
-      return getWorkingDays(dateObj.getFullYear(), dateObj.getMonth(), appConfig.holidays || '', dayLimit);
-    } else {
-      return getWorkingDays(dateObj.getFullYear(), dateObj.getMonth(), appConfig.holidays || '');
-    }
+  const calculateWorkingDaysTillDate = () => {
+    const now = new Date(today);
+    return getWorkingDays(now.getFullYear(), now.getMonth(), appConfig.holidays || '', dayOfMonth);
   };
 
   const workingDaysTillDate = calculateWorkingDaysTillDate();
@@ -3413,7 +3392,8 @@ const StatsView = ({
               </thead>
               <tbody className="divide-y divide-slate-50">
                 {dailyStatus.map(ob => {
-                  const missedDays = Math.max(0, workingDaysTillDate - (ob.entryDaysCount || 0));
+                  const totalWorkingDays = Number(appConfig.total_working_days) || 26;
+                  const missedDays = Math.max(0, totalWorkingDays - (ob.entryDaysCount || 0));
                   
                   return (
                     <tr key={ob.contact} className="hover:bg-slate-50 transition-colors">
@@ -3554,7 +3534,7 @@ const StatsView = ({
             </thead>
             <tbody className="divide-y divide-slate-50">
               {filteredTSMList.map((tsm: string, idx: number) => {
-                const tsmOBs = obAssignments.filter((ob: any) => ob && ob.tsm === tsm && !isTSMEntry(ob.name, ob.tsm));
+                const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm && !isTSMEntry(ob.name, ob.tsm));
                 const region = tsmOBs[0]?.region || 'Unassigned';
                 const tsmOrders = history.filter((h: any) => h.tsm === tsm && h.date.startsWith(currentMonth) && !isTSMEntry(h.order_booker, h.tsm));
                 const activeOBs = new Set(tsmOrders.map((h: any) => h.ob_contact)).size;
@@ -3613,8 +3593,10 @@ const StatsView = ({
               <ClipboardList className="w-4 h-4" />
             </div>
             <div>
-              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">OB Submission Status</h3>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Detailed view of order booker submissions</p>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
+                {userRole === 'OB' ? 'My Activity Status' : 'Missing Entries Report'}
+              </h3>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Report based on your assigned hierarchy</p>
             </div>
           </div>
           <div className="flex gap-4">
@@ -3666,16 +3648,14 @@ const StatsView = ({
                 const efficiency = workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0;
                 
                 // Identify improperly uploaded data (e.g., missing targets, 0 sales but productive shops, etc.)
-                const improperEntries = obStats.map((h: any) => {
-                  const data = typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {});
+                const improperEntries = obStats.filter((h: any) => {
+                  const data = h.order_data || {};
                   let totalSales = 0;
                   SKUS.forEach((sku: any) => {
                     const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                     totalSales += (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
                   });
-                  return { ...h, totalSales };
-                }).filter((h: any) => {
-                  return (h.productive_shops > 0 && h.totalSales === 0) || (h.visited_shops === 0 && h.productive_shops > 0) || (h.productive_shops > h.visited_shops);
+                  return (h.productive_shops > 0 && totalSales === 0) || (h.visited_shops === 0 && h.productive_shops > 0);
                 });
 
                 return (
@@ -3748,7 +3728,7 @@ const StatsView = ({
   );
 };
 
-const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, userName, userRegion, userTsm, selectedMonth, setSelectedMonth, setView, onRefresh, isSyncing }: any) => {
+const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, userName, userRegion, selectedMonth, setSelectedMonth, setView, onRefresh, isSyncing }: any) => {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'achievementPerc', direction: 'asc' });
 
   const tsmPerformanceData = useMemo(() => {
@@ -3759,10 +3739,8 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
     const filteredHierarchy = hierarchy.filter((h: any) => {
       if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
       if (userRole === 'RSM' || userRole === 'SC') return (h.territory_region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase();
-      if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
-        const targetTsmName = (userRole === 'TSM Entry' && userTsm) ? userTsm.trim().toLowerCase() : (userName || '').trim().toLowerCase();
-        return (h.asm_tsm_name || '').trim().toLowerCase() === targetTsmName;
-      }
+      if (userRole === 'TSM' || userRole === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+      return false;
     });
 
     // Initialize TSMs from hierarchy
@@ -3945,12 +3923,12 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
   );
 };
 
-const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing, selectedMonth, setSelectedMonth, hierarchy }: any) => {
+const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing, selectedMonth, setSelectedMonth }: any) => {
   const currentMonth = selectedMonth || getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
   const normalizedRole = (userRole || '').trim().toUpperCase();
-  const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB', 'TSM ENTRY'].includes(normalizedRole);
+  const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
   
   const [selectedAnalysisRoute, setSelectedAnalysisRoute] = useState('');
   const [selectedAnalysisOB, setSelectedAnalysisOB] = useState('');
@@ -3962,24 +3940,19 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
     if (userRole === 'Admin' || userRole === 'Super Admin') {
       obs = obAssignments;
     } else if (userRole === 'Director') {
-      obs = obAssignments.filter((ob: any) => ob && (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+      obs = obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'NSM') {
-      obs = obAssignments.filter((ob: any) => ob && (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+      obs = obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'RSM' || userRole === 'SC') {
-      obs = obAssignments.filter((ob: any) => ob && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase()));
-    } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
-      obs = obAssignments.filter((ob: any) => ob && (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+      obs = obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
+    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+      obs = obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'OB') {
-      obs = obAssignments.filter((ob: any) => ob && (ob.contact || '').trim() === (userContact || '').trim());
+      obs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
     }
     
     // Exclude TSM entries and Test OBs from reports
-    return obs.filter((ob: any) => {
-      if (!ob) return false;
-      const name = ob.name || ob.ob_name || '';
-      const tsm = ob.tsm || ob.asm_tsm_name || '';
-      return !isTSMEntry(name, tsm) && !name.toLowerCase().includes('test');
-    }).map((ob: any) => {
+    return obs.filter((ob: any) => !isTSMEntry(ob.name, ob.tsm) && !ob.name.toLowerCase().includes('test')).map((ob: any) => {
       const obHierarchy = hierarchy?.find((h: any) => h.ob_id === ob.contact);
       const targets: Record<string, number> = {};
       if (obHierarchy) {
@@ -4007,9 +3980,7 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
   }, [history, currentMonth]);
 
   const alerts = useMemo(() => {
-    const inactiveOBs: any[] = [];
-    const lowProdOBs: any[] = [];
-
+    const list: any[] = [];
     filteredOBs.forEach((ob: any) => {
       const obStats = reportsMonthStats.filter((s: any) => s.ob_contact === ob.contact);
       const visited = obStats.reduce((sum: number, s: any) => sum + s.visited_shops, 0);
@@ -4017,7 +3988,12 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
       const productivity = visited > 0 ? (productive / visited) * 100 : 0;
       
       if (visited > 50 && productivity < 20) {
-        lowProdOBs.push(`${ob.name} (${productivity.toFixed(1)}% - ${ob.town})`);
+        list.push({
+          type: 'Low Productivity',
+          title: ob.name,
+          desc: `${productivity.toFixed(1)}% Productivity (${ob.town})`,
+          severity: 'high'
+        });
       }
 
       const sortedStats = [...obStats].sort((a, b) => b.date.localeCompare(a.date));
@@ -4026,28 +4002,15 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
         const todayDate = new Date(getPSTDate());
         const diffDays = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
         if (diffDays > 3) {
-          inactiveOBs.push(`${ob.name} (${diffDays} days)`);
+          list.push({
+            type: 'Inactivity',
+            title: ob.name,
+            desc: `No submission for ${diffDays} days`,
+            severity: 'critical'
+          });
         }
       }
     });
-
-    const list: any[] = [];
-    if (inactiveOBs.length > 0) {
-      list.push({
-        type: 'Inactivity',
-        title: `${inactiveOBs.length} OBs Inactive (>3 days)`,
-        desc: inactiveOBs.join(', '),
-        severity: 'critical'
-      });
-    }
-    if (lowProdOBs.length > 0) {
-      list.push({
-        type: 'Low Productivity',
-        title: `${lowProdOBs.length} OBs with Low Productivity (<20%)`,
-        desc: lowProdOBs.join(', '),
-        severity: 'high'
-      });
-    }
     return list;
   }, [filteredOBs, reportsMonthStats, getPSTDate]);
 
@@ -4061,10 +4024,6 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
     }
 
     const fetchRouteAnalysis = async () => {
-      if (!selectedAnalysisOB || !selectedAnalysisRoute) {
-        setRouteAnalysisData([]);
-        return;
-      }
       setIsLoadingRouteAnalysis(true);
       try {
         const token = localStorage.getItem('auth_token');
@@ -4141,6 +4100,96 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
         </div>
       </motion.div>
 
+      {/* Missing Entries Report (Renamed from OB Submission Status) */}
+      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+        <div className="px-6 py-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+              <ClipboardList className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
+                {userRole === 'OB' ? 'My Activity Status' : 'Missing Entries Report'}
+              </h3>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Report based on your assigned hierarchy</p>
+            </div>
+          </div>
+          <div className="flex gap-4">
+            <div className="flex flex-col items-end bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Working Days</span>
+              <span className="text-xs font-black text-seablue">{(() => {
+                const totalDays = Number(appConfig.total_working_days || 25);
+                const passed = history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((acc: Set<string>, h: any) => acc.add(h.date), new Set()).size;
+                return passed || 0;
+              })()}</span>
+            </div>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                <th className="px-6 py-4 whitespace-nowrap">Hierarchy</th>
+                <th className="px-6 py-4 whitespace-nowrap">OB Name</th>
+                <th className="px-6 py-4 whitespace-nowrap">TSM</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Entries</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Missing</th>
+                <th className="px-6 py-4 whitespace-nowrap">Last Entry</th>
+                <th className="px-6 py-4 text-right whitespace-nowrap">Efficiency</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {filteredOBs.map((ob: any, idx: number) => {
+                const obStats = reportsMonthStats.filter((h: any) => h.ob_contact === ob.contact);
+                const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
+                const workingDaysTillDate = history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((acc: Set<string>, h: any) => acc.add(h.date), new Set()).size;
+                const missing = Math.max(0, workingDaysTillDate - uniqueEntryDays);
+                const lastEntry = obStats.sort((a: any, b: any) => b.date.localeCompare(a.date))[0];
+                const efficiency = workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0;
+                
+                return (
+                  <tr key={ob.contact || `ob-missing-${idx}`} className="group hover:bg-slate-50/80 transition-all duration-200">
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <p className="text-[8px] font-black text-slate-400 uppercase leading-none">National &gt; {ob.region}</p>
+                      <p className="text-[9px] font-bold text-slate-600 uppercase mt-0.5">{ob.town}</p>
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <p className="text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{ob.name}</p>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{ob.contact}</p>
+                    </td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.tsm}</td>
+                    <td className="px-6 py-4 text-center">
+                      <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{obStats.length}</span>
+                    </td>
+                    <td className="px-6 py-4 text-center">
+                      <span className={`text-xs font-black px-2 py-1 rounded-lg ${missing > 0 ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}>
+                        {missing}
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500 font-mono">{lastEntry?.date || 'Never'}</td>
+                    <td className="px-6 py-4 text-right">
+                      <div className="flex flex-col items-end gap-1 w-24 ml-auto">
+                        <span className={`text-[10px] font-black ${efficiency < 80 ? 'text-rose-500' : 'text-emerald-500'}`}>
+                          {efficiency.toFixed(0)}%
+                        </span>
+                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                          <div 
+                            className={`h-full rounded-full ${efficiency < 80 ? 'bg-rose-500' : 'bg-emerald-500'}`}
+                            style={{ width: `${Math.min(100, efficiency)}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {userRole !== 'OB' && (
+        <>
       {/* Irregular Activities & Performance Gaps */}
       <section className="card-clean bg-amber-50 border border-amber-100 p-6 rounded-3xl shadow-sm">
         <div className="flex items-center gap-3 mb-6">
@@ -4567,6 +4616,8 @@ const ReportsView = ({ history, obAssignments, tsmList, appConfig, getPSTDate, S
           </table>
         </div>
       </section>
+        </>
+      )}
     </div>
   );
 };
@@ -5121,10 +5172,7 @@ export default function App() {
   const [userContact, setUserContact] = useState<string | null>(() => user?.contact || null);
   const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
   const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
-  const [userTsm, setUserTsm] = useState<string | null>(() => user?.tsm || null);
-  const [userOb, setUserOb] = useState<string | null>(() => user?.ob || null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
-  const [adminSubTab, setAdminSubTab] = useState<'overview' | 'sync' | 'users' | 'tools'>('overview');
   const [matrixView, setMatrixView] = useState<string>('Total');
   const [targetView, setTargetView] = useState('Brand');
   const [showUserManual, setShowUserManual] = useState(false);
@@ -5139,8 +5187,6 @@ export default function App() {
     setUserContact(userData.contact);
     setUserEmail(userData.email);
     setUserRegion(userData.region);
-    setUserTsm(userData.tsm);
-    setUserOb(userData.ob);
     localStorage.setItem('auth_token', token);
     localStorage.setItem('user_data', JSON.stringify(userData));
     
@@ -5158,18 +5204,13 @@ export default function App() {
   const handleLogout = () => {
     localStorage.removeItem('auth_token');
     localStorage.removeItem('user_data');
-    localStorage.clear();
     setToken(null);
     setUser(null);
     setUserRole(null);
     setUserName(null);
-    setUserEmail(null);
     setUserContact(null);
+    setUserEmail(null);
     setUserRegion(null);
-    setUserTsm(null);
-    setUserOb(null);
-    setIsAdminAuthenticated(false);
-    setView('dashboard');
     window.location.href = '/';
   };
 
@@ -5432,9 +5473,6 @@ export default function App() {
   const [selectedStockTown, setSelectedStockTown] = useState<string>('');
   const [isSubmittingStocks, setIsSubmittingStocks] = useState(false);
   const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
-  const [dbStatus, setDbStatus] = useState('Checking...');
-  const [missingEntriesReport, setMissingEntriesReport] = useState<any[]>([]);
-  const [isFetchingMissingReport, setIsFetchingMissingReport] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupLogs, setBackupLogs] = useState<any[]>([]);
 
@@ -5767,14 +5805,22 @@ export default function App() {
   };
 
   const submitOrder = () => {
-    const totalPacks = (Object.values(categoryTotals) as number[]).reduce((a, b) => a + b, 0);
-    
-    if (!order.date || !order.obContact || !order.visitType || !order.route || (order.visitType !== 'Absent' && totalPacks === 0)) {
-      setMessage({ text: 'Please complete all required fields', type: 'error' });
+    if (!order.visitType) {
+      setMessage({ text: 'Select a Visit Type (A/V/RR/Absent)', type: 'error' });
       setTimeout(() => setMessage(null), 3000);
       return;
     }
-    
+    if (!order.route) {
+      setMessage({ text: 'Select a route', type: 'error' });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
+    const totalPacks = (Object.values(categoryTotals) as number[]).reduce((a, b) => a + b, 0);
+    if (order.visitType !== 'Absent' && totalPacks === 0) {
+      setMessage({ text: 'Order is empty', type: 'error' });
+      setTimeout(() => setMessage(null), 3000);
+      return;
+    }
     setIsConfirming(true);
   };
 
@@ -5876,12 +5922,9 @@ export default function App() {
           visitType: ''
         });
         localStorage.removeItem(STORAGE_KEY);
-      } else {
-        const errData = await response.json();
-        throw new Error(errData.error || 'Failed to submit');
-      }
-    } catch (err: any) {
-      setMessage({ text: err.message || 'Error submitting', type: 'error' });
+      } else throw new Error('Failed to submit');
+    } catch (err) {
+      setMessage({ text: 'Error submitting', type: 'error' });
     } finally {
       setIsSubmitting(false);
       setTimeout(() => setMessage(null), 3000);
@@ -6097,7 +6140,7 @@ export default function App() {
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isRegisteringUser, setIsRegisteringUser] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', email: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '', tsm: '', ob: '' });
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '' });
 
   const fetchUsers = async () => {
     if (!token || token === 'null') return;
@@ -6123,7 +6166,7 @@ export default function App() {
       });
       if (res.ok) {
         setMessage({ text: "User registered successfully", type: 'success' });
-        setNewUser({ username: '', email: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '', tsm: '', ob: '' });
+        setNewUser({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '' });
         fetchUsers();
       } else {
         const data = await res.json();
@@ -6193,26 +6236,12 @@ export default function App() {
     }
   };
 
-  const fetchMissingEntriesReport = async (month?: string) => {
-    setIsFetchingMissingReport(true);
-    try {
-      const res = await apiFetch(`/api/reports/missing-entries?month=${month || selectedMonth}`);
-      if (res.ok) {
-        setMissingEntriesReport(await res.json());
-      }
-    } catch (err) {
-      console.error("Error fetching missing entries report:", err);
-    } finally {
-      setIsFetchingMissingReport(false);
-    }
-  };
-
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
       const normalizedRole = (userRole || '').toUpperCase();
       const isAdmin = (normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN') && ADMIN_EMAILS.includes(userEmail || '');
-      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB', 'TSM ENTRY'].includes(normalizedRole);
+      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
       
       const requests = [
         apiFetch('/api/stocks'),
@@ -6223,12 +6252,10 @@ export default function App() {
         requests.push(apiFetch('/api/admin/distributors'));
         requests.push(apiFetch('/api/admin/config'));
         requests.push(apiFetch(`/api/admin/hierarchy?month=${selectedMonth}`));
-        requests.push(apiFetch(`/api/reports/missing-entries?month=${selectedMonth}`));
       }
       
       if (isAdmin) {
         requests.push(apiFetch('/api/google/status'));
-        requests.push(apiFetch('/api/admin/db-status'));
       }
 
       const results = await Promise.all(requests);
@@ -6247,19 +6274,10 @@ export default function App() {
         nextIdx++;
         if (results[nextIdx]?.ok) setHierarchy(await results[nextIdx].json());
         nextIdx++;
-        if (results[nextIdx]?.ok) setMissingEntriesReport(await results[nextIdx].json());
-        nextIdx++;
       }
       
       if (isAdmin) {
         if (results[nextIdx]?.ok) setGoogleStatus(await results[nextIdx].json());
-        nextIdx++;
-        if (results[nextIdx]?.ok) {
-          const data = await results[nextIdx].json();
-          setDbStatus(data.status === 'ok' ? 'Connected' : 'Error');
-        } else {
-          setDbStatus('Disconnected');
-        }
         nextIdx++;
       }
       fetchBackupLogs();
@@ -6832,7 +6850,7 @@ export default function App() {
     if (userRole === 'RSM' || userRole === 'SC') {
       return allTsms.filter(tsm => obAssignments.some(ob => (ob.tsm || '').trim().toLowerCase() === tsm.toLowerCase() && ((ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase())));
     }
-    if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
+    if ((userRole === 'TSM' || userRole === 'ASM')) {
       const trimmedName = (userName || '').trim().toLowerCase();
       return allTsms.filter(tsm => {
         const tsmLower = tsm.toLowerCase();
@@ -6866,11 +6884,11 @@ export default function App() {
       obs = obs.filter(ob => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'RSM' || userRole === 'SC') {
       obs = obs.filter(ob => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    } else if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') {
-      const targetTsmName = (userRole === 'TSM Entry' && userTsm) ? userTsm.trim().toLowerCase() : (userName || '').trim().toLowerCase();
+    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
+      const trimmedName = (userName || '').trim().toLowerCase();
       obs = obs.filter(ob => {
         const tsmName = (ob.tsm || '').trim().toLowerCase();
-        return tsmName === targetTsmName || tsmName.includes(targetTsmName) || targetTsmName.includes(tsmName);
+        return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
       });
     } else if (userRole === 'OB') {
       obs = obs.filter(ob => (ob.contact || '').trim() === (userContact || '').trim());
@@ -7019,7 +7037,6 @@ export default function App() {
                 userRegion={userRegion}
                 userName={userName}
                 userContact={userContact}
-                userTsm={userTsm}
                 timeGone={timeGone.percentage}
                 holidays={appConfig.holidays || ''}
                 lastSync={appConfig.last_sync_at}
@@ -7034,21 +7051,24 @@ export default function App() {
       }
 
       const normalizedRole = (userRole || '').trim().toUpperCase();
-      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB', 'TSM ENTRY'].includes(normalizedRole);
+      const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
       const today = new Date().toISOString().split('T')[0];
       const currentMonth = today.slice(0, 7);
       
       // Role-based data filtering for TSM/OB
       const filteredHistory = history.filter(h => {
-        if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return h.tsm === userName;
+        if ((userRole === 'TSM' || userRole === 'ASM')) return h.tsm === userName;
         if (userRole === 'OB') return h.ob_contact === userContact;
         return false;
       });
 
       const filteredOBAssignments = obAssignments.filter(ob => {
-        if (isStaff) return true; // Include all for Admin/National/RSM/NSM/Director/SC
-        if (userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') return ob.tsm === userName;
-        if (userRole === 'OB') return ob.contact === userContact;
+        if (userRole === 'Admin' || userRole === 'Super Admin') return true;
+        if (userRole === 'Director') return (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+        if (userRole === 'NSM') return (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+        if (userRole === 'RSM' || userRole === 'SC') return (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+        if (userRole === 'TSM' || userRole === 'ASM') return (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+        if (userRole === 'OB') return (ob.contact || '').trim() === (userContact || '').trim();
         return false;
       }).map((ob: any) => {
         const obHierarchy = hierarchy?.find((h: any) => h.ob_id === ob.contact);
@@ -7147,7 +7167,7 @@ export default function App() {
         });
         
         const totalAch = Object.values(totals).reduce((a: number, b: number) => a + b, 0);
-        const tsmOBs = obAssignments.filter(ob => ob && ob.tsm === tsmName && !isTSMEntry(ob.name, ob.tsm) && !(ob.contact || '').startsWith('TSM-'));
+        const tsmOBs = obAssignments.filter(ob => ob.tsm === tsmName && !isTSMEntry(ob.name, ob.tsm) && !(ob.contact || '').startsWith('TSM-'));
         const totalTarget = tsmOBs.reduce((sum, ob) => {
           return sum + Object.values(ob.targets || {}).reduce((a: number, b: number) => a + b, 0);
         }, 0);
@@ -7204,7 +7224,7 @@ export default function App() {
 
       // Route Sales Analysis
       const routeAnalysis = mtdOrders.reduce((acc: any[], h) => {
-        if ((userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry') && h.tsm !== userName) return acc;
+        if ((userRole === 'TSM' || userRole === 'ASM') && h.tsm !== userName) return acc;
         if (userRole === 'OB' && h.ob_contact !== userContact) return acc;
         const route = h.route || 'Unknown';
         let routeData = acc.find(r => r.name === route);
@@ -7293,7 +7313,6 @@ export default function App() {
                      userRole === 'NSM' ? 'National Sales Manager' : 
                      userRole === 'TSM' ? 'Territory Sales Manager' : 
                      userRole === 'ASM' ? 'Area Sales Manager' : 
-                     userRole === 'TSM Entry' ? 'TSM Entry' : 
                      userRole === 'OB' ? 'Order Booker' : 
                      userRole}
                   </span>
@@ -7478,7 +7497,12 @@ export default function App() {
             </div>
 
             <div className="card-clean p-4">
-              <h3 className="text-sm font-bold mb-4 text-seablue uppercase tracking-widest">{(userRole === 'Admin' || userRole === 'Super Admin') ? 'National' : 'My Team'} OB Submission Status</h3>
+              <h3 className="text-sm font-bold text-seablue uppercase tracking-widest">
+                {userRole === 'OB' ? 'My Activity Status' : 'Missing Entries Report'}
+              </h3>
+              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-4 -mt-2">
+                Report based on your assigned hierarchy
+              </p>
               <div className="space-y-3">
                 {filteredOBAssignments.map(ob => {
                   const obOrders = mtdOrders.filter(o => o.ob_contact === ob.contact);
@@ -7616,7 +7640,7 @@ export default function App() {
                 </thead>
                 <tbody className="divide-y divide-slate-50">
                   {tsmList.map(tsm => {
-                    const tsmOBs = obAssignments.filter(ob => ob && ob.tsm === tsm && !isTSMEntry(ob.name, ob.tsm) && !(ob.contact || '').startsWith('TSM-'));
+                    const tsmOBs = obAssignments.filter(ob => ob.tsm === tsm && !isTSMEntry(ob.name, ob.tsm) && !(ob.contact || '').startsWith('TSM-'));
                     const tsmOrders = mtdOrders.filter(o => tsmOBs.some(ob => ob.contact === o.ob_contact));
                     const activeOBs = new Set(tsmOrders.map(o => o.ob_contact)).size;
                     const totalVisited = tsmOrders.reduce((sum, o) => sum + (o.visited_shops || 0), 0);
@@ -7915,6 +7939,10 @@ export default function App() {
   }
 
   if (view === 'stats') {
+    if (!['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(userRole || '')) {
+      setView('dashboard');
+      return null;
+    }
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} />
@@ -7926,44 +7954,36 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="max-w-7xl mx-auto px-4 py-6 space-y-6">
-            <StatsView 
-              history={nationalStats} 
-              obAssignments={obAssignments} 
-              hierarchy={hierarchy}
-              tsmList={tsmList} 
-              appConfig={appConfig} 
-              getPSTDate={getPSTDate} 
-              SKUS={SKUS} 
-              CATEGORIES={CATEGORIES} 
-              userRole={userRole}
-              userName={userName}
-              userRegion={userRegion}
-              userContact={userContact}
-              onRefresh={syncEverything}
-              isSyncing={isSyncingGlobal}
-              selectedMonth={selectedMonth}
-              setSelectedMonth={setSelectedMonth}
-              dailyStatus={dailyStatus}
-              fetchDailyStatus={fetchDailyStatus}
-              isLoadingDailyStatus={isLoadingDailyStatus}
-            />
-            
-            <div className="mt-8">
-              <MissingEntriesReport 
-                report={missingEntriesReport} 
-                onRefresh={fetchMissingEntriesReport} 
-                isLoading={isFetchingMissingReport} 
-                selectedMonth={selectedMonth}
-              />
-            </div>
-          </div>
+          <StatsView 
+            history={nationalStats} 
+            obAssignments={hierarchy} 
+            tsmList={tsmList} 
+            appConfig={appConfig} 
+            getPSTDate={getPSTDate} 
+            SKUS={SKUS} 
+            CATEGORIES={CATEGORIES} 
+            userRole={userRole}
+            userName={userName}
+            userRegion={userRegion}
+            userContact={userContact}
+            onRefresh={syncEverything}
+            isSyncing={isSyncingGlobal}
+            selectedMonth={selectedMonth}
+            setSelectedMonth={setSelectedMonth}
+            dailyStatus={dailyStatus}
+            fetchDailyStatus={fetchDailyStatus}
+            isLoadingDailyStatus={isLoadingDailyStatus}
+          />
         )}
       </div>
     );
   }
 
   if (view === 'reports') {
+    if (!['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(userRole || '')) {
+      setView('dashboard');
+      return null;
+    }
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} />
@@ -8018,7 +8038,6 @@ export default function App() {
             userRole={userRole}
             userName={userName}
             userRegion={userRegion}
-            userTsm={userTsm}
             selectedMonth={selectedMonth}
             setSelectedMonth={setSelectedMonth}
             setView={setView}
@@ -8026,50 +8045,6 @@ export default function App() {
             isSyncing={isSyncingGlobal}
           />
         )}
-      </div>
-    );
-  }
-
-  if (view === 'missing_entries') {
-    return (
-      <div className="min-h-screen bg-slate-50 flex flex-col">
-        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} />
-        <div className="flex-1 p-4 max-w-7xl mx-auto w-full">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-3">
-              <div className="p-3 bg-red-100 text-red-600 rounded-xl">
-                <EyeOff className="w-6 h-6" />
-              </div>
-              <div>
-                <h2 className="text-xl font-black uppercase tracking-tight text-slate-800">Missing Entries Report</h2>
-                <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Tracking OB performance & consistency for {selectedMonth}</p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              <input 
-                type="month" 
-                value={selectedMonth} 
-                onChange={(e) => setSelectedMonth(e.target.value)}
-                className="p-2 border border-slate-200 rounded-xl text-sm font-bold text-slate-600 outline-none focus:ring-2 focus:ring-seablue/20"
-              />
-              <button 
-                onClick={fetchNationalData}
-                className="p-2 bg-white border border-slate-200 rounded-xl text-slate-600 hover:bg-slate-50 transition-all"
-                title="Refresh Report"
-              >
-                <RefreshCw className={`w-5 h-5 ${isLoadingHistory ? 'animate-spin' : ''}`} />
-              </button>
-            </div>
-          </div>
-          <div className="bg-white rounded-3xl shadow-xl border border-slate-100 overflow-hidden">
-            <MissingEntriesReport 
-              report={missingEntriesReport} 
-              isLoading={isLoadingHistory} 
-              onRefresh={fetchMissingEntriesReport} 
-              selectedMonth={selectedMonth}
-            />
-          </div>
-        </div>
       </div>
     );
   }
@@ -8165,7 +8140,7 @@ export default function App() {
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">System Status</h3>
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-600">Database:</span>
-                <span className={`text-[10px] font-bold uppercase ${dbStatus === 'Connected' ? 'text-emerald-600' : 'text-red-600'}`}>{dbStatus}</span>
+                <span className="text-[10px] font-bold text-emerald-600 uppercase">Connected</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-xs font-bold text-slate-600">Google Sheets:</span>
@@ -8178,8 +8153,7 @@ export default function App() {
                 <span className="text-[10px] font-bold text-emerald-600 uppercase">Never Delete data</span>
               </div>
             </div>
-
-            <div className="card-clean p-4 space-y-4 md:col-span-2">
+            <div className="card-clean p-4 space-y-4">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Recovery & History</h3>
               <div className="grid grid-cols-1 gap-3">
                 <div className="p-3 bg-amber-50 border border-amber-100 rounded-xl space-y-2">
@@ -8434,7 +8408,7 @@ export default function App() {
                             const url = URL.createObjectURL(blob);
                             const a = document.createElement('a');
                             a.href = url;
-                            a.download = 'tradepulse-service-account.json';
+                            a.download = 'salespulse-service-account.json';
                             a.click();
                           }}
                           className="text-[9px] font-bold text-seablue hover:underline flex items-center gap-1"
@@ -8714,13 +8688,11 @@ export default function App() {
             <div className="p-4 space-y-4">
               <form onSubmit={handleRegisterUser} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
                 <input type="text" placeholder="Username" value={newUser.username || ''} onChange={e => setNewUser({...newUser, username: e.target.value})} className="input-clean text-[10px]" required />
-                <input type="email" placeholder="Email" value={newUser.email || ''} onChange={e => setNewUser({...newUser, email: e.target.value})} className="input-clean text-[10px]" />
                 <input type="text" placeholder="Full Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="input-clean text-[10px]" required />
                 <input type="text" placeholder="Contact/ID" value={newUser.contact} onChange={e => setNewUser({...newUser, contact: e.target.value})} className="input-clean text-[10px]" />
                   <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="input-clean text-[10px]">
                     <option value="OB">Order Booker (OB)</option>
                     <option value="TSM">Territory Sales Manager (TSM)</option>
-                    <option value="TSM Entry">TSM Entry</option>
                     <option value="ASM">Area Sales Manager (ASM)</option>
                     <option value="RSM">Regional Sales Manager (RSM)</option>
                     <option value="NSM">National Sales Manager (NSM)</option>
@@ -8730,9 +8702,6 @@ export default function App() {
                     <option value="Super Admin">Super Admin</option>
                   </select>
                 <input type="text" placeholder="Region" value={newUser.region} onChange={e => setNewUser({...newUser, region: e.target.value})} className="input-clean text-[10px]" />
-                <input type="text" placeholder="Town" value={newUser.town} onChange={e => setNewUser({...newUser, town: e.target.value})} className="input-clean text-[10px]" />
-                <input type="text" placeholder="TSM Name" value={newUser.tsm || ''} onChange={e => setNewUser({...newUser, tsm: e.target.value})} className="input-clean text-[10px]" />
-                <input type="text" placeholder="OB Name" value={newUser.ob || ''} onChange={e => setNewUser({...newUser, ob: e.target.value})} className="input-clean text-[10px]" />
                 <button type="submit" disabled={isRegisteringUser} className="btn-seablue text-[10px] py-1">
                   {isRegisteringUser ? '...' : '+ Register'}
                 </button>
@@ -9867,7 +9836,7 @@ export default function App() {
                 <label className="text-[7px] font-black text-seablue uppercase tracking-widest whitespace-nowrap">TSM:</label>
                 <select 
                   value={selectedTSM} 
-                  disabled={(userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM Entry')}
+                  disabled={(userRole === 'TSM' || userRole === 'ASM')}
                   onChange={(e) => {
                     setSelectedTSM(e.target.value);
                     setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50 }));

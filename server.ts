@@ -1009,11 +1009,19 @@ async function startServer() {
       } else {
         const ids = hierarchy.filter(h => {
           const tsmName = (h.asm_tsm_name || '').trim().toLowerCase();
-          return targetTsmName && (tsmName.includes(targetTsmName) || targetTsmName.includes(tsmName));
+          const supervisorName = (h.supervisor_name || '').trim().toLowerCase();
+          return targetTsmName && (
+            tsmName.includes(targetTsmName) || targetTsmName.includes(tsmName) ||
+            supervisorName.includes(targetTsmName) || targetTsmName.includes(supervisorName)
+          );
         }).map(h => h.ob_id);
         const assignmentIds = assignments.filter(a => {
           const tsmName = (a.tsm || '').trim().toLowerCase();
-          return targetTsmName && (tsmName.includes(targetTsmName) || targetTsmName.includes(tsmName));
+          const supervisorName = (a.supervisor || '').trim().toLowerCase();
+          return targetTsmName && (
+            tsmName.includes(targetTsmName) || targetTsmName.includes(tsmName) ||
+            supervisorName.includes(targetTsmName) || targetTsmName.includes(supervisorName)
+          );
         }).map(a => a.contact);
         visibleIds = [...ids, ...assignmentIds];
       }
@@ -2473,13 +2481,14 @@ async function startServer() {
     try {
       const { ob, tsm, from, to, ob_contact } = req.query;
       const visibleOBIds = getVisibleOBIds(req.user);
+      const normalizedVisibleIds = visibleOBIds.map(id => String(id || '').trim().toLowerCase());
 
       let query = "SELECT * FROM submitted_orders WHERE 1=1";
       const params: any[] = [];
 
       if (visibleOBIds.length > 0) {
-        query += ` AND ob_contact IN (${visibleOBIds.map(() => '?').join(',')})`;
-        params.push(...visibleOBIds);
+        query += ` AND LOWER(TRIM(ob_contact)) IN (${normalizedVisibleIds.map(() => '?').join(',')})`;
+        params.push(...normalizedVisibleIds);
       } else {
         return res.json([]);
       }
@@ -2603,7 +2612,8 @@ async function startServer() {
       
       if (!isAdmin) {
         if (visibleOBIds.length > 0) {
-          allOBs = allOBs.filter(ob => visibleOBIds.includes(ob.contact));
+          const normalizedVisibleIds = visibleOBIds.map(id => String(id || '').trim().toLowerCase());
+          allOBs = allOBs.filter(ob => normalizedVisibleIds.includes(String(ob.contact || '').trim().toLowerCase()));
         } else {
           allOBs = [];
         }
@@ -2670,7 +2680,10 @@ async function startServer() {
       const visibleOBIds = getVisibleOBIds(req.user);
       
       if (role !== 'Super Admin' && role !== 'Admin' && role !== 'Director') {
-        if (!visibleOBIds.includes(obContact)) {
+        const normalizedVisibleIds = visibleOBIds.map(id => String(id || '').trim().toLowerCase());
+        const normalizedObContact = String(obContact || '').trim().toLowerCase();
+        
+        if (!normalizedVisibleIds.includes(normalizedObContact)) {
           console.warn(`[RBAC] Access Denied for ${name} (${role}). Trying to submit for OB ${obContact}. Visible OBs count: ${visibleOBIds.length}`);
           return res.status(403).json({ 
             error: "Access Denied: You can only submit orders for your assigned OBs. Contact admin if access issue.",
@@ -2680,28 +2693,24 @@ async function startServer() {
       }
 
       // Duplicate check: Prevent same OB + same date + same route duplicate
-      const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, orderDate, route);
+      const existing = db.prepare("SELECT id, date FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, orderDate, route) as any;
       
       if (existing) {
-        return res.status(409).json({ error: "Duplicate entry: Order already exists for this OB, date, and route." });
-      }
-
-      // March and April 2026 are new insert only (redundant but kept for safety)
-      // Allow update if it's within the last 2 days to fix mistakes
-      if (orderMonth === '2026-03' || orderMonth === '2026-04') {
         const today = new Date(getPSTDate());
-        const orderDate = new Date(existing.date);
-        const diffDays = Math.ceil(Math.abs(today.getTime() - orderDate.getTime()) / (1000 * 60 * 60 * 24));
+        const orderDateObj = new Date(existing.date);
+        const diffDays = Math.ceil(Math.abs(today.getTime() - orderDateObj.getTime()) / (1000 * 60 * 60 * 24));
         
-        if (existing && diffDays > 2) {
-          return res.status(403).json({ error: `${orderMonth} data is set to 'New Insert Only'. Existing records older than 2 days cannot be updated.` });
+        // Allow update if it's within the last 2 days to fix mistakes
+        if (diffDays > 2 && role !== 'Super Admin' && role !== 'Admin') {
+          return res.status(403).json({ error: "Existing records older than 2 days cannot be updated. Contact admin if you need to make changes." });
         }
+        console.log(`[Submit] Updating existing order for OB ${obContact} on ${orderDate} (ID: ${existing.id})`);
       }
 
       const submittedAt = getPSTTimestamp();
       
       const info = db.prepare(`
-        INSERT INTO submitted_orders (
+        INSERT OR REPLACE INTO submitted_orders (
           date, month, tsm, town, distributor, order_booker, ob_contact, route, 
           zone, region, nsm, rsm, sc, director,
           total_shops, visited_shops, productive_shops, 
@@ -2868,7 +2877,8 @@ async function startServer() {
       const visibleOBIds = getVisibleOBIds(req.user);
       if (visibleOBIds.length === 0) return res.json([]);
       
-      const hierarchy = db.prepare(`SELECT * FROM national_hierarchy WHERE month = ? AND ob_id IN (${visibleOBIds.map(() => '?').join(',')})`).all(currentMonth, ...visibleOBIds);
+      const normalizedVisibleIds = visibleOBIds.map(id => String(id || '').trim().toLowerCase());
+      const hierarchy = db.prepare(`SELECT * FROM national_hierarchy WHERE month = ? AND LOWER(TRIM(ob_id)) IN (${normalizedVisibleIds.map(() => '?').join(',')})`).all(currentMonth, ...normalizedVisibleIds);
       const brandTargets = db.prepare(`SELECT * FROM brand_targets WHERE month = ?`).all(currentMonth);
 
       const enrichedHierarchy = hierarchy.map(h => {
@@ -2933,19 +2943,21 @@ async function startServer() {
       if (isAdmin) {
         stats = db.prepare(`SELECT * FROM submitted_orders WHERE month IN (${monthPlaceholders})`).all(...last6Months);
       } else {
-        const placeholders = visibleOBIds.map(() => '?').join(',');
+        const normalizedVisibleIds = visibleOBIds.map(id => String(id || '').trim().toLowerCase());
+        const placeholders = normalizedVisibleIds.map(() => '?').join(',');
         const query = `
           SELECT * FROM submitted_orders 
-          WHERE ob_contact IN (${placeholders}) AND month IN (${monthPlaceholders})
+          WHERE LOWER(TRIM(ob_contact)) IN (${placeholders}) AND month IN (${monthPlaceholders})
         `;
-        stats = db.prepare(query).all(...visibleOBIds, ...last6Months);
+        stats = db.prepare(query).all(...normalizedVisibleIds, ...last6Months);
       }
 
       const timeInfo = calculateTimeGone();
+      const normalizedVisibleIds = visibleOBIds.map(id => String(id || '').trim().toLowerCase());
 
       res.json({
         stats,
-        hierarchy: isAdmin ? enrichedHierarchy : enrichedHierarchy.filter(h => visibleOBIds.includes(h.ob_id)),
+        hierarchy: isAdmin ? enrichedHierarchy : enrichedHierarchy.filter(h => normalizedVisibleIds.includes(String(h.ob_id || '').trim().toLowerCase())),
         timeInfo
       });
     } catch (err) {
