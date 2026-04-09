@@ -24,6 +24,7 @@ import { MainNav, APP_TABS } from './components/MainNav';
 import { DailyStatusView } from './components/DailyStatusView';
 import { Calendar as CalendarComponent } from './components/Calendar';
 import { EntryForm } from './components/EntryForm';
+import { MissingEntriesReport } from './components/MissingEntriesReport';
 import { SubmissionModals } from './components/SubmissionModals';
 import { Login } from './components/Login';
 import { WhatsAppIcon } from './components/WhatsAppIcon';
@@ -85,7 +86,21 @@ const LOGO_STORAGE_KEY = 'app_logo_base64';
 
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
-const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing, onRefresh, userRole, userEmail, userRegion, userName, userContact, timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, backupLogs = [], stockHistory = [] }: { view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], isSyncing?: boolean, onRefresh?: () => void, userRole: any, userEmail?: string | null, userRegion?: string | null, userName?: string | null, userContact?: string | null, timeGone: number, holidays: string, lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, backupLogs?: any[], stockHistory?: any[] }) => {
+const NationalDashboard = ({ 
+  view, stats, hierarchy, categories, skus, isSyncing, onRefresh, 
+  userRole, userEmail, userRegion, userName, userContact, 
+  timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, 
+  apiFetch, backupLogs = [], stockHistory = [],
+  missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries
+}: { 
+  view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], 
+  isSyncing?: boolean, onRefresh?: () => void, userRole: any, 
+  userEmail?: string | null, userRegion?: string | null, userName?: string | null, 
+  userContact?: string | null, timeGone: number, holidays: string, 
+  lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, 
+  apiFetch: any, backupLogs?: any[], stockHistory?: any[],
+  missingEntriesReport: any[], fetchMissingEntriesReport: (m?: string) => void, isLoadingMissingEntries: boolean
+}) => {
   const filteredOBs = useMemo(() => {
     const uniqueOBs = new Map();
     hierarchy.forEach(h => {
@@ -116,6 +131,9 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
     if (userRole === 'OB') return 'OB';
     return 'National';
   });
+
+  const [mapLevel, setMapLevel] = useState<'region' | 'town'>('town');
+  const [selectedOBForRoute, setSelectedOBForRoute] = useState<string | null>(null);
   const [filterValue, setFilterValue] = useState<string>(() => {
     if (userRole === 'RSM' || userRole === 'SC') return userRegion || '';
     if (userRole === 'TSM' || userRole === 'ASM') return userName || '';
@@ -222,7 +240,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
       const obNameClean = (s.order_booker || '').replace(/^\*TSM\s*-\s*/i, '').trim().toLowerCase();
       const tsmNameClean = (s.tsm || '').trim().toLowerCase();
       
-      const isTSMEntry = 
+      const isTSMEntryRow = 
         (s.ob_contact || '').startsWith('TSM-') || 
         tsmContacts.has(s.ob_contact) || 
         (obNameClean && tsmNameClean && (obNameClean === tsmNameClean || obNameClean.includes(tsmNameClean) || tsmNameClean.includes(obNameClean))) || 
@@ -288,7 +306,7 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         totalWeightKg,
         brandSales,
         brandTonnage,
-        isTSMEntry,
+        isTSMEntry: isTSMEntryRow,
         visitEfficiency,
         isFakeVisit,
         region: h?.territory_region || s.region || 'Unassigned',
@@ -348,6 +366,28 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
   const monthStats = useMemo(() => {
     return filteredStats.filter(s => s.month === selectedMonth);
   }, [filteredStats, selectedMonth]);
+
+  const obRoutePerformance = useMemo(() => {
+    if (!selectedOBForRoute) return [];
+    const routes: Record<string, any> = {};
+    monthStats.filter(s => s.ob_contact === selectedOBForRoute && !s.isTSMEntry).forEach(s => {
+      const routeName = s.route || 'Unassigned';
+      if (!routes[routeName]) {
+        routes[routeName] = {
+          name: routeName,
+          sales: 0,
+          visited: 0,
+          productive: 0,
+          entries: 0
+        };
+      }
+      routes[routeName].sales += (s.totalBags + s.totalCtns);
+      routes[routeName].visited += s.visited_shops;
+      routes[routeName].productive += s.productive_shops;
+      routes[routeName].entries += 1;
+    });
+    return Object.values(routes).sort((a, b) => b.sales - a.sales);
+  }, [monthStats, selectedOBForRoute]);
 
   const filterOptions = useMemo(() => {
     const options: Record<string, string[]> = {
@@ -1745,6 +1785,15 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         </>
       )}
 
+      {view === 'missing_entries' && (
+        <MissingEntriesReport 
+          report={missingEntriesReport}
+          onRefresh={fetchMissingEntriesReport}
+          isLoading={isLoadingMissingEntries}
+          selectedMonth={selectedMonth}
+        />
+      )}
+
       {view === 'command_center' && (
       <div className="grid grid-cols-1 gap-6">
         <div className="card-clean bg-white overflow-hidden">
@@ -1897,32 +1946,103 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
         <>
       {/* Geospatial Sales Distribution Map */}
       <div className="card-clean bg-white overflow-hidden mb-6">
-        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
+        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
           <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Geospatial Sales Distribution</h3>
+          <div className="flex bg-white rounded-lg p-1 border border-slate-200">
+            <button 
+              onClick={() => setMapLevel('region')}
+              className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${mapLevel === 'region' ? 'bg-seablue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              Region
+            </button>
+            <button 
+              onClick={() => setMapLevel('town')}
+              className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${mapLevel === 'town' ? 'bg-seablue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+            >
+              Town
+            </button>
+          </div>
         </div>
-        <div className="h-[400px] w-full z-0 relative">
+        <div className="h-[450px] w-full z-0 relative">
           <MapContainer center={[30.3753, 69.3451]} zoom={5} style={{ height: '100%', width: '100%', zIndex: 0 }}>
             <TileLayer
               url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             />
-            {monthStats.filter(s => s.latitude && s.longitude && !s.isTSMEntry).map((loc, i) => (
-              <CircleMarker 
-                key={i} 
-                center={[loc.latitude, loc.longitude]} 
-                radius={Math.max(4, Math.min(20, (loc.totalBags + loc.totalCtns) / 10))}
-                pathOptions={{ color: '#006994', fillColor: '#006994', fillOpacity: 0.6, weight: 1 }}
-              >
-                <Popup>
-                  <div className="text-xs">
-                    <strong>{loc.ob_name}</strong><br/>
-                    {loc.town}<br/>
-                    Sales: {loc.totalBags + loc.totalCtns} bags/ctns<br/>
-                    Date: {loc.date}
-                  </div>
-                </Popup>
-              </CircleMarker>
-            ))}
+            {(() => {
+              if (mapLevel === 'region') {
+                const regions: Record<string, any> = {};
+                monthStats.filter(s => s.latitude && s.longitude && !s.isTSMEntry).forEach(s => {
+                  if (!regions[s.region]) {
+                    regions[s.region] = { name: s.region, sales: 0, lats: [], lngs: [], towns: new Set() };
+                  }
+                  regions[s.region].sales += (s.totalBags + s.totalCtns);
+                  regions[s.region].lats.push(s.latitude);
+                  regions[s.region].lngs.push(s.longitude);
+                  regions[s.region].towns.add(s.town);
+                });
+                return Object.values(regions).map((r: any, i) => (
+                  <CircleMarker 
+                    key={`region-${i}`} 
+                    center={[r.lats.reduce((a:any,b:any)=>a+b,0)/r.lats.length, r.lngs.reduce((a:any,b:any)=>a+b,0)/r.lngs.length]} 
+                    radius={Math.max(8, Math.min(30, r.sales / 50))}
+                    pathOptions={{ color: '#0ea5e9', fillColor: '#0ea5e9', fillOpacity: 0.6, weight: 2 }}
+                  >
+                    <Popup>
+                      <div className="p-2 min-w-[150px]">
+                        <h4 className="text-sm font-black text-slate-800 uppercase mb-1">{r.name} Region</h4>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-slate-400 font-bold uppercase">Total Sales:</span>
+                            <span className="font-black text-seablue">{Math.round(r.sales)}</span>
+                          </div>
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-slate-400 font-bold uppercase">Active Towns:</span>
+                            <span className="font-black text-slate-700">{r.towns.size}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                ));
+              } else {
+                const towns: Record<string, any> = {};
+                monthStats.filter(s => s.latitude && s.longitude && !s.isTSMEntry).forEach(s => {
+                  if (!towns[s.town]) {
+                    towns[s.town] = { name: s.town, region: s.region, sales: 0, lats: [], lngs: [], obs: new Set() };
+                  }
+                  towns[s.town].sales += (s.totalBags + s.totalCtns);
+                  towns[s.town].lats.push(s.latitude);
+                  towns[s.town].lngs.push(s.longitude);
+                  towns[s.town].obs.add(s.ob_name);
+                });
+                return Object.values(towns).map((t: any, i) => (
+                  <CircleMarker 
+                    key={`town-${i}`} 
+                    center={[t.lats.reduce((a:any,b:any)=>a+b,0)/t.lats.length, t.lngs.reduce((a:any,b:any)=>a+b,0)/t.lngs.length]} 
+                    radius={Math.max(5, Math.min(20, t.sales / 20))}
+                    pathOptions={{ color: '#006994', fillColor: '#006994', fillOpacity: 0.6, weight: 1 }}
+                  >
+                    <Popup>
+                      <div className="p-2 min-w-[150px]">
+                        <h4 className="text-sm font-black text-slate-800 uppercase mb-1">{t.name}</h4>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t.region} Region</p>
+                        <div className="space-y-1">
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-slate-400 font-bold uppercase">Total Sales:</span>
+                            <span className="font-black text-seablue">{Math.round(t.sales)}</span>
+                          </div>
+                          <div className="flex justify-between text-[10px]">
+                            <span className="text-slate-400 font-bold uppercase">Active OBs:</span>
+                            <span className="font-black text-slate-700">{t.obs.size}</span>
+                          </div>
+                        </div>
+                      </div>
+                    </Popup>
+                  </CircleMarker>
+                ));
+              }
+            })()}
           </MapContainer>
         </div>
       </div>
@@ -1987,20 +2107,9 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
                     }
                   });
 
-                  if (obReportCategoryFilter !== 'All') {
-                    // Assuming target_ctn is overall, we might not have category-wise target per OB.
-                    // If not, we just use overall target.
-                    target = Number(ob.target_ctn) || 0;
-                  } else if (obReportBrandFilter !== 'All') {
-                    target = Number(ob.target_ctn) || 0;
-                  } else {
-                    target = Number(ob.target_ctn) || 0;
-                  }
-
+                  target = Number(ob.target_ctn) || 0;
                   const perc = target > 0 ? (sales / target) * 100 : 0;
                   
-                  // Simple trend calculation (last 3 days vs previous 3 days)
-                  // For simplicity, we just show a placeholder or basic calculation
                   const recentSales = obStats.slice(-3).reduce((sum, s) => sum + s.totalBags, 0);
                   const prevSales = obStats.slice(-6, -3).reduce((sum, s) => sum + s.totalBags, 0);
                   const trend = recentSales >= prevSales ? 'up' : 'down';
@@ -2009,23 +2118,79 @@ const NationalDashboard = ({ view, stats, hierarchy, categories, skus, isSyncing
                 }).sort((a, b) => b.sales - a.sales);
 
                 return obData.map((row, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-3 text-xs font-black text-slate-700">{row.ob_name} <span className="text-[9px] text-slate-400 font-normal block">{row.ob_id}</span></td>
-                    <td className="px-6 py-3 text-xs font-bold text-slate-500">{row.town_name}</td>
-                    <td className="px-6 py-3 text-xs font-bold text-slate-500">{row.asm_tsm_name}</td>
-                    <td className="px-6 py-3 text-xs font-bold text-slate-600 text-right">{Math.round(row.target).toLocaleString()}</td>
-                    <td className="px-6 py-3 text-xs font-black text-seablue text-right">{Math.round(row.sales).toLocaleString()}</td>
-                    <td className={`px-6 py-3 text-xs font-black text-right ${row.perc >= 100 ? 'text-emerald-600' : row.perc >= 80 ? 'text-amber-500' : 'text-rose-600'}`}>
-                      {row.perc.toFixed(1)}%
-                    </td>
-                    <td className="px-6 py-3 text-right">
-                      {row.trend === 'up' ? (
-                        <span className="inline-flex items-center text-emerald-500"><TrendingUp className="w-4 h-4" /></span>
-                      ) : (
-                        <span className="inline-flex items-center text-rose-500"><TrendingDown className="w-4 h-4" /></span>
-                      )}
-                    </td>
-                  </tr>
+                  <React.Fragment key={row.ob_id}>
+                    <tr 
+                      className={`hover:bg-slate-50 transition-colors cursor-pointer ${selectedOBForRoute === row.ob_id ? 'bg-seablue/5' : ''}`}
+                      onClick={() => setSelectedOBForRoute(selectedOBForRoute === row.ob_id ? null : row.ob_id)}
+                    >
+                      <td className="px-6 py-3 text-xs font-black text-slate-700">
+                        <div className="flex items-center gap-2">
+                          <div className={`w-2 h-2 rounded-full ${selectedOBForRoute === row.ob_id ? 'bg-seablue animate-pulse' : 'bg-slate-200'}`} />
+                          {row.ob_name}
+                        </div>
+                        <span className="text-[9px] text-slate-400 font-normal block ml-4">{row.ob_id}</span>
+                      </td>
+                      <td className="px-6 py-3 text-xs font-bold text-slate-500">{row.town_name}</td>
+                      <td className="px-6 py-3 text-xs font-bold text-slate-500">{row.asm_tsm_name}</td>
+                      <td className="px-6 py-3 text-xs font-bold text-slate-600 text-right">{Math.round(row.target).toLocaleString()}</td>
+                      <td className="px-6 py-3 text-xs font-black text-seablue text-right">{Math.round(row.sales).toLocaleString()}</td>
+                      <td className={`px-6 py-3 text-xs font-black text-right ${row.perc >= 100 ? 'text-emerald-600' : row.perc >= 80 ? 'text-amber-500' : 'text-rose-600'}`}>
+                        {row.perc.toFixed(1)}%
+                      </td>
+                      <td className="px-6 py-3 text-right">
+                        {row.trend === 'up' ? (
+                          <span className="inline-flex items-center text-emerald-500"><TrendingUp className="w-4 h-4" /></span>
+                        ) : (
+                          <span className="inline-flex items-center text-rose-500"><TrendingDown className="w-4 h-4" /></span>
+                        )}
+                      </td>
+                    </tr>
+                    {selectedOBForRoute === row.ob_id && (
+                      <tr>
+                        <td colSpan={7} className="px-6 py-4 bg-slate-50/50">
+                          <motion.div 
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
+                          >
+                            <div className="px-4 py-3 border-b border-slate-50 bg-slate-50/30 flex justify-between items-center">
+                              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Route Performance: {row.ob_name}</h4>
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{obRoutePerformance.length} Routes Found</span>
+                            </div>
+                            <table className="w-full text-left">
+                              <thead>
+                                <tr className="text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                                  <th className="px-4 py-2">Route Name</th>
+                                  <th className="px-4 py-2 text-right">Sales</th>
+                                  <th className="px-4 py-2 text-right">Productivity</th>
+                                  <th className="px-4 py-2 text-right">Visits</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-50">
+                                {obRoutePerformance.map((route: any) => (
+                                  <tr key={route.name} className="hover:bg-slate-50/30 transition-colors">
+                                    <td className="px-4 py-2 text-[10px] font-bold text-slate-700">{route.name}</td>
+                                    <td className="px-4 py-2 text-right text-[10px] font-black text-seablue">{Math.round(route.sales)}</td>
+                                    <td className="px-4 py-2 text-right">
+                                      <span className="text-[10px] font-bold text-emerald-600">
+                                        {route.visited > 0 ? ((route.productive / route.visited) * 100).toFixed(0) : 0}%
+                                      </span>
+                                    </td>
+                                    <td className="px-4 py-2 text-right text-[10px] font-medium text-slate-500">{route.visited}</td>
+                                  </tr>
+                                ))}
+                                {obRoutePerformance.length === 0 && (
+                                  <tr>
+                                    <td colSpan={4} className="px-4 py-6 text-center text-[10px] font-black text-slate-400 uppercase">No route data available</td>
+                                  </tr>
+                                )}
+                              </tbody>
+                            </table>
+                          </motion.div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
                 ));
               })()}
             </tbody>
@@ -3097,7 +3262,8 @@ const StatsView = ({
   history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, 
   userRole, userName, userRegion, userContact, onRefresh, isSyncing, 
   selectedMonth, setSelectedMonth,
-  dailyStatus, fetchDailyStatus, isLoadingDailyStatus
+  dailyStatus, fetchDailyStatus, isLoadingDailyStatus,
+  missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries
 }: any) => {
   const currentMonth = selectedMonth || getPSTDate().slice(0, 7);
   const today = getPSTDate();
@@ -3168,18 +3334,20 @@ const StatsView = ({
   const dateWiseSummary = useMemo(() => {
     if (!history) return [];
     const dates = Array.from(new Set(history.filter(s => s.date.startsWith(currentMonth)).map(s => s.date))).sort().reverse();
-    const totalOBs = obAssignments.length;
+    const totalOBsCount = filteredOBs.length;
     
     return dates.map(date => {
       const dayStats = history.filter(s => s.date === date && !s.isTSMEntry);
-      const submittedCount = dayStats.filter(s => s.visit_type !== 'Absent').length;
-      const absentCount = dayStats.filter(s => s.visit_type === 'Absent').length;
-      const pendingCount = Math.max(0, totalOBs - (submittedCount + absentCount));
-      const rrOBs = dayStats.filter(s => s.visit_type === 'RR');
+      // Filter dayStats to only include OBs visible to the current user
+      const visibleDayStats = dayStats.filter(s => filteredOBs.some((ob: any) => ob.contact === s.ob_contact));
+      const submittedCount = visibleDayStats.filter(s => s.visit_type !== 'Absent').length;
+      const absentCount = visibleDayStats.filter(s => s.visit_type === 'Absent').length;
+      const pendingCount = Math.max(0, totalOBsCount - (submittedCount + absentCount));
+      const rrOBs = visibleDayStats.filter(s => s.visit_type === 'RR');
       
       return {
         date,
-        totalOBs,
+        totalOBs: totalOBsCount,
         submittedCount,
         absentCount,
         pendingCount,
@@ -3190,7 +3358,7 @@ const StatsView = ({
         }))
       };
     }).slice(0, 10); // Show last 10 days
-  }, [history, obAssignments]);
+  }, [history, filteredOBs, currentMonth]);
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
@@ -3951,8 +4119,8 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
       obs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
     }
     
-    // Exclude TSM entries and Test OBs from reports
-    return obs.filter((ob: any) => !isTSMEntry(ob.name, ob.tsm) && !ob.name.toLowerCase().includes('test')).map((ob: any) => {
+    // Exclude Test OBs from reports, but keep TSM entries functional as requested
+    return obs.filter((ob: any) => !ob.name.toLowerCase().includes('test')).map((ob: any) => {
       const obHierarchy = hierarchy?.find((h: any) => h.ob_id === ob.contact);
       const targets: Record<string, number> = {};
       if (obHierarchy) {
@@ -4100,93 +4268,9 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
         </div>
       </motion.div>
 
-      {/* Missing Entries Report (Renamed from OB Submission Status) */}
-      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
-        <div className="px-6 py-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-              <ClipboardList className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
-                {userRole === 'OB' ? 'My Activity Status' : 'Missing Entries Report'}
-              </h3>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Report based on your assigned hierarchy</p>
-            </div>
-          </div>
-          <div className="flex gap-4">
-            <div className="flex flex-col items-end bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Working Days</span>
-              <span className="text-xs font-black text-seablue">{(() => {
-                const totalDays = Number(appConfig.total_working_days || 25);
-                const passed = history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((acc: Set<string>, h: any) => acc.add(h.date), new Set()).size;
-                return passed || 0;
-              })()}</span>
-            </div>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-6 py-4 whitespace-nowrap">Hierarchy</th>
-                <th className="px-6 py-4 whitespace-nowrap">OB Name</th>
-                <th className="px-6 py-4 whitespace-nowrap">TSM</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">Entries</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">Missing</th>
-                <th className="px-6 py-4 whitespace-nowrap">Last Entry</th>
-                <th className="px-6 py-4 text-right whitespace-nowrap">Efficiency</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filteredOBs.map((ob: any, idx: number) => {
-                const obStats = reportsMonthStats.filter((h: any) => h.ob_contact === ob.contact);
-                const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
-                const workingDaysTillDate = history.filter((h: any) => h.date.startsWith(currentMonth)).reduce((acc: Set<string>, h: any) => acc.add(h.date), new Set()).size;
-                const missing = Math.max(0, workingDaysTillDate - uniqueEntryDays);
-                const lastEntry = obStats.sort((a: any, b: any) => b.date.localeCompare(a.date))[0];
-                const efficiency = workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0;
-                
-                return (
-                  <tr key={ob.contact || `ob-missing-${idx}`} className="group hover:bg-slate-50/80 transition-all duration-200">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <p className="text-[8px] font-black text-slate-400 uppercase leading-none">National &gt; {ob.region}</p>
-                      <p className="text-[9px] font-bold text-slate-600 uppercase mt-0.5">{ob.town}</p>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <p className="text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{ob.name}</p>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{ob.contact}</p>
-                    </td>
-                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.tsm}</td>
-                    <td className="px-6 py-4 text-center">
-                      <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{obStats.length}</span>
-                    </td>
-                    <td className="px-6 py-4 text-center">
-                      <span className={`text-xs font-black px-2 py-1 rounded-lg ${missing > 0 ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}>
-                        {missing}
-                      </span>
-                    </td>
-                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500 font-mono">{lastEntry?.date || 'Never'}</td>
-                    <td className="px-6 py-4 text-right">
-                      <div className="flex flex-col items-end gap-1 w-24 ml-auto">
-                        <span className={`text-[10px] font-black ${efficiency < 80 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                          {efficiency.toFixed(0)}%
-                        </span>
-                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div 
-                            className={`h-full rounded-full ${efficiency < 80 ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                            style={{ width: `${Math.min(100, efficiency)}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
+
+
+
 
       {userRole !== 'OB' && (
         <>
@@ -5324,6 +5408,10 @@ export default function App() {
         const data = await response.json();
         if (data && data.error) {
           errorMsg = data.error;
+          // If token is invalid/expired, logout
+          if (errorMsg.toLowerCase().includes('token')) {
+            handleLogout();
+          }
         }
       } catch (e) {}
       setMessage({ text: errorMsg, type: 'error' });
@@ -5475,6 +5563,24 @@ export default function App() {
   const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupLogs, setBackupLogs] = useState<any[]>([]);
+  const [missingEntriesReport, setMissingEntriesReport] = useState<any[]>([]);
+  const [isLoadingMissingEntries, setIsLoadingMissingEntries] = useState(false);
+
+  const fetchMissingEntriesReport = async (month?: string) => {
+    setIsLoadingMissingEntries(true);
+    try {
+      const m = month || selectedMonth;
+      const res = await apiFetch(`/api/reports/missing-entries?month=${m}`);
+      if (res.ok) {
+        const data = await res.json();
+        setMissingEntriesReport(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch missing entries report:", err);
+    } finally {
+      setIsLoadingMissingEntries(false);
+    }
+  };
 
   // Move Stocks hooks to top level
   const allDistributors = useMemo(() => {
@@ -5922,9 +6028,12 @@ export default function App() {
           visitType: ''
         });
         localStorage.removeItem(STORAGE_KEY);
-      } else throw new Error('Failed to submit');
-    } catch (err) {
-      setMessage({ text: 'Error submitting', type: 'error' });
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to submit');
+      }
+    } catch (err: any) {
+      setMessage({ text: err.message || 'Error submitting', type: 'error' });
     } finally {
       setIsSubmitting(false);
       setTimeout(() => setMessage(null), 3000);
@@ -6140,7 +6249,7 @@ export default function App() {
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isRegisteringUser, setIsRegisteringUser] = useState(false);
-  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '' });
+  const [newUser, setNewUser] = useState({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '', email: '', tsm: '', ob: '' });
 
   const fetchUsers = async () => {
     if (!token || token === 'null') return;
@@ -6166,7 +6275,7 @@ export default function App() {
       });
       if (res.ok) {
         setMessage({ text: "User registered successfully", type: 'success' });
-        setNewUser({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '' });
+        setNewUser({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '', email: '', tsm: '', ob: '' });
         fetchUsers();
       } else {
         const data = await res.json();
@@ -6994,7 +7103,7 @@ export default function App() {
     );
   }
 
-  if (view === 'dashboard' || view === 'command_center' || view === 'insights') {
+  if (view === 'dashboard' || view === 'command_center' || view === 'insights' || view === 'missing_entries') {
     try {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
@@ -7042,8 +7151,12 @@ export default function App() {
                 lastSync={appConfig.last_sync_at}
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
+                apiFetch={apiFetch}
                 backupLogs={backupLogs}
                 stockHistory={stockHistory}
+                missingEntriesReport={missingEntriesReport}
+                fetchMissingEntriesReport={fetchMissingEntriesReport}
+                isLoadingMissingEntries={isLoadingMissingEntries}
               />
             )}
           </div>
@@ -7496,40 +7609,14 @@ export default function App() {
               </div>
             </div>
 
-            <div className="card-clean p-4">
-              <h3 className="text-sm font-bold text-seablue uppercase tracking-widest">
-                {userRole === 'OB' ? 'My Activity Status' : 'Missing Entries Report'}
-              </h3>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-4 -mt-2">
-                Report based on your assigned hierarchy
-              </p>
-              <div className="space-y-3">
-                {filteredOBAssignments.map(ob => {
-                  const obOrders = mtdOrders.filter(o => o.ob_contact === ob.contact);
-                  const lastOrder = [...obOrders].sort((a, b) => (b.date || '').localeCompare(a.date || ''))[0];
-                  const totalWorkingDays = Number(appConfig.total_working_days || 25);
-                  const entryDays = new Set(obOrders.map(o => o.date)).size;
-                  const isLate = lastOrder ? (new Date().getTime() - new Date(lastOrder.date).getTime()) > (2 * 24 * 60 * 60 * 1000) : true;
-
-                  return (
-                    <div key={ob.contact} className={`flex justify-between items-center p-2 rounded-lg border ${isLate ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
-                      <div>
-                        <div className="text-[10px] font-bold text-slate-700">{ob.name}</div>
-                        <div className="text-[8px] text-slate-400">Last: {lastOrder?.date || 'No Entry'} • {lastOrder?.route || 'N/A'}</div>
-                      </div>
-                      <div className="text-right">
-                        <div className={`text-[10px] font-black ${entryDays >= timeGone.passed ? 'text-emerald-600' : 'text-amber-600'}`}>
-                          {entryDays} / {totalWorkingDays} Days
-                        </div>
-                        <div className="text-[7px] text-slate-400 uppercase font-bold">
-                          {isLate ? 'Missing > 2 Days' : 'Active'}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
+          <div className="card-clean p-6">
+            <MissingEntriesReport 
+              report={missingEntriesReport} 
+              onRefresh={fetchMissingEntriesReport} 
+              isLoading={isLoadingMissingEntries} 
+              selectedMonth={selectedMonth} 
+            />
+          </div>
           </div>
 
           {/* Target vs Achievement (MTD) - Added here as requested */}
@@ -7973,6 +8060,9 @@ export default function App() {
             dailyStatus={dailyStatus}
             fetchDailyStatus={fetchDailyStatus}
             isLoadingDailyStatus={isLoadingDailyStatus}
+            missingEntriesReport={missingEntriesReport}
+            fetchMissingEntriesReport={fetchMissingEntriesReport}
+            isLoadingMissingEntries={isLoadingMissingEntries}
           />
         )}
       </div>
@@ -8689,6 +8779,7 @@ export default function App() {
               <form onSubmit={handleRegisterUser} className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-2 bg-slate-50 p-3 rounded-xl border border-slate-100">
                 <input type="text" placeholder="Username" value={newUser.username || ''} onChange={e => setNewUser({...newUser, username: e.target.value})} className="input-clean text-[10px]" required />
                 <input type="text" placeholder="Full Name" value={newUser.name} onChange={e => setNewUser({...newUser, name: e.target.value})} className="input-clean text-[10px]" required />
+                <input type="email" placeholder="Email" value={newUser.email} onChange={e => setNewUser({...newUser, email: e.target.value})} className="input-clean text-[10px]" required />
                 <input type="text" placeholder="Contact/ID" value={newUser.contact} onChange={e => setNewUser({...newUser, contact: e.target.value})} className="input-clean text-[10px]" />
                   <select value={newUser.role} onChange={e => setNewUser({...newUser, role: e.target.value})} className="input-clean text-[10px]">
                     <option value="OB">Order Booker (OB)</option>
@@ -8702,6 +8793,8 @@ export default function App() {
                     <option value="Super Admin">Super Admin</option>
                   </select>
                 <input type="text" placeholder="Region" value={newUser.region} onChange={e => setNewUser({...newUser, region: e.target.value})} className="input-clean text-[10px]" />
+                <input type="text" placeholder="TSM Name" value={newUser.tsm} onChange={e => setNewUser({...newUser, tsm: e.target.value})} className="input-clean text-[10px]" />
+                <input type="text" placeholder="OB Name" value={newUser.ob} onChange={e => setNewUser({...newUser, ob: e.target.value})} className="input-clean text-[10px]" />
                 <button type="submit" disabled={isRegisteringUser} className="btn-seablue text-[10px] py-1">
                   {isRegisteringUser ? '...' : '+ Register'}
                 </button>

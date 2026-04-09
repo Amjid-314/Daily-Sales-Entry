@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ClipboardList, ChevronRight, ChevronDown, Calendar, User, Users, RefreshCw, Search } from 'lucide-react';
+import { ClipboardList, ChevronRight, ChevronDown, Calendar, User, Users, RefreshCw, Search, Download } from 'lucide-react';
 
 interface MissingEntry {
   ob_name: string;
@@ -34,6 +34,34 @@ export const MissingEntriesReport: React.FC<Props> = ({ report, onRefresh, isLoa
     
     return matchesSearch && matchesFilter;
   });
+
+  const exportToCSV = () => {
+    const headers = ['OB Name', 'OB Contact', 'TSM', 'Total Working Days', 'Entries Count', 'Missing Days', 'Missing Dates'];
+    const rows = filteredReport.map(item => [
+      item.ob_name,
+      item.ob_contact,
+      item.tsm,
+      item.total_working_days,
+      item.entries_count,
+      item.missing_days_count,
+      item.missing_dates.join('; ')
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.map(val => `"${String(val).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    const url = URL.createObjectURL(blob);
+    link.setAttribute('href', url);
+    link.setAttribute('download', `Missing_Entries_Report_${selectedMonth}.csv`);
+    link.style.visibility = 'hidden';
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   // Summarize by TSM
   interface TsmSummaryItem {
@@ -72,6 +100,13 @@ export const MissingEntriesReport: React.FC<Props> = ({ report, onRefresh, isLoa
               className="input-clean w-full pl-10 py-2 text-xs"
             />
           </div>
+          <button 
+            onClick={exportToCSV}
+            className="flex items-center gap-2 px-3 py-2 bg-emerald-600 text-white rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-md shadow-emerald-100"
+          >
+            <Download className="w-4 h-4" />
+            <span className="hidden sm:inline">Export Excel</span>
+          </button>
           <button 
             onClick={() => onRefresh()} 
             disabled={isLoading}
