@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { User, Loader2, ChevronRight, AlertCircle, Waves } from 'lucide-react';
+import { User, Loader2, ChevronRight, AlertCircle } from 'lucide-react';
+import { Logo } from './Logo';
 
 interface LoginProps {
   onLogin: (token: string, user: any) => void;
@@ -46,9 +47,9 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
         className="max-w-md w-full bg-white rounded-3xl shadow-2xl p-10 border border-slate-100"
       >
         <div className="flex flex-col items-center mb-10">
-          <div className="w-24 h-24 bg-white rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-slate-200/20 overflow-hidden border border-slate-50 relative group">
+          <div className={`bg-white rounded-3xl flex items-center justify-center mb-6 shadow-xl shadow-slate-200/20 overflow-hidden border border-slate-50 relative group ${logo ? 'h-24 px-4' : 'w-24 h-24'}`}>
             {logo ? (
-              <img src={logo} alt="App Logo" className="w-full h-full object-contain p-2" />
+              <img src={logo} alt="App Logo" className="h-full w-auto object-contain py-2" />
             ) : (
               <div className="w-full h-full bg-gradient-to-br from-seablue to-indigo-600 flex items-center justify-center relative overflow-hidden">
                 <motion.div
@@ -63,7 +64,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
                   }}
                   className="relative z-10"
                 >
-                  <Waves className="text-white w-12 h-12 drop-shadow-lg" />
+                  <Logo className="text-white w-12 h-12 drop-shadow-lg" />
                 </motion.div>
                 <div className="absolute inset-0 bg-white/10 opacity-0 group-hover:opacity-100 transition-opacity" />
                 <motion.div 

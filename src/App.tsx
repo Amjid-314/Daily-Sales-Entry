@@ -21,6 +21,8 @@ import {
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
 import { AIChatBot } from './components/AIChatBot';
 import { MainNav, APP_TABS } from './components/MainNav';
+import { Logo } from './components/Logo';
+import { TOWN_COORDINATES } from './townCoordinates';
 import { DailyStatusView } from './components/DailyStatusView';
 import { Calendar as CalendarComponent } from './components/Calendar';
 import { EntryForm } from './components/EntryForm';
@@ -51,7 +53,6 @@ import {
   Trash,
   Search,
   Lock,
-  Waves,
   Store,
   Clock,
   EyeOff,
@@ -133,6 +134,11 @@ const NationalDashboard = ({
   });
 
   const [mapLevel, setMapLevel] = useState<'region' | 'town'>('town');
+  const [mapFilterRegion, setMapFilterRegion] = useState('All');
+  const [mapFilterTSM, setMapFilterTSM] = useState('All');
+  const [mapFilterTown, setMapFilterTown] = useState('All');
+  const [mapFilterOB, setMapFilterOB] = useState('All');
+  const [mapFilterBrand, setMapFilterBrand] = useState('All');
   const [selectedOBForRoute, setSelectedOBForRoute] = useState<string | null>(null);
   const [filterValue, setFilterValue] = useState<string>(() => {
     if (userRole === 'RSM' || userRole === 'SC') return userRegion || '';
@@ -1946,21 +1952,76 @@ const NationalDashboard = ({
         <>
       {/* Geospatial Sales Distribution Map */}
       <div className="card-clean bg-white overflow-hidden mb-6">
-        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Geospatial Sales Distribution</h3>
-          <div className="flex bg-white rounded-lg p-1 border border-slate-200">
-            <button 
-              onClick={() => setMapLevel('region')}
-              className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${mapLevel === 'region' ? 'bg-seablue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex flex-col gap-3">
+          <div className="flex justify-between items-center">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Geospatial Sales Distribution</h3>
+            <div className="flex bg-white rounded-lg p-1 border border-slate-200">
+              <button 
+                onClick={() => setMapLevel('region')}
+                className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${mapLevel === 'region' ? 'bg-seablue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                Region
+              </button>
+              <button 
+                onClick={() => setMapLevel('town')}
+                className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${mapLevel === 'town' ? 'bg-seablue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              >
+                Town
+              </button>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <select 
+              value={mapFilterBrand} 
+              onChange={e => setMapFilterBrand(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
             >
-              Region
-            </button>
-            <button 
-              onClick={() => setMapLevel('town')}
-              className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${mapLevel === 'town' ? 'bg-seablue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+              <option value="All">All Brands</option>
+              {CATEGORIES.map(c => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+            <select 
+              value={mapFilterRegion} 
+              onChange={e => setMapFilterRegion(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
             >
-              Town
-            </button>
+              <option value="All">All Regions</option>
+              {Array.from(new Set(monthStats.filter(s => !s.isTSMEntry).map(s => s.region))).filter(Boolean).sort().map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
+            </select>
+            <select 
+              value={mapFilterTSM} 
+              onChange={e => setMapFilterTSM(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
+            >
+              <option value="All">All TSMs</option>
+              {Array.from(new Set(monthStats.filter(s => !s.isTSMEntry && (mapFilterRegion === 'All' || s.region === mapFilterRegion)).map(s => s.tsm))).filter(Boolean).sort().map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <select 
+              value={mapFilterTown} 
+              onChange={e => setMapFilterTown(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
+            >
+              <option value="All">All Towns</option>
+              {Array.from(new Set(monthStats.filter(s => !s.isTSMEntry && (mapFilterRegion === 'All' || s.region === mapFilterRegion) && (mapFilterTSM === 'All' || s.tsm === mapFilterTSM)).map(s => s.town))).filter(Boolean).sort().map(t => (
+                <option key={t} value={t}>{t}</option>
+              ))}
+            </select>
+            <select 
+              value={mapFilterOB} 
+              onChange={e => setMapFilterOB(e.target.value)}
+              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
+            >
+              <option value="All">All OBs</option>
+              {Array.from(new Set(monthStats.filter(s => !s.isTSMEntry && (mapFilterRegion === 'All' || s.region === mapFilterRegion) && (mapFilterTSM === 'All' || s.tsm === mapFilterTSM) && (mapFilterTown === 'All' || s.town === mapFilterTown)).map(s => s.ob_name))).filter(Boolean).sort().map(o => (
+                <option key={o} value={o}>{o}</option>
+              ))}
+            </select>
           </div>
         </div>
         <div className="h-[450px] w-full z-0 relative">
@@ -1970,15 +2031,42 @@ const NationalDashboard = ({
               attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
             />
             {(() => {
+              const filteredMapStats = monthStats.filter(s => {
+                if (s.isTSMEntry) return false;
+                if (mapFilterRegion !== 'All' && s.region !== mapFilterRegion) return false;
+                if (mapFilterTSM !== 'All' && s.tsm !== mapFilterTSM) return false;
+                if (mapFilterTown !== 'All' && s.town !== mapFilterTown) return false;
+                if (mapFilterOB !== 'All' && s.ob_name !== mapFilterOB) return false;
+                return true;
+              });
+
+              const getSalesForBrand = (s: any) => {
+                if (mapFilterBrand === 'All') return s.totalBags + s.totalCtns;
+                
+                const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : (s.order_data || {});
+                const brandSkus = SKUS.filter((sku: any) => sku.category === mapFilterBrand);
+                return brandSkus.reduce((sum: number, sku: any) => {
+                  const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                  const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                  return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                }, 0);
+              };
+
               if (mapLevel === 'region') {
                 const regions: Record<string, any> = {};
-                monthStats.filter(s => s.latitude && s.longitude && !s.isTSMEntry).forEach(s => {
+                filteredMapStats.forEach(s => {
+                  const coords = TOWN_COORDINATES[s.town] || (s.latitude && s.longitude ? [s.latitude, s.longitude] : null);
+                  if (!coords) return;
+                  
+                  const salesToAdd = getSalesForBrand(s);
+                  if (salesToAdd <= 0 && mapFilterBrand !== 'All') return; // Skip if filtering by brand and no sales
+
                   if (!regions[s.region]) {
                     regions[s.region] = { name: s.region, sales: 0, lats: [], lngs: [], towns: new Set() };
                   }
-                  regions[s.region].sales += (s.totalBags + s.totalCtns);
-                  regions[s.region].lats.push(s.latitude);
-                  regions[s.region].lngs.push(s.longitude);
+                  regions[s.region].sales += salesToAdd;
+                  regions[s.region].lats.push(coords[0]);
+                  regions[s.region].lngs.push(coords[1]);
                   regions[s.region].towns.add(s.town);
                 });
                 return Object.values(regions).map((r: any, i) => (
@@ -1993,7 +2081,7 @@ const NationalDashboard = ({
                         <h4 className="text-sm font-black text-slate-800 uppercase mb-1">{r.name} Region</h4>
                         <div className="space-y-1">
                           <div className="flex justify-between text-[10px]">
-                            <span className="text-slate-400 font-bold uppercase">Total Sales:</span>
+                            <span className="text-slate-400 font-bold uppercase">Sales {mapFilterBrand !== 'All' ? `(${mapFilterBrand})` : ''}:</span>
                             <span className="font-black text-seablue">{Math.round(r.sales)}</span>
                           </div>
                           <div className="flex justify-between text-[10px]">
@@ -2007,13 +2095,25 @@ const NationalDashboard = ({
                 ));
               } else {
                 const towns: Record<string, any> = {};
-                monthStats.filter(s => s.latitude && s.longitude && !s.isTSMEntry).forEach(s => {
+                filteredMapStats.forEach(s => {
+                  const coords = TOWN_COORDINATES[s.town] || (s.latitude && s.longitude ? [s.latitude, s.longitude] : null);
+                  if (!coords) return;
+
+                  const salesToAdd = getSalesForBrand(s);
+                  if (salesToAdd <= 0 && mapFilterBrand !== 'All') return; // Skip if filtering by brand and no sales
+
                   if (!towns[s.town]) {
                     towns[s.town] = { name: s.town, region: s.region, sales: 0, lats: [], lngs: [], obs: new Set() };
                   }
-                  towns[s.town].sales += (s.totalBags + s.totalCtns);
-                  towns[s.town].lats.push(s.latitude);
-                  towns[s.town].lngs.push(s.longitude);
+                  towns[s.town].sales += salesToAdd;
+                  // Use predefined coordinates if available, otherwise fallback to entry coordinates
+                  if (TOWN_COORDINATES[s.town]) {
+                    towns[s.town].lats = [TOWN_COORDINATES[s.town][0]];
+                    towns[s.town].lngs = [TOWN_COORDINATES[s.town][1]];
+                  } else {
+                    towns[s.town].lats.push(coords[0]);
+                    towns[s.town].lngs.push(coords[1]);
+                  }
                   towns[s.town].obs.add(s.ob_name);
                 });
                 return Object.values(towns).map((t: any, i) => (
@@ -2029,7 +2129,7 @@ const NationalDashboard = ({
                         <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t.region} Region</p>
                         <div className="space-y-1">
                           <div className="flex justify-between text-[10px]">
-                            <span className="text-slate-400 font-bold uppercase">Total Sales:</span>
+                            <span className="text-slate-400 font-bold uppercase">Sales {mapFilterBrand !== 'All' ? `(${mapFilterBrand})` : ''}:</span>
                             <span className="font-black text-seablue">{Math.round(t.sales)}</span>
                           </div>
                           <div className="flex justify-between text-[10px]">
@@ -3669,7 +3769,7 @@ const StatsView = ({
       <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
         <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-3">
           <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-            <Waves className="w-4 h-4" />
+            <Logo className="w-4 h-4" />
           </div>
           <div>
             <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">TSM Activity Report</h3>
@@ -3898,6 +3998,10 @@ const StatsView = ({
 
 const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, userName, userRegion, selectedMonth, setSelectedMonth, setView, onRefresh, isSyncing }: any) => {
   const [sortConfig, setSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'achievementPerc', direction: 'asc' });
+  const [obSortConfig, setObSortConfig] = useState<{ key: string, direction: 'asc' | 'desc' }>({ key: 'achievementPerc', direction: 'asc' });
+  const [obFilterRegion, setObFilterRegion] = useState('All');
+  const [obFilterTSM, setObFilterTSM] = useState('All');
+  const [obFilterBrand, setObFilterBrand] = useState('All');
 
   const tsmPerformanceData = useMemo(() => {
     const monthStats = history.filter((h: any) => h.date.startsWith(selectedMonth));
@@ -4008,6 +4112,162 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
     setSortConfig({ key, direction });
   };
 
+  const obPerformanceData = useMemo(() => {
+    const monthStats = history.filter((h: any) => h.date.startsWith(selectedMonth));
+    const obs: Record<string, any> = {};
+
+    // Filter hierarchy based on role
+    const filteredHierarchy = hierarchy.filter((h: any) => {
+      if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return true;
+      if (userRole === 'RSM' || userRole === 'SC') return (h.territory_region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase();
+      if (userRole === 'TSM' || userRole === 'ASM') return (h.asm_tsm_name || '').trim().toLowerCase() === (userName || '').trim().toLowerCase();
+      return false;
+    });
+
+    // Initialize OBs from hierarchy
+    filteredHierarchy.forEach((h: any) => {
+      const obContact = h.ob_id || 'Unassigned';
+      if (!obs[obContact]) {
+        obs[obContact] = {
+          region: h.territory_region || 'Unassigned',
+          rsm: h.rsm_name || 'Unassigned',
+          tsmName: h.asm_tsm_name || 'Unassigned',
+          town: h.town || 'Unassigned',
+          obName: h.ob_name || 'Unassigned',
+          obContact: obContact,
+          brands: {}
+        };
+        CATEGORIES.forEach((cat: string) => {
+          const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+          obs[obContact].brands[cat] = {
+            target: Number(h[targetKey]) || 0,
+            achievement: 0
+          };
+        });
+      } else {
+        CATEGORIES.forEach((cat: string) => {
+          const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
+          obs[obContact].brands[cat].target += Number(h[targetKey]) || 0;
+        });
+      }
+    });
+
+    // Process sales data
+    monthStats.forEach((s: any) => {
+      if (s.isTSMEntry) return; // Exclude TSM direct entries
+      
+      const obContact = s.ob_contact;
+      if (!obs[obContact]) return; // Only process OBs visible to user
+
+      const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : (s.order_data || {});
+      
+      CATEGORIES.forEach((cat: string) => {
+        const catSkus = SKUS.filter((sku: any) => sku.category === cat);
+        const sales = catSkus.reduce((sum: number, sku: any) => {
+          const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+          return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+        }, 0);
+        obs[obContact].brands[cat].achievement += sales;
+      });
+    });
+
+    const today = new Date();
+    const isCurrentMonth = selectedMonth === today.toISOString().slice(0, 7);
+    const dayOfMonth = isCurrentMonth ? today.getDate() : new Date(parseInt(selectedMonth.slice(0, 4)), parseInt(selectedMonth.slice(5, 7)), 0).getDate();
+    const daysInMonth = new Date(parseInt(selectedMonth.slice(0, 4)), parseInt(selectedMonth.slice(5, 7)), 0).getDate();
+    const remainingDays = Math.max(0, daysInMonth - dayOfMonth);
+
+    const result: any[] = [];
+
+    Object.values(obs).forEach((ob: any) => {
+      let obTotalTarget = 0;
+      let obTotalAchievement = 0;
+      CATEGORIES.forEach((cat: string) => {
+        obTotalTarget += ob.brands[cat].target;
+        obTotalAchievement += ob.brands[cat].achievement;
+      });
+      const obTotalPerc = obTotalTarget > 0 ? (obTotalAchievement / obTotalTarget) * 100 : 0;
+
+      CATEGORIES.forEach((cat: string) => {
+        const brandData = ob.brands[cat];
+        if (brandData.target > 0 || brandData.achievement > 0) {
+          const achievementPerc = brandData.target > 0 ? (brandData.achievement / brandData.target) * 100 : 0;
+          const avg = dayOfMonth > 0 ? brandData.achievement / dayOfMonth : 0;
+          const rpd = remainingDays > 0 ? Math.max(0, (brandData.target - brandData.achievement) / remainingDays) : 0;
+          const brandName = cat + (cat === 'DWB' || cat === 'Match' ? ' (Ctns)' : ' (Bags)');
+
+          result.push({
+            region: ob.region,
+            rsm: ob.rsm,
+            tsmName: ob.tsmName,
+            town: ob.town,
+            obName: ob.obName,
+            obContact: ob.obContact,
+            obTotalPerc,
+            brand: brandName,
+            brandRaw: cat,
+            target: brandData.target,
+            achievement: brandData.achievement,
+            achievementPerc,
+            avg,
+            rpd
+          });
+        }
+      });
+    });
+
+    return result;
+  }, [history, hierarchy, selectedMonth, userRole, userName, userRegion, CATEGORIES, SKUS]);
+
+  const filteredObData = useMemo(() => {
+    return obPerformanceData.filter(row => {
+      if (obFilterRegion !== 'All' && row.region !== obFilterRegion && row.rsm !== obFilterRegion) return false;
+      if (obFilterTSM !== 'All' && row.tsmName !== obFilterTSM) return false;
+      if (obFilterBrand !== 'All' && row.brandRaw !== obFilterBrand) return false;
+      return true;
+    });
+  }, [obPerformanceData, obFilterRegion, obFilterTSM, obFilterBrand]);
+
+  const sortedObData = useMemo(() => {
+    let sortableItems = [...filteredObData];
+    if (obSortConfig !== null) {
+      sortableItems.sort((a, b) => {
+        // Always group by OB first
+        if (a.obContact !== b.obContact) {
+          // Sort OBs by their overall performance
+          if (a.obTotalPerc !== b.obTotalPerc) {
+            return obSortConfig.direction === 'asc' ? a.obTotalPerc - b.obTotalPerc : b.obTotalPerc - a.obTotalPerc;
+          }
+          return a.obName.localeCompare(b.obName);
+        }
+
+        // Within the same OB, sort by the selected column
+        if (a[obSortConfig.key] < b[obSortConfig.key]) {
+          return obSortConfig.direction === 'asc' ? -1 : 1;
+        }
+        if (a[obSortConfig.key] > b[obSortConfig.key]) {
+          return obSortConfig.direction === 'asc' ? 1 : -1;
+        }
+        
+        // Fallback to brand order
+        return CATEGORIES.indexOf(a.brandRaw) - CATEGORIES.indexOf(b.brandRaw);
+      });
+    }
+    return sortableItems;
+  }, [filteredObData, obSortConfig, CATEGORIES]);
+
+  const requestObSort = (key: string) => {
+    let direction: 'asc' | 'desc' = 'asc';
+    if (obSortConfig && obSortConfig.key === key && obSortConfig.direction === 'asc') {
+      direction = 'desc';
+    }
+    setObSortConfig({ key, direction });
+  };
+
+  const uniqueRegions = useMemo(() => Array.from(new Set(obPerformanceData.map(d => d.region))).sort(), [obPerformanceData]);
+  const uniqueTSMs = useMemo(() => Array.from(new Set(obPerformanceData.map(d => d.tsmName))).sort(), [obPerformanceData]);
+
   const handleTSMClick = (tsmName: string) => {
     // We need to set some global filter for command center, but for now we can just navigate
     // A better way is to pass the TSM name to the command center view.
@@ -4022,7 +4282,7 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
     <div className="p-4 space-y-6 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-4 rounded-2xl shadow-sm border border-slate-100">
         <div>
-          <h1 className="text-xl font-black text-slate-800">TSM Performance</h1>
+          <h1 className="text-xl font-black text-slate-800">Target vs Achievement</h1>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Monthly Summary</p>
         </div>
         <div className="flex items-center gap-2">
@@ -4080,7 +4340,70 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
               ))}
               {sortedData.length === 0 && (
                 <tr>
-                  <td colSpan={13} className="px-4 py-8 text-center text-sm text-slate-500">No TSM performance data found for the selected month.</td>
+                  <td colSpan={13} className="px-4 py-8 text-center text-sm text-slate-500">No Target vs Achievement data found for the selected month.</td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden mt-8">
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+          <div>
+            <h2 className="text-lg font-black text-slate-800">Target vs Achievement (Brand-wise)</h2>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={obFilterRegion} onChange={(e) => setObFilterRegion(e.target.value)} className="text-xs font-bold text-slate-700 bg-slate-50 border-none rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-seablue/20">
+              <option value="All">All Regions</option>
+              {uniqueRegions.map(r => <option key={r as string} value={r as string}>{r as string}</option>)}
+            </select>
+            <select value={obFilterTSM} onChange={(e) => setObFilterTSM(e.target.value)} className="text-xs font-bold text-slate-700 bg-slate-50 border-none rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-seablue/20">
+              <option value="All">All TSMs</option>
+              {uniqueTSMs.map(t => <option key={t as string} value={t as string}>{t as string}</option>)}
+            </select>
+            <select value={obFilterBrand} onChange={(e) => setObFilterBrand(e.target.value)} className="text-xs font-bold text-slate-700 bg-slate-50 border-none rounded-xl px-3 py-1.5 focus:ring-2 focus:ring-seablue/20">
+              <option value="All">All Brands</option>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 border-b border-slate-100">
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('region')}>RSM or Region</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('tsmName')}>TSM</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('obName')}>OB</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('town')}>Town</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('brand')}>Brand</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('target')}>Target</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('achievement')}>Achievement</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('achievementPerc')}>%</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('avg')}>Avg</th>
+                <th className="px-4 py-3 text-[10px] font-black text-slate-400 uppercase tracking-widest text-right cursor-pointer hover:bg-slate-100" onClick={() => requestObSort('rpd')}>RPD</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {sortedObData.map((row, idx) => (
+                <tr key={idx} className="hover:bg-slate-50/80 transition-colors">
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600">{row.rsm !== 'Unassigned' ? row.rsm : row.region}</td>
+                  <td className="px-4 py-3 text-xs font-bold text-seablue">{row.tsmName}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600">{row.obName}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600">{row.town}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600">{row.brand}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.target.toFixed(0)}</td>
+                  <td className="px-4 py-3 text-xs font-bold text-slate-800 text-right">{row.achievement.toFixed(1)}</td>
+                  <td className={`px-4 py-3 text-xs font-bold text-right ${row.achievementPerc >= 80 ? 'text-emerald-600' : row.achievementPerc >= 50 ? 'text-amber-500' : 'text-red-600'}`}>
+                    {row.achievementPerc.toFixed(1)}%
+                  </td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.avg.toFixed(1)}</td>
+                  <td className="px-4 py-3 text-xs font-medium text-slate-600 text-right">{row.rpd.toFixed(1)}</td>
+                </tr>
+              ))}
+              {sortedObData.length === 0 && (
+                <tr>
+                  <td colSpan={10} className="px-4 py-8 text-center text-sm text-slate-500">No Target vs Achievement data found for the selected filters.</td>
                 </tr>
               )}
             </tbody>
@@ -5003,12 +5326,12 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
         <div className="bg-white rounded-3xl shadow-xl p-6 border border-slate-100 text-center relative overflow-hidden">
           <div className="absolute top-0 right-0 w-24 h-24 bg-seablue/5 rounded-full -mr-12 -mt-12" />
           <div className="flex justify-center mb-4 relative z-10">
-            <div className="w-16 h-16 bg-white rounded-2xl flex items-center justify-center shadow-md border border-slate-50 overflow-hidden">
+            <div className={`bg-white rounded-2xl flex items-center justify-center shadow-md border border-slate-50 overflow-hidden ${logo ? 'h-16 px-3' : 'w-16 h-16'}`}>
               {logo ? (
-                <img src={logo} alt="Logo" className="w-full h-full object-contain p-1.5" />
+                <img src={logo} alt="Logo" className="h-full w-auto object-contain py-1.5" />
               ) : (
                 <div className="w-full h-full bg-seablue flex items-center justify-center">
-                  <Waves className="text-white w-8 h-8" />
+                  <Logo className="text-white w-8 h-8" />
                 </div>
               )}
             </div>
@@ -8123,7 +8446,7 @@ export default function App() {
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading TSM Performance...</p>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Target vs Achievement...</p>
             </div>
           </div>
         ) : (
@@ -9259,7 +9582,7 @@ export default function App() {
       },
       {
         id: 'tsm_performance',
-        title: 'TSM Performance',
+        title: 'Target vs Achievement',
         roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'],
         color: 'border-violet-500',
         content: (
@@ -9852,13 +10175,15 @@ export default function App() {
         <div className="max-w-6xl mx-auto px-3 py-2">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white shadow-sm overflow-hidden">
-                {appLogo ? (
-                  <img src={appLogo} alt="Logo" className="w-full h-full object-cover" />
-                ) : (
-                  <Waves className="w-5 h-5" />
-                )}
-              </div>
+              {appLogo ? (
+                <div className="h-8 flex items-center justify-center">
+                  <img src={appLogo} alt="Logo" className="h-full w-auto object-contain" />
+                </div>
+              ) : (
+                <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white shadow-sm overflow-hidden">
+                  <Logo className="w-5 h-5" />
+                </div>
+              )}
               <div>
                 <h1 className="text-sm font-black text-seablue uppercase tracking-tight leading-none">SalesPulse</h1>
                 <div className="flex flex-col mt-1">
