@@ -6244,7 +6244,14 @@ export default function App() {
       fetchNationalData();
       fetchHistory(true);
     }
-  }, [view, token]);
+  }, [view, token, selectedMonth]);
+
+  useEffect(() => {
+    if (!token || token === 'null') return;
+    if (view === 'missing_entries' || view === 'stats') {
+      fetchMissingEntriesReport();
+    }
+  }, [view, token, selectedMonth]);
 
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
