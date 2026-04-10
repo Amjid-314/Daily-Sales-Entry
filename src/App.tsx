@@ -1894,6 +1894,46 @@ const NationalDashboard = ({
               Command Center ({filterLevel}) {categoryWiseCategoryFilter === 'All' ? '(All Categories)' : `(${categoryWiseCategoryFilter})`}
             </h3>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => {
+                  const headers = [
+                    filterLevel === 'National' ? 'Region' : 
+                    filterLevel === 'Region' ? 'TSM' : 
+                    filterLevel === 'TSM' ? 'Town' : 
+                    filterLevel === 'Town' ? 'OB' : 
+                    filterLevel === 'OB' ? 'Route' : 'Route',
+                    'OBs',
+                    ...filteredTableCategories.flatMap(cat => [`${cat} Tar`, `${cat} Ach`, `${cat} %`, `${cat} Tons`]),
+                    'Total Tar', 'Total Ach', 'Total %', 'Total Tons', 'Avg/OB'
+                  ];
+                  const rows = categoryWiseSales.map(row => [
+                    row.displayName || row.name,
+                    row.obCount,
+                    ...filteredTableCategories.flatMap(cat => [
+                      Math.round(row.brandTargets[cat] || 0),
+                      Math.round(row.brandSales[cat] || 0),
+                      `${Math.round((row.brandTargets[cat] || 0) > 0 ? ((row.brandSales[cat] || 0) / (row.brandTargets[cat] || 0)) * 100 : 0)}%`,
+                      (row.brandTonnage[cat] || 0).toFixed(2)
+                    ]),
+                    Math.round(row.totalTarget),
+                    Math.round(row.totalSales),
+                    `${Math.round(row.totalTarget > 0 ? (row.totalSales / row.totalTarget) * 100 : 0)}%`,
+                    row.totalTonnage.toFixed(2),
+                    Math.round(row.avgSales)
+                  ]);
+                  const csv = Papa.unparse([headers, ...rows]);
+                  const blob = new Blob([csv], { type: 'text/csv' });
+                  const url = URL.createObjectURL(blob);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `Command_Center_${filterLevel}_${selectedMonth}.csv`;
+                  a.click();
+                }}
+                className="flex items-center gap-1 bg-emerald-600 text-white px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-emerald-700 transition-all shadow-lg shadow-emerald-200"
+              >
+                <Download className="w-3 h-3" />
+                Export
+              </button>
               <select 
                 value={categoryWiseCategoryFilter} 
                 onChange={(e) => setCategoryWiseCategoryFilter(e.target.value)}
