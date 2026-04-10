@@ -96,7 +96,11 @@ function calculateAchievement(orderData: any) {
 const DB_PATH = "orders.db";
 let db: Database.Database;
 
-function initDB() {
+function initDB(retryCount = 0) {
+  if (retryCount > 3) {
+    console.error("CRITICAL: Failed to initialize database after 3 attempts. Exiting.");
+    process.exit(1);
+  }
   try {
     db = new Database(DB_PATH);
     // Initialize database
@@ -144,6 +148,72 @@ function initDB() {
         accuracy REAL,
         visit_type TEXT DEFAULT 'A',
         submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_orders_ob_contact ON submitted_orders(ob_contact);
+      CREATE INDEX IF NOT EXISTS idx_orders_date ON submitted_orders(date);
+      CREATE INDEX IF NOT EXISTS idx_orders_month ON submitted_orders(month);
+      CREATE INDEX IF NOT EXISTS idx_orders_region ON submitted_orders(region);
+      CREATE INDEX IF NOT EXISTS idx_orders_route ON submitted_orders(route);
+
+      CREATE TABLE IF NOT EXISTS ob_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        contact TEXT UNIQUE,
+        town TEXT,
+        distributor TEXT,
+        tsm TEXT,
+        supervisor TEXT,
+        zone TEXT,
+        region TEXT,
+        nsm TEXT,
+        rsm TEXT,
+        sc TEXT,
+        director TEXT,
+        total_shops INTEGER DEFAULT 50,
+        routes TEXT -- JSON array of routes
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_assignments_contact ON ob_assignments(contact);
+      CREATE INDEX IF NOT EXISTS idx_assignments_region ON ob_assignments(region);
+
+      CREATE TABLE IF NOT EXISTS distributors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        name TEXT,
+        town TEXT,
+        region TEXT,
+        tsm TEXT,
+        ob_id TEXT,
+        contact TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS national_hierarchy (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        role TEXT,
+        name TEXT,
+        contact TEXT,
+        territory_region TEXT,
+        parent_contact TEXT,
+        ob_id TEXT,
+        ob_name TEXT,
+        asm_tsm_name TEXT,
+        asm_tsm_contact TEXT
+      );
+
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        email TEXT UNIQUE,
+        password TEXT,
+        role TEXT,
+        name TEXT,
+        contact TEXT,
+        region TEXT,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS app_config (
+        key TEXT PRIMARY KEY,
+        value TEXT
       );
     `);
 
@@ -204,7 +274,7 @@ function initDB() {
           try { db.close(); } catch(e) {}
           // Re-initialize the database connection
           db = new Database(DB_PATH);
-          initDB(); // Retry initialization
+          initDB(retryCount + 1); // Retry initialization
         } else {
           throw err;
         }
@@ -515,26 +585,7 @@ async function startServer() {
     }
   });
 
-  // Admin Configuration Tables
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS ob_assignments (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT,
-      contact TEXT UNIQUE,
-      town TEXT,
-      distributor TEXT,
-      tsm TEXT,
-      supervisor TEXT,
-      zone TEXT,
-      region TEXT,
-      nsm TEXT,
-      rsm TEXT,
-      sc TEXT,
-      director TEXT,
-      total_shops INTEGER DEFAULT 50,
-      routes TEXT -- JSON array of routes
-    );
-  `);
+  // Admin Configuration Tables (Moved to initDB)
 
   // Region Renaming (Data Correction) - Run after all tables are guaranteed to exist
   try {
@@ -4221,24 +4272,26 @@ async function startServer() {
     });
   }
 
-  const server = app.listen(PORT, "0.0.0.0", async () => {
+  const server = app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
     
-    // Perform initial sync if configured
-    try {
-      const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
-      const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
-      if (config.google_spreadsheet_id) {
-        console.log("Performing initial sync from Google Sheets...");
-        const client = await getGoogleSheetsClient();
-        if (client) {
-          await performFullSync(client.sheets, client.spreadsheetId);
-          console.log("Initial sync complete.");
+    // Perform initial sync if configured (non-blocking)
+    (async () => {
+      try {
+        const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
+        const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
+        if (config.google_spreadsheet_id) {
+          console.log("Performing initial sync from Google Sheets...");
+          const client = await getGoogleSheetsClient();
+          if (client) {
+            await performFullSync(client.sheets, client.spreadsheetId);
+            console.log("Initial sync complete.");
+          }
         }
+      } catch (err) {
+        console.error("Initial sync failed:", err);
       }
-    } catch (err) {
-      console.error("Initial sync failed:", err);
-    }
+    })();
   });
 
   server.on('error', (e: any) => {
