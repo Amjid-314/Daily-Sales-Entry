@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import * as React from 'react';
+import { useState, useEffect, useRef, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
 import { 
@@ -87,14 +88,73 @@ const LOGO_STORAGE_KEY = 'app_logo_base64';
 
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
+// Error Boundary Component
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+class ErrorBoundary extends React.Component<any, any> {
+  constructor(props: any) {
+    super(props);
+    (this as any).state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error("App Error:", error, errorInfo);
+  }
+
+  render() {
+    const state = (this as any).state;
+    if (state.hasError) {
+      return (
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
+          <div className="card-clean p-8 max-w-md w-full bg-white shadow-2xl text-center space-y-6">
+            <div className="w-16 h-16 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto">
+              <AlertTriangle className="w-8 h-8" />
+            </div>
+            <div className="space-y-2">
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Something went wrong</h2>
+              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
+                The application encountered an unexpected error. Please try refreshing the page.
+              </p>
+            </div>
+            {state.error && (
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-left">
+                <p className="text-[10px] font-mono text-rose-500 break-all">{state.error.message}</p>
+              </div>
+            )}
+            <button 
+              onClick={() => window.location.reload()}
+              className="btn-seablue w-full py-3 flex items-center justify-center gap-2"
+            >
+              <RefreshCw className="w-4 h-4" />
+              Refresh Application
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return (this as any).props.children;
+  }
+}
+
 const NationalDashboard = ({ 
-  view, stats, hierarchy, categories, skus, isSyncing, onRefresh, 
+  view, setView, stats, hierarchy, categories, skus, isSyncing, onRefresh, 
   userRole, userEmail, userRegion, userName, userContact, 
   timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, 
   apiFetch, backupLogs = [], stockHistory = [],
   missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries
 }: { 
-  view?: string, stats: any[], hierarchy: any[], categories: string[], skus: any[], 
+  view?: string, setView: (v: any) => void, stats: any[], hierarchy: any[], categories: string[], skus: any[], 
   isSyncing?: boolean, onRefresh?: () => void, userRole: any, 
   userEmail?: string | null, userRegion?: string | null, userName?: string | null, 
   userContact?: string | null, timeGone: number, holidays: string, 
@@ -197,7 +257,7 @@ const NationalDashboard = ({
   const [obReportBrandFilter, setObReportBrandFilter] = useState('All');
   const [tsmSkuFilter, setTsmSkuFilter] = useState('All');
   const [worstBrandFilter, setWorstBrandFilter] = useState('All');
-  const [categoryWiseCategoryFilter, setCategoryWiseCategoryFilter] = useState('All');
+  const [categoryWiseCategoryFilter, setCategoryWiseCategoryFilter] = useState('Washing Powder*');
   const [categoryWiseBrandFilter, setCategoryWiseBrandFilter] = useState('All');
 
   const visibleFilterLevels = useMemo(() => {
@@ -723,13 +783,18 @@ const NationalDashboard = ({
     const avgSalesPerOB = uniqueOBs > 0 ? totalSales / uniqueOBs : 0;
     const dropSize = totalProductive > 0 ? totalSales / totalProductive : 0;
 
-    const brandWiseStats = brands.map(b => ({
-      name: b,
-      target: brandTargets[b] || 0,
-      achievement: brandTotals[b] || 0,
-      percentage: (brandTargets[b] || 0) > 0 ? (brandTotals[b] / brandTargets[b]) * 100 : 0,
-      tonnage: brandTonnage[b] || 0
-    }));
+    const brandWiseStats = brands.map(b => {
+      const firstSku = skus.find(s => s.category === b);
+      const unit = firstSku?.unit === 'Ctns' ? 'C' : 'B';
+      return {
+        name: b,
+        target: brandTargets[b] || 0,
+        achievement: brandTotals[b] || 0,
+        percentage: (brandTargets[b] || 0) > 0 ? (brandTotals[b] / brandTargets[b]) * 100 : 0,
+        tonnage: brandTonnage[b] || 0,
+        unit
+      };
+    });
 
     return { totalBags, totalCtns, totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, avgSalesPerOB, dropSize, totalVisited, totalProductive, totalShops, brandWiseStats };
   }, [monthStats, filteredHierarchy, brands, skus, obPerformance, topCategoryFilter, topBrandFilter]);
@@ -946,6 +1011,7 @@ const NationalDashboard = ({
       productiveShops: 0,
       brandSales: CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat]: 0 }), {}),
       brandTonnage: CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat]: 0 }), {}),
+      brandTargets: CATEGORIES.reduce((acc, cat) => ({ ...acc, [cat]: 0 }), {}),
       totalTarget: 0
     });
 
@@ -1011,7 +1077,7 @@ const NationalDashboard = ({
       CATEGORIES.forEach(cat => {
         // User requested: calculate only Washing Powder, exclude DWB+Match Sales
         // If category filter is 'All', we restrict to Washing Powder categories
-        const isWashingPowder = BRAND_GROUPS["Washing Powder"].includes(cat);
+        const isWashingPowder = BRAND_GROUPS["Washing Powder*"].includes(cat);
         const isCategoryMatch = categoryWiseCategoryFilter === 'All' 
           ? isWashingPowder 
           : BRAND_GROUPS[categoryWiseCategoryFilter]?.includes(cat);
@@ -1058,7 +1124,9 @@ const NationalDashboard = ({
           const isBrandMatch = categoryWiseBrandFilter === 'All' || categoryWiseBrandFilter === cat;
           if (isCategoryMatch && isBrandMatch) {
             const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
-            return bSum + (Number(h[targetKey]) || 0);
+            const brandTarget = (Number(h[targetKey]) || 0);
+            groups[key].brandTargets[cat] = (groups[key].brandTargets[cat] || 0) + brandTarget;
+            return bSum + brandTarget;
           }
           return bSum;
         }, 0);
@@ -1270,103 +1338,121 @@ const NationalDashboard = ({
 
       {view === 'dashboard' && (
         <>
-          {/* Bento Grid Summary */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="card-clean p-5 bg-gradient-to-br from-seablue to-indigo-900 text-white shadow-xl shadow-blue-100 relative overflow-hidden group">
-          <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Target</div>
-          <div className="text-4xl font-black tracking-tighter">{Math.round(summary.totalTarget).toLocaleString()} <span className="text-sm font-normal opacity-70">B</span></div>
-          <div className="text-[10px] font-black text-white/80 mt-2 uppercase tracking-tight">Monthly Goal</div>
-        </div>
-        <div className="card-clean p-5 bg-gradient-to-br from-emerald-600 to-teal-900 text-white shadow-xl shadow-emerald-100 relative overflow-hidden group">
-          <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Achievement</div>
-          <div className="text-4xl font-black tracking-tighter">{Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70">B</span></div>
-          <div className="text-[10px] font-black text-white/80 mt-2 uppercase tracking-tight">Current Month Sales</div>
-        </div>
-        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
-          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Achievement %</div>
-          <div className={`text-4xl font-black ${summary.achievementPerc >= 100 ? 'text-emerald-600' : summary.achievementPerc >= 80 ? 'text-amber-500' : 'text-rose-600'}`}>
-            {summary.achievementPerc.toFixed(1)}%
-          </div>
-          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Target vs Ach</div>
-        </div>
-        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
-          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">MTD Sales</div>
-          <div className="text-4xl font-black text-indigo-600">{Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70 text-slate-400">B</span></div>
-          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Month to Date</div>
-        </div>
-        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
-          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Productivity %</div>
-          <div className={`text-4xl font-black ${summary.productivity >= 70 ? 'text-emerald-600' : summary.productivity >= 50 ? 'text-amber-500' : 'text-rose-600'}`}>
-            {summary.productivity.toFixed(1)}%
-          </div>
-          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Productive / Visited</div>
-        </div>
-        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
-          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost / KG</div>
-          <div className="text-4xl font-black text-rose-600">
-            Rs.{summary.costPerKg.toFixed(1)}
-          </div>
-          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Salary Cost per KG</div>
-        </div>
-        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
-          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost / Bag</div>
-          <div className="text-4xl font-black text-rose-600">
-            Rs.{summary.costPerBag.toFixed(1)}
-          </div>
-          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Salary Cost per Bag</div>
-        </div>
-        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
-          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Avg Sales / OB</div>
-          <div className="text-4xl font-black text-seablue">
-            {Math.round(summary.avgSalesPerOB).toLocaleString()}
-          </div>
-          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Bags per OB</div>
-        </div>
-        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
-          <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Drop Size</div>
-          <div className="text-4xl font-black text-emerald-600">
-            {summary.dropSize.toFixed(1)}
-          </div>
-          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Bags / Productive Shop</div>
-        </div>
-      </div>
+          {/* A Block: Brand-Wise Performance */}
+          <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+            {summary.brandWiseStats.map((brand) => (
+              <div 
+                key={brand.name} 
+                className="card-clean p-5 bg-white border border-slate-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all cursor-pointer"
+                onClick={() => {
+                  setCategoryWiseBrandFilter(brand.name);
+                  setView('command_center');
+                }}
+              >
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand.name] }} />
+                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400">{brand.name}</span>
+                  </div>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brand.percentage >= 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
+                    {brand.percentage.toFixed(1)}%
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Target</div>
+                    <div className="text-xl font-black text-slate-700 tracking-tighter">
+                      {Math.round(brand.target).toLocaleString()} <span className="text-[10px] font-normal opacity-70">{brand.unit}</span>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Achievement</div>
+                    <div className="text-xl font-black text-seablue tracking-tighter">
+                      {Math.round(brand.achievement).toLocaleString()} <span className="text-[10px] font-normal opacity-70">{brand.unit}</span>
+                    </div>
+                  </div>
+                </div>
 
-      {/* Brand-Wise Target & Achievement */}
-      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        {summary.brandWiseStats.map((brand) => (
-          <div key={brand.name} className="card-clean p-4 bg-white border border-slate-100 space-y-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-widest" style={{ color: CATEGORY_COLORS[brand.name] }}>{brand.name}</span>
-              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${brand.percentage >= 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-slate-100 text-slate-600'}`}>
-                {brand.percentage.toFixed(1)}%
-              </span>
+                <div className="mt-4 pt-3 border-t border-slate-50 flex justify-between items-center">
+                  <div className="flex flex-col">
+                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Tonnage</span>
+                    <span className="text-xs font-black text-slate-700">{brand.tonnage.toFixed(3)} T</span>
+                  </div>
+                  <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
+                    <div 
+                      className="h-full transition-all duration-1000" 
+                      style={{ 
+                        width: `${Math.min(100, brand.percentage)}%`,
+                        backgroundColor: CATEGORY_COLORS[brand.name]
+                      }}
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Secondary Stats Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            <div className="card-clean p-5 bg-gradient-to-br from-seablue to-indigo-900 text-white shadow-xl shadow-blue-100 relative overflow-hidden group">
+              <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Total Target</div>
+              <div className="text-4xl font-black tracking-tighter">{Math.round(summary.totalTarget).toLocaleString()} <span className="text-sm font-normal opacity-70">B/C</span></div>
+              <div className="text-[10px] font-black text-white/80 mt-2 uppercase tracking-tight">Monthly Goal</div>
             </div>
-            <div className="space-y-1">
-              <div className="flex justify-between text-[10px] font-bold text-slate-400 uppercase">
-                <span>Target</span>
-                <span>{Math.round(brand.target).toLocaleString()}</span>
-              </div>
-              <div className="flex justify-between text-[10px] font-bold text-slate-600 uppercase">
-                <span>Achieved</span>
-                <span>{Math.round(brand.achievement).toLocaleString()}</span>
-              </div>
-              <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden mt-1">
-                <div 
-                  className="h-full transition-all duration-1000" 
-                  style={{ 
-                    width: `${Math.min(100, brand.percentage)}%`,
-                    backgroundColor: CATEGORY_COLORS[brand.name]
-                  }}
-                />
-              </div>
+            <div className="card-clean p-5 bg-gradient-to-br from-emerald-600 to-teal-900 text-white shadow-xl shadow-emerald-100 relative overflow-hidden group">
+              <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Total Achievement</div>
+              <div className="text-4xl font-black tracking-tighter">{Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70">B/C</span></div>
+              <div className="text-[10px] font-black text-white/80 mt-2 uppercase tracking-tight">Current Month Sales</div>
             </div>
-            <div className="pt-2 border-t border-slate-50 flex justify-between items-center">
-              <span className="text-[9px] font-bold text-slate-400 uppercase">Tonnage</span>
-              <span className="text-[10px] font-black text-slate-700">{brand.tonnage.toFixed(3)} T</span>
+            <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+              <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Achievement %</div>
+              <div className={`text-4xl font-black ${summary.achievementPerc >= 100 ? 'text-emerald-600' : summary.achievementPerc >= 80 ? 'text-amber-500' : 'text-rose-600'}`}>
+                {summary.achievementPerc.toFixed(1)}%
+              </div>
+              <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Target vs Ach</div>
+            </div>
+            <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+              <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">MTD Sales</div>
+              <div className="text-4xl font-black text-indigo-600">{Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70 text-slate-400">B/C</span></div>
+              <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Month to Date</div>
+            </div>
+            <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+              <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Productivity %</div>
+              <div className={`text-4xl font-black ${summary.productivity >= 70 ? 'text-emerald-600' : summary.productivity >= 50 ? 'text-amber-500' : 'text-rose-600'}`}>
+                {summary.productivity.toFixed(1)}%
+              </div>
+              <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Productive / Visited</div>
+            </div>
+            <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+              <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost / KG</div>
+              <div className="text-4xl font-black text-rose-600">
+                Rs.{summary.costPerKg.toFixed(1)}
+              </div>
+              <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Salary Cost per KG</div>
+            </div>
+            <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+              <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost / Bag</div>
+              <div className="text-4xl font-black text-rose-600">
+                Rs.{summary.costPerBag.toFixed(1)}
+              </div>
+              <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Salary Cost per Bag</div>
+            </div>
+            <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+              <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Avg Sales / OB</div>
+              <div className="text-4xl font-black text-seablue">
+                {Math.round(summary.avgSalesPerOB).toLocaleString()}
+              </div>
+              <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Bags per OB</div>
+            </div>
+            <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+              <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Drop Size</div>
+              <div className="text-4xl font-black text-emerald-600">
+                {summary.dropSize.toFixed(1)}
+              </div>
+              <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Bags / Productive Shop</div>
             </div>
           </div>
-        ))}
-      </div>
 
       {/* Charts Section */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -1805,7 +1891,7 @@ const NationalDashboard = ({
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-              Command Center ({filterLevel}) {categoryWiseCategoryFilter === 'All' ? '(Washing Powder*)' : ''}
+              Command Center ({filterLevel}) {categoryWiseCategoryFilter === 'All' ? '(All Categories)' : `(${categoryWiseCategoryFilter})`}
             </h3>
             <div className="flex items-center gap-2">
               <select 
@@ -1813,7 +1899,7 @@ const NationalDashboard = ({
                 onChange={(e) => setCategoryWiseCategoryFilter(e.target.value)}
                 className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1 focus:outline-none focus:ring-1 focus:ring-slate-400"
               >
-                <option value="All">Washing Powder*</option>
+                <option value="All">All Categories</option>
                 {Object.keys(BRAND_GROUPS).map(group => (
                   <option key={group} value={group}>{group}</option>
                 ))}
@@ -1843,19 +1929,23 @@ const NationalDashboard = ({
                   </th>
                   <th rowSpan={2} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center">OBs</th>
                   {filteredTableCategories.map(cat => (
-                    <th key={cat} colSpan={2} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center border-l border-slate-100">{cat}</th>
+                    <th key={cat} colSpan={4} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center border-l border-slate-100">{cat}</th>
                   ))}
-                  <th colSpan={2} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center border-l border-slate-100">Total</th>
+                  <th colSpan={4} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-center border-l border-slate-100">Total</th>
                   <th rowSpan={2} className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Avg/OB</th>
                 </tr>
                 <tr className="border-b border-slate-100 bg-slate-50/50">
                   {filteredTableCategories.map(cat => (
                     <React.Fragment key={cat}>
-                      <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right border-l border-slate-100">Bags</th>
+                      <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right border-l border-slate-100">Tar</th>
+                      <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right">Ach</th>
+                      <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right">%</th>
                       <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right">Tons</th>
                     </React.Fragment>
                   ))}
-                  <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right border-l border-slate-100">Bags</th>
+                  <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right border-l border-slate-100">Tar</th>
+                  <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right">Ach</th>
+                  <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right">%</th>
                   <th className="px-6 py-3 text-[8px] font-black text-slate-400 uppercase text-right">Tons</th>
                 </tr>
               </thead>
@@ -1887,21 +1977,43 @@ const NationalDashboard = ({
                       </div>
                     </td>
                     <td className="px-6 py-4 text-xs font-bold text-slate-500 text-center">{row.obCount}</td>
-                    {filteredTableCategories.map(cat => (
-                      <React.Fragment key={cat}>
-                        <td className="px-6 py-4 text-right border-l border-slate-50">
-                          <span className="text-xs font-bold text-slate-600">{Math.round(row.brandSales[cat] || 0)}</span>
-                        </td>
-                        <td className="px-6 py-4 text-right">
-                          <span className="text-[10px] font-bold text-slate-400">{(row.brandTonnage[cat] || 0).toFixed(2)}</span>
-                        </td>
-                      </React.Fragment>
-                    ))}
+                    {filteredTableCategories.map(cat => {
+                      const tar = row.brandTargets[cat] || 0;
+                      const ach = row.brandSales[cat] || 0;
+                      const tons = row.brandTonnage[cat] || 0;
+                      const perc = tar > 0 ? (ach / tar) * 100 : 0;
+                      return (
+                        <React.Fragment key={cat}>
+                          <td className="px-6 py-4 text-right border-l border-slate-50">
+                            <span className="text-[10px] font-bold text-slate-400">{Math.round(tar)}</span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <span className="text-xs font-black text-slate-700">{Math.round(ach)}</span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <span className={`text-[9px] font-black px-1 py-0.5 rounded ${perc >= 100 ? 'bg-emerald-100 text-emerald-700' : perc >= 80 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                              {Math.round(perc)}%
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right">
+                            <span className="text-[10px] font-bold text-slate-400">{tons.toFixed(2)}</span>
+                          </td>
+                        </React.Fragment>
+                      );
+                    })}
                     <td className="px-6 py-4 text-right border-l border-slate-50">
+                      <span className="text-[10px] font-bold text-slate-400">{Math.round(row.totalTarget)}</span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
                       <span className="text-xs font-black text-seablue">{Math.round(row.totalSales)}</span>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <span className="text-[10px] font-bold text-slate-400">{Math.round(row.totalTonnage)}</span>
+                      <span className={`text-[9px] font-black px-1 py-0.5 rounded ${row.totalTarget > 0 && (row.totalSales / row.totalTarget) * 100 >= 100 ? 'bg-emerald-100 text-emerald-700' : row.totalTarget > 0 && (row.totalSales / row.totalTarget) * 100 >= 80 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                        {row.totalTarget > 0 ? Math.round((row.totalSales / row.totalTarget) * 100) : 0}%
+                      </span>
+                    </td>
+                    <td className="px-6 py-4 text-right">
+                      <span className="text-[10px] font-bold text-slate-400">{row.totalTonnage.toFixed(2)}</span>
                     </td>
                     <td className="px-6 py-4 text-xs font-bold text-emerald-600 text-right">{Math.round(row.avgSales)}</td>
                   </tr>
@@ -1913,23 +2025,39 @@ const NationalDashboard = ({
                   <td className="px-6 py-4 text-xs text-center text-slate-600">
                     {categoryWiseSales.reduce((sum, r) => sum + r.obCount, 0)}
                   </td>
-                  {filteredTableCategories.map(cat => (
-                    <React.Fragment key={cat}>
-                      <td className="px-6 py-4 text-right border-l border-slate-100">
-                        <span className="text-xs text-slate-600">
-                          {Math.round(categoryWiseSales.reduce((sum, r) => sum + (r.brandSales[cat] || 0), 0))}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-right">
-                        <span className="text-[10px] text-slate-400">
-                          {categoryWiseSales.reduce((sum, r) => sum + (r.brandTonnage[cat] || 0), 0).toFixed(2)}
-                        </span>
-                      </td>
-                    </React.Fragment>
-                  ))}
+                  {filteredTableCategories.map(cat => {
+                    const totalTar = categoryWiseSales.reduce((sum, r) => sum + (r.brandTargets[cat] || 0), 0);
+                    const totalAch = categoryWiseSales.reduce((sum, r) => sum + (r.brandSales[cat] || 0), 0);
+                    const totalTons = categoryWiseSales.reduce((sum, r) => sum + (r.brandTonnage[cat] || 0), 0);
+                    const totalPerc = totalTar > 0 ? (totalAch / totalTar) * 100 : 0;
+                    return (
+                      <React.Fragment key={cat}>
+                        <td className="px-6 py-4 text-right border-l border-slate-100">
+                          <span className="text-[10px] text-slate-400">{Math.round(totalTar)}</span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <span className="text-xs text-slate-600">{Math.round(totalAch)}</span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <span className={`text-[9px] font-black px-1 py-0.5 rounded ${totalPerc >= 100 ? 'bg-emerald-100 text-emerald-700' : totalPerc >= 80 ? 'bg-amber-100 text-amber-700' : 'bg-rose-100 text-rose-700'}`}>
+                            {Math.round(totalPerc)}%
+                          </span>
+                        </td>
+                        <td className="px-6 py-4 text-right">
+                          <span className="text-[10px] text-slate-400">{totalTons.toFixed(2)}</span>
+                        </td>
+                      </React.Fragment>
+                    );
+                  })}
                   <td className="px-6 py-4 text-right border-l border-slate-100">
-                    <span className="text-xs text-seablue">
-                      {Math.round(categoryWiseSales.reduce((sum, r) => sum + r.totalSales, 0))}
+                    <span className="text-[10px] text-slate-400">{Math.round(categoryWiseSales.reduce((sum, r) => sum + r.totalTarget, 0))}</span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <span className="text-xs text-seablue">{Math.round(categoryWiseSales.reduce((sum, r) => sum + r.totalSales, 0))}</span>
+                  </td>
+                  <td className="px-6 py-4 text-right">
+                    <span className={`text-[9px] font-black px-1 py-0.5 rounded ${categoryWiseSales.reduce((sum, r) => sum + r.totalTarget, 0) > 0 && (categoryWiseSales.reduce((sum, r) => sum + r.totalSales, 0) / categoryWiseSales.reduce((sum, r) => sum + r.totalTarget, 0)) * 100 >= 100 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                      {categoryWiseSales.reduce((sum, r) => sum + r.totalTarget, 0) > 0 ? Math.round((categoryWiseSales.reduce((sum, r) => sum + r.totalSales, 0) / categoryWiseSales.reduce((sum, r) => sum + r.totalTarget, 0)) * 100) : 0}%
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
@@ -6274,6 +6402,15 @@ export default function App() {
     }
 
     setIsConfirming(false);
+    
+    // Duplicate check: Prevent same OB + same date + same route duplicate locally first
+    const isDuplicate = nationalStats.some(s => s.ob_contact === order.obContact && s.date === order.date && s.route === order.route);
+    if (isDuplicate) {
+      setMessage({ text: `Error: Entry for OB ${order.orderBooker} on ${order.date} for route ${order.route} already exists!`, type: 'error' });
+      setTimeout(() => setMessage(null), 5000);
+      return;
+    }
+
     if (!order.visitType) {
       setMessage({ text: 'Please select a Visit Type (A, V, RR, or Absent)', type: 'error' });
       setTimeout(() => setMessage(null), 3000);
@@ -7465,6 +7602,7 @@ export default function App() {
             ) : (
               <NationalDashboard 
                 view={view}
+                setView={setView}
                 stats={nationalStats} 
                 hierarchy={hierarchy} 
                 categories={CATEGORIES} 
@@ -8405,7 +8543,8 @@ export default function App() {
       return null;
     }
     return (
-      <div className="min-h-screen bg-slate-50 pb-40">
+      <ErrorBoundary>
+        <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} />
         {isLoadingNational ? (
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
@@ -8435,12 +8574,14 @@ export default function App() {
           />
         )}
       </div>
+      </ErrorBoundary>
     );
   }
 
   if (view === 'tsm_performance') {
     return (
-      <div className="min-h-screen bg-slate-50 pb-40">
+      <ErrorBoundary>
+        <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} />
         {isLoadingNational ? (
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
@@ -8466,6 +8607,7 @@ export default function App() {
           />
         )}
       </div>
+      </ErrorBoundary>
     );
   }
 
@@ -10169,7 +10311,8 @@ export default function App() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-50 pb-40">
+    <ErrorBoundary>
+      <div className="min-h-screen bg-slate-50 pb-40">
       <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} />
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-3 py-2">
@@ -10599,5 +10742,6 @@ export default function App() {
 
       {(userRole === 'Super Admin' || userRole === 'Admin') && <AIChatBot />}
     </div>
+    </ErrorBoundary>
   );
 }

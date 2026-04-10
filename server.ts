@@ -35,6 +35,12 @@ const CATEGORIES = [
   "DWB",
   "Match"
 ];
+
+const BRAND_GROUPS: Record<string, string[]> = {
+  "Washing Powder*": ["Kite Glow", "Burq Action", "Vero"],
+  "DWB": ["DWB"],
+  "Match": ["Match"]
+};
 const SKUS = [
   // Kite Glow
   { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12, weight_gm_per_pack: 30, unit: 'Bags' },
@@ -2740,10 +2746,10 @@ async function startServer() {
       // The frontend already filters the OBs based on role.
 
       // Duplicate check: Prevent same OB + same date + same route duplicate
-      const existing = db.prepare("SELECT id, date FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(finalObContact, orderDate, finalRoute) as any;
+      const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(finalObContact, orderDate, finalRoute) as any;
       
       if (existing) {
-        console.log(`[Submit] Updating existing order for OB ${finalObContact} on ${orderDate} (ID: ${existing.id})`);
+        return res.status(400).json({ error: `Entry for OB ${orderBooker || finalObContact} on ${orderDate} for route ${finalRoute} already exists!` });
       }
 
       const submittedAt = getPSTTimestamp();

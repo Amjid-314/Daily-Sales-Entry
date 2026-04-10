@@ -113,7 +113,7 @@ export const CATEGORIES = [
 ];
 
 export const BRAND_GROUPS: Record<string, string[]> = {
-  "Washing Powder": ["Kite Glow", "Burq Action", "Vero"],
+  "Washing Powder*": ["Kite Glow", "Burq Action", "Vero"],
   "DWB": ["DWB"],
   "Match": ["Match"]
 };
