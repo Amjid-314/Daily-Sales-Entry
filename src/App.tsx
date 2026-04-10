@@ -20,7 +20,6 @@ import {
   Legend
 } from 'recharts';
 import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
-import { AIChatBot } from './components/AIChatBot';
 import { MainNav, APP_TABS } from './components/MainNav';
 import { Logo } from './components/Logo';
 import { TOWN_COORDINATES } from './townCoordinates';
@@ -1842,16 +1841,7 @@ const NationalDashboard = ({
                       </div>
                     </td>
                     <td className="px-6 py-4 text-right">
-                      <button 
-                        onClick={() => {
-                          const text = `*STOCK GAP ALERT*\n\nDistributor: ${gap.distributor}\nTSM: ${gap.tsm}\nRegion: ${gap.region}\n\n*Low Stock SKUs:*\n${gap.lowItems.join('\n')}\n\nPlease ensure inventory is replenished immediately.`;
-                          window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
-                        }}
-                        className="flex items-center gap-1.5 ml-auto text-[10px] font-black text-emerald-600 uppercase hover:text-emerald-700 transition-colors"
-                      >
-                        <MessageCircle className="w-3 h-3" />
-                        Notify TSM
-                      </button>
+                      {/* WhatsApp share removed as per user request */}
                     </td>
                   </tr>
                 ))}
@@ -5666,11 +5656,10 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
                                 msg += `RPD: ${Math.round(kpi.requiredPerDay)} | Avg/Day: ${Math.round(kpi.dailyAvg)}\n`;
                                 msg += `Projected: ${Math.round(kpi.projectedAchievement)} (${kpi.projectedPercentage.toFixed(0)}%)\n\n`;
                               });
-                              window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+                              // WhatsApp share removed as per user request
                             }}
-                            className="w-full mt-2 bg-[#25D366] hover:bg-[#128C7E] text-white py-2 rounded-lg text-[10px] font-bold flex items-center justify-center gap-1 transition-colors"
+                            className="hidden"
                           >
-                            <Share2 className="w-3 h-3" /> Share via WhatsApp
                           </button>
                         </div>
                       </motion.div>
@@ -7948,23 +7937,6 @@ export default function App() {
                 title="Refresh Stats"
               >
                 <RefreshCw className={`w-5 h-5 ${(isLoadingHistory || isLoadingAdmin) ? 'animate-spin' : ''}`} />
-              </button>
-              <button 
-                onClick={() => {
-                  const summary = `*Global Sales Dashboard - ${today}*\n` +
-                    `------------------\n` +
-                    chartData.map(d => `*${d.name}:*\n  Ach: ${d.Achievement.toFixed(2)}\n  Brand Target: ${d.Target.toFixed(2)}`).join('\n') +
-                    `\n------------------\n` +
-                    `*Total Today:* ${(Object.values(globalToday) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}\n` +
-                    `*Total Brand Target:* ${(Object.values(globalTargets) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}`;
-                  
-                  const encodedMsg = encodeURIComponent(summary);
-                  window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
-                }}
-                className="p-2 text-emerald-600 hover:bg-emerald-50 rounded-xl transition-colors"
-                title="Share Global Summary"
-              >
-                <Send className="w-5 h-5" />
               </button>
             </div>
           </div>
@@ -10319,16 +10291,7 @@ export default function App() {
                                 ))}
                                 <td className="px-4 py-3 text-right font-black text-seablue text-[10px]">{totalAch.toFixed(2)}</td>
                                 <td className="px-4 py-3 text-center">
-                                  <button 
-                                    onClick={() => {
-                                      const summary = generateWhatsAppMessage(h, true);
-                                      const encodedMsg = encodeURIComponent(summary);
-                                      window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
-                                    }}
-                                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg"
-                                  >
-                                    <WhatsAppIcon />
-                                  </button>
+                                  {/* WhatsApp share removed as per user request */}
                                 </td>
                               </tr>
                             );
@@ -10700,16 +10663,7 @@ export default function App() {
               <p className="text-sm text-slate-500">Sales report for <span className="font-bold text-seablue">{lastSubmittedOrder.route}</span> has been saved.</p>
               
               <div className="space-y-3">
-                <button 
-                  onClick={() => {
-                    const summary = generateWhatsAppMessage(lastSubmittedOrder, false);
-                    const encodedMsg = encodeURIComponent(summary);
-                    window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
-                  }}
-                  className="btn-seablue w-full py-3 flex items-center justify-center gap-2"
-                >
-                  <Send className="w-4 h-4" /> Share to WhatsApp
-                </button>
+                {/* WhatsApp share removed as per user request */}
                 
                 <button 
                   onClick={() => {
@@ -10780,7 +10734,7 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {(userRole === 'Super Admin' || userRole === 'Admin') && <AIChatBot />}
+      {/* Chatbot removed as per user request */}
     </div>
     </ErrorBoundary>
   );

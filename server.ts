@@ -10,6 +10,14 @@ import fs from "fs";
 import crypto from "crypto";
 import { exec } from "child_process";
 
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
 const JWT_SECRET = process.env.JWT_SECRET || "salespulse-secret-key-2026";
 const ADMIN_EMAIL = "amjid.bisconni@gmail.com";
 
@@ -314,6 +322,23 @@ ensureColumn('submitted_orders', 'month', 'TEXT');
 ensureColumn('national_hierarchy', 'month', 'TEXT');
 ensureColumn('brand_targets', 'month', 'TEXT');
 ensureColumn('hierarchy_targets', 'month', 'TEXT');
+
+// Ensure missing columns in national_hierarchy
+ensureColumn('national_hierarchy', 'nsm_name', 'TEXT');
+ensureColumn('national_hierarchy', 'rsm_name', 'TEXT');
+ensureColumn('national_hierarchy', 'director_sales', 'TEXT');
+ensureColumn('national_hierarchy', 'town_name', 'TEXT');
+ensureColumn('national_hierarchy', 'distributor_name', 'TEXT');
+ensureColumn('national_hierarchy', 'distributor_code', 'TEXT');
+ensureColumn('national_hierarchy', 'supervisor_name', 'TEXT');
+ensureColumn('national_hierarchy', 'sc_name', 'TEXT');
+ensureColumn('national_hierarchy', 'target_ctn', 'REAL DEFAULT 0');
+
+// Ensure missing columns in users
+ensureColumn('users', 'username', 'TEXT');
+ensureColumn('users', 'town', 'TEXT');
+ensureColumn('users', 'tsm', 'TEXT');
+ensureColumn('users', 'ob', 'TEXT');
 
 // Migration: Fix national_hierarchy table schema (remove UNIQUE from ob_id if it exists)
 try {
