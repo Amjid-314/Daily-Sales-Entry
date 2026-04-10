@@ -32,15 +32,18 @@ export const APP_TABS = [
   { id: 'help', label: 'Help', icon: HelpCircle, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
 ];
 
+import { Logo } from './Logo';
+
 interface MainNavProps {
   view: string;
   setView: (v: any) => void;
   role: string | null;
   userEmail?: string | null;
   onLogout: () => void;
+  logo?: string | null;
 }
 
-export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail, onLogout }) => {
+export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail, onLogout, logo }) => {
   const visibleTabs = APP_TABS.filter(tab => {
     const email = (userEmail || '').toLowerCase();
     const isAdmin = ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email);
@@ -73,6 +76,15 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
 
   return (
     <nav className="bg-white border-b border-slate-100 px-4 h-14 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar gap-2">
+      <div className="flex-shrink-0 mr-2 flex items-center justify-center">
+        {logo ? (
+          <img src={logo} alt="Logo" className="h-8 w-auto object-contain" />
+        ) : (
+          <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white shadow-sm overflow-hidden">
+            <Logo className="w-5 h-5" />
+          </div>
+        )}
+      </div>
       {visibleTabs.map((tab) => (
         <button
           key={tab.id}
