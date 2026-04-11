@@ -134,8 +134,25 @@ function initDB(retryCount = 0) {
         stock_data TEXT,
         submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+    `);
 
-      CREATE TABLE IF NOT EXISTS submitted_orders (
+    // Migration: Rename submitted_orders to ob_sales if it exists
+    try {
+      const tableExists = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='submitted_orders'").get();
+      if (tableExists) {
+        console.log("Migration: Renaming submitted_orders to ob_sales...");
+        db.exec("ALTER TABLE submitted_orders RENAME TO ob_sales");
+        // Rename indexes too if they don't auto-rename (SQLite usually handles them but let's be safe)
+        db.exec("DROP INDEX IF EXISTS idx_orders_ob_contact");
+        db.exec("DROP INDEX IF EXISTS idx_orders_date");
+        db.exec("DROP INDEX IF EXISTS idx_orders_month");
+      }
+    } catch (e) {
+      console.warn("Migration to ob_sales failed (maybe already renamed):", e.message);
+    }
+
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS ob_sales (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         date TEXT,
         month TEXT,
@@ -161,14 +178,42 @@ function initDB(retryCount = 0) {
         longitude REAL,
         accuracy REAL,
         visit_type TEXT DEFAULT 'A',
+        entry_type TEXT DEFAULT 'OB Entry (Sales Execution)',
+        remarks TEXT,
         submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
 
-      CREATE INDEX IF NOT EXISTS idx_orders_ob_contact ON submitted_orders(ob_contact);
-      CREATE INDEX IF NOT EXISTS idx_orders_date ON submitted_orders(date);
-      CREATE INDEX IF NOT EXISTS idx_orders_month ON submitted_orders(month);
-      CREATE INDEX IF NOT EXISTS idx_orders_region ON submitted_orders(region);
-      CREATE INDEX IF NOT EXISTS idx_orders_route ON submitted_orders(route);
+      CREATE TABLE IF NOT EXISTS tsm_visits (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        month TEXT,
+        tsm_name TEXT,
+        town TEXT,
+        route TEXT,
+        total_shops INTEGER,
+        visited_shops INTEGER,
+        productive_shops INTEGER,
+        category_productive_data TEXT,
+        order_data TEXT,
+        remarks TEXT,
+        stock_checked INTEGER DEFAULT 0,
+        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS tsm_assignments (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        tsm_name TEXT,
+        town TEXT,
+        routes TEXT,
+        UNIQUE(tsm_name, town)
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_ob_sales_ob_contact ON ob_sales(ob_contact);
+      CREATE INDEX IF NOT EXISTS idx_ob_sales_date ON ob_sales(date);
+      CREATE INDEX IF NOT EXISTS idx_ob_sales_month ON ob_sales(month);
+      CREATE INDEX IF NOT EXISTS idx_tsm_visits_date ON tsm_visits(date);
+      CREATE INDEX IF NOT EXISTS idx_ob_sales_region ON ob_sales(region);
+      CREATE INDEX IF NOT EXISTS idx_ob_sales_route ON ob_sales(route);
 
       CREATE TABLE IF NOT EXISTS ob_assignments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -231,23 +276,23 @@ function initDB(retryCount = 0) {
       );
     `);
 
-    // Ensure all submitted_orders have the correct month based on their date
+    // Ensure all ob_sales have the correct month based on their date
     try {
       db.exec(`
-        UPDATE submitted_orders 
+        UPDATE ob_sales 
         SET month = substr(date, 1, 7) 
         WHERE month IS NULL OR month = '' OR month != substr(date, 1, 7);
       `);
     } catch (err) {
-      console.warn("Migration for month column in submitted_orders failed:", err.message);
+      console.warn("Migration for month column in ob_sales failed:", err.message);
     }
 
-    // Normalize regions and TSM names in submitted_orders based on ob_assignments
+    // Normalize regions and TSM names in ob_sales based on ob_assignments
     try {
-      console.log("Normalizing submitted_orders based on ob_assignments...");
+      console.log("Normalizing ob_sales based on ob_assignments...");
       const assignments = db.prepare("SELECT contact, region, tsm, nsm, rsm, sc, director, zone, town, distributor FROM ob_assignments").all() as any[];
       const updateStmt = db.prepare(`
-        UPDATE submitted_orders 
+        UPDATE ob_sales 
         SET region = ?, tsm = ?, nsm = ?, rsm = ?, sc = ?, director = ?, zone = ?, town = ?, distributor = ?
         WHERE ob_contact = ? AND (region IS NULL OR region = '' OR region = 'Unassigned')
       `);
@@ -260,16 +305,16 @@ function initDB(retryCount = 0) {
       transaction();
       console.log("Normalization complete.");
     } catch (err) {
-      console.warn("Normalization of submitted_orders failed:", err.message);
+      console.warn("Normalization of ob_sales failed:", err.message);
     }
 
     // Remove duplicate orders (keep the latest one based on id)
     try {
       db.exec(`
-        DELETE FROM submitted_orders 
+        DELETE FROM ob_sales 
         WHERE id NOT IN (
           SELECT MAX(id) 
-          FROM submitted_orders 
+          FROM ob_sales 
           GROUP BY ob_contact, date, route
         )
       `);
@@ -318,7 +363,9 @@ function ensureColumn(tableName: string, columnName: string, columnType: string)
   }
 }
 
-ensureColumn('submitted_orders', 'month', 'TEXT');
+ensureColumn('ob_sales', 'month', 'TEXT');
+ensureColumn('ob_sales', 'entry_type', "TEXT DEFAULT 'OB Entry (Sales Execution)'");
+ensureColumn('ob_sales', 'remarks', 'TEXT');
 ensureColumn('national_hierarchy', 'month', 'TEXT');
 ensureColumn('brand_targets', 'month', 'TEXT');
 ensureColumn('hierarchy_targets', 'month', 'TEXT');
@@ -401,8 +448,8 @@ try {
 
   // Add unique index for sync consistency
   try {
-    db.prepare("DROP INDEX IF EXISTS idx_submitted_orders_date_ob").run();
-    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_submitted_orders_date_ob_route ON submitted_orders(date, ob_contact, route)").run();
+    db.prepare("DROP INDEX IF EXISTS idx_ob_sales_date_ob").run();
+    db.prepare("CREATE UNIQUE INDEX IF NOT EXISTS idx_ob_sales_date_ob_route ON ob_sales(date, ob_contact, route)").run();
   } catch (e) {
     console.error("Error creating unique index:", e);
   }
@@ -437,15 +484,15 @@ try {
   );
 
   -- Cleanup duplicates before adding index
-  DELETE FROM submitted_orders 
+  DELETE FROM ob_sales 
   WHERE id NOT IN (
     SELECT MIN(id) 
-    FROM submitted_orders 
+    FROM ob_sales 
     GROUP BY ob_contact, date, route
   );
 
   DROP INDEX IF EXISTS idx_ob_date;
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_ob_date_route ON submitted_orders (ob_contact, date, route);
+  CREATE UNIQUE INDEX IF NOT EXISTS idx_ob_date_route ON ob_sales (ob_contact, date, route);
 
   CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -476,16 +523,16 @@ try {
 // Add columns if they don't exist
 try { db.exec("ALTER TABLE national_hierarchy ADD COLUMN target_ctn REAL DEFAULT 0"); } catch (e) {}
 try { db.exec("ALTER TABLE national_hierarchy ADD COLUMN sc_name TEXT"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN latitude REAL"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN longitude REAL"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN accuracy REAL"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN visit_type TEXT DEFAULT 'A'"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN zone TEXT"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN region TEXT"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN nsm TEXT"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN rsm TEXT"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN sc TEXT"); } catch (e) {}
-try { db.exec("ALTER TABLE submitted_orders ADD COLUMN director TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN latitude REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN longitude REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN accuracy REAL"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN visit_type TEXT DEFAULT 'A'"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN zone TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN region TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN nsm TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN rsm TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN sc TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_sales ADD COLUMN director TEXT"); } catch (e) {}
 
 // Auth Middleware
 const authenticateToken = (req: any, res: any, next: any) => {
@@ -552,6 +599,9 @@ const logAction = (userId: string, userName: string, role: string, action: strin
   }
 };
 try { db.exec("ALTER TABLE users ADD COLUMN email TEXT UNIQUE"); } catch (e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN username TEXT"); } catch (e) {}
+try { db.exec("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_username ON users (username)"); } catch (e) {}
+try { db.exec("ALTER TABLE users ADD COLUMN town TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN tsm TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE users ADD COLUMN ob TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE distributors ADD COLUMN zone TEXT"); } catch (e) {}
@@ -621,25 +671,25 @@ async function startServer() {
   // Region Renaming (Data Correction) - Run after all tables are guaranteed to exist
   try {
     db.exec(`
-      UPDATE submitted_orders SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
+      UPDATE ob_sales SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
       UPDATE ob_assignments SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
       UPDATE distributors SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
       UPDATE national_hierarchy SET territory_region = 'North' WHERE territory_region IN ('Zone North', 'Region KPK', 'KPK');
       UPDATE users SET region = 'North' WHERE region IN ('Zone North', 'Region KPK', 'KPK');
 
-      UPDATE submitted_orders SET region = 'Rawalpindi' WHERE region = 'Rawal Pindi';
+      UPDATE ob_sales SET region = 'Rawalpindi' WHERE region = 'Rawal Pindi';
       UPDATE ob_assignments SET region = 'Rawalpindi' WHERE region = 'Rawal Pindi';
       UPDATE distributors SET region = 'Rawalpindi' WHERE region = 'Rawal Pindi';
       UPDATE national_hierarchy SET territory_region = 'Rawalpindi' WHERE territory_region = 'Rawal Pindi';
       UPDATE users SET region = 'Rawalpindi' WHERE region = 'Rawal Pindi';
 
-      UPDATE submitted_orders SET region = 'Karachi' WHERE region = 'karachi';
+      UPDATE ob_sales SET region = 'Karachi' WHERE region = 'karachi';
       UPDATE ob_assignments SET region = 'Karachi' WHERE region = 'karachi';
       UPDATE distributors SET region = 'Karachi' WHERE region = 'karachi';
       UPDATE national_hierarchy SET territory_region = 'Karachi' WHERE territory_region = 'karachi';
       UPDATE users SET region = 'Karachi' WHERE region = 'karachi';
 
-      UPDATE submitted_orders SET region = 'South Punjab' WHERE region = 'Multan';
+      UPDATE ob_sales SET region = 'South Punjab' WHERE region = 'Multan';
       UPDATE ob_assignments SET region = 'South Punjab' WHERE region = 'Multan';
       UPDATE distributors SET region = 'South Punjab' WHERE region = 'Multan';
       UPDATE national_hierarchy SET territory_region = 'South Punjab' WHERE territory_region = 'Multan';
@@ -647,39 +697,39 @@ async function startServer() {
 
       UPDATE users SET region = 'Quetta' WHERE region = 'Queeta';
 
-      UPDATE submitted_orders SET nsm = 'Rizwan Khattak' WHERE nsm = 'Rizwan Sb';
+      UPDATE ob_sales SET nsm = 'Rizwan Khattak' WHERE nsm = 'Rizwan Sb';
       UPDATE ob_assignments SET nsm = 'Rizwan Khattak' WHERE nsm = 'Rizwan Sb';
       UPDATE national_hierarchy SET nsm_name = 'Rizwan Khattak' WHERE nsm_name = 'Rizwan Sb';
 
-      UPDATE submitted_orders SET tsm = 'Aftab' WHERE tsm = 'Aftab ';
+      UPDATE ob_sales SET tsm = 'Aftab' WHERE tsm = 'Aftab ';
       UPDATE ob_assignments SET tsm = 'Aftab' WHERE tsm = 'Aftab ';
       UPDATE national_hierarchy SET asm_tsm_name = 'Aftab' WHERE asm_tsm_name = 'Aftab ';
 
-      UPDATE submitted_orders SET tsm = 'Faisal' WHERE tsm = 'Faisal ';
+      UPDATE ob_sales SET tsm = 'Faisal' WHERE tsm = 'Faisal ';
       UPDATE ob_assignments SET tsm = 'Faisal' WHERE tsm = 'Faisal ';
       UPDATE national_hierarchy SET asm_tsm_name = 'Faisal' WHERE asm_tsm_name = 'Faisal ';
 
-      UPDATE submitted_orders SET tsm = 'Irfan' WHERE tsm = 'IRFAN';
+      UPDATE ob_sales SET tsm = 'Irfan' WHERE tsm = 'IRFAN';
       UPDATE ob_assignments SET tsm = 'Irfan' WHERE tsm = 'IRFAN';
       UPDATE national_hierarchy SET asm_tsm_name = 'Irfan' WHERE asm_tsm_name = 'IRFAN';
 
-      UPDATE submitted_orders SET tsm = 'Muhammad Shoaib' WHERE tsm = 'Muhamamd Shoaib';
+      UPDATE ob_sales SET tsm = 'Muhammad Shoaib' WHERE tsm = 'Muhamamd Shoaib';
       UPDATE ob_assignments SET tsm = 'Muhammad Shoaib' WHERE tsm = 'Muhamamd Shoaib';
       UPDATE national_hierarchy SET asm_tsm_name = 'Muhammad Shoaib' WHERE asm_tsm_name = 'Muhamamd Shoaib';
 
-      UPDATE submitted_orders SET tsm = 'Muhammad Shoaib (ASM)' WHERE tsm = 'Muhammad Shoaib' AND region = 'North';
+      UPDATE ob_sales SET tsm = 'Muhammad Shoaib (ASM)' WHERE tsm = 'Muhammad Shoaib' AND region = 'North';
       UPDATE ob_assignments SET tsm = 'Muhammad Shoaib (ASM)' WHERE tsm = 'Muhammad Shoaib' AND region = 'North';
       UPDATE national_hierarchy SET asm_tsm_name = 'Muhammad Shoaib (ASM)' WHERE asm_tsm_name = 'Muhammad Shoaib' AND territory_region = 'North';
 
-      UPDATE submitted_orders SET tsm = 'Mukhtiar Hussain' WHERE tsm = 'Mukhtair Hussain';
+      UPDATE ob_sales SET tsm = 'Mukhtiar Hussain' WHERE tsm = 'Mukhtair Hussain';
       UPDATE ob_assignments SET tsm = 'Mukhtiar Hussain' WHERE tsm = 'Mukhtair Hussain';
       UPDATE national_hierarchy SET asm_tsm_name = 'Mukhtiar Hussain' WHERE asm_tsm_name = 'Mukhtair Hussain';
 
-      UPDATE submitted_orders SET tsm = 'Raja Shoaib' WHERE tsm = 'Raja shoaib';
+      UPDATE ob_sales SET tsm = 'Raja Shoaib' WHERE tsm = 'Raja shoaib';
       UPDATE ob_assignments SET tsm = 'Raja Shoaib' WHERE tsm = 'Raja shoaib';
       UPDATE national_hierarchy SET asm_tsm_name = 'Raja Shoaib' WHERE asm_tsm_name = 'Raja shoaib';
 
-      UPDATE submitted_orders SET tsm = 'Shehryar' WHERE tsm = 'Shehryar ';
+      UPDATE ob_sales SET tsm = 'Shehryar' WHERE tsm = 'Shehryar ';
       UPDATE ob_assignments SET tsm = 'Shehryar' WHERE tsm = 'Shehryar ';
       UPDATE national_hierarchy SET asm_tsm_name = 'Shehryar' WHERE asm_tsm_name = 'Shehryar ';
     `);
@@ -693,7 +743,7 @@ async function startServer() {
     try { db.exec(`ALTER TABLE ob_assignments ADD COLUMN ${col} ${col === 'total_shops' ? 'INTEGER DEFAULT 50' : 'TEXT'}`); } catch (e) {}
   });
 
-  // Migration: Ensure all columns exist in submitted_orders
+  // Migration: Ensure all columns exist in ob_sales
   const subCols = [
     "date", "tsm", "town", "distributor", "order_booker", "ob_contact", "route", 
     "total_shops", "visited_shops", "productive_shops", 
@@ -706,7 +756,7 @@ async function startServer() {
       let type = 'TEXT';
       if (col.includes('shops')) type = 'INTEGER DEFAULT 0';
       if (col === 'latitude' || col === 'longitude' || col === 'accuracy') type = 'REAL';
-      db.exec(`ALTER TABLE submitted_orders ADD COLUMN ${col} ${type}`); 
+      db.exec(`ALTER TABLE ob_sales ADD COLUMN ${col} ${type}`); 
     } catch (e) {}
   });
   
@@ -717,7 +767,7 @@ async function startServer() {
   // Force update all existing OBs to 50 shops as per user request
   try {
     db.exec("UPDATE ob_assignments SET total_shops = 50 WHERE total_shops IS NULL OR total_shops = 0");
-    db.exec("UPDATE submitted_orders SET total_shops = 50 WHERE total_shops IS NULL OR total_shops = 0");
+    db.exec("UPDATE ob_sales SET total_shops = 50 WHERE total_shops IS NULL OR total_shops = 0");
     
     // Cleanup duplicates in ob_assignments
     db.exec(`
@@ -730,7 +780,7 @@ async function startServer() {
     `);
 
     // Delete dummy entries for Usama as requested
-    db.prepare("DELETE FROM submitted_orders WHERE order_booker LIKE ?").run("%Usama%");
+    db.prepare("DELETE FROM ob_sales WHERE order_booker LIKE ?").run("%Usama%");
     
     console.log("Database cleanup completed: Duplicates removed and dummy entries deleted.");
   } catch (e) {
@@ -1040,8 +1090,8 @@ async function startServer() {
     const trimmedName = (name || '').trim().toLowerCase();
     const trimmedRegion = (region || '').trim().toLowerCase();
 
-    if (role === 'Admin' || role === 'Super Admin' || role === 'Director') {
-      const submissions = db.prepare("SELECT DISTINCT ob_contact FROM submitted_orders").all() as any[];
+    if (role === 'Admin' || role === 'Super Admin' || role === 'Director' || role === 'NSM') {
+      const submissions = db.prepare("SELECT DISTINCT ob_contact FROM ob_sales").all() as any[];
       const allOBs = new Set([
         ...hierarchy.map(h => h.ob_id), 
         ...assignments.map(a => a.contact),
@@ -1052,7 +1102,8 @@ async function startServer() {
     
     let visibleIds: string[] = [];
     
-    if (role === 'NSM') {
+    // NSM now sees all data as requested, but keeping the logic here just in case
+    if (role === 'NSM_SPECIFIC_LOGIC_DISABLED') {
       const ids = hierarchy.filter(h => {
         const hName = (h.nsm_name || '').trim().toLowerCase();
         return trimmedName && (hName.includes(trimmedName) || trimmedName.includes(hName));
@@ -1086,7 +1137,7 @@ async function startServer() {
       
       if (role === 'TSM Entry' && !targetTsmName) {
         // If TSM Entry has no assigned TSM, give access to all OBs (as requested for "Any Situation")
-        const submissions = db.prepare("SELECT DISTINCT ob_contact FROM submitted_orders").all() as any[];
+        const submissions = db.prepare("SELECT DISTINCT ob_contact FROM ob_sales").all() as any[];
         const allOBs = new Set([
           ...hierarchy.map(h => h.ob_id), 
           ...assignments.map(a => a.contact),
@@ -1298,6 +1349,7 @@ async function startServer() {
         'Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB ID', 'Zone', 'Region', 'Total Shops', 'Routes',
         'Kite Glow Target', 'Burq Action Target', 'Vero Target', 'DWB Target', 'Match Target'
       ],
+      "TSM_Assignments": ['TSM Name', 'Town', 'Routes'],
       "Targets_vs_Achievement": [
         'Month', 'Town', 'OB Name', 'OB Contact', 'ASM/TSM', 'Distributor', 
         'Total Working Days', 'Days Gone', 'Time Gone %',
@@ -1313,6 +1365,7 @@ async function startServer() {
       "TSM_Performance": ['Month', 'Region', 'RSM', 'TSM Name', 'Total OBs', 'Active OBs', 'Target', 'Achievement', 'Achievement %', 'RPD', 'Avg Sales', 'Projected Sales', 'Productivity %'],
       "Product_Config": ['SKU ID', 'SKU Name', 'Category', 'Units Per Carton', 'Units Per Dozen', 'Weight (Kg)'],
       "Users": ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town'],
+      "TSM_Visits": ['Date', 'TSM Name', 'Town', 'Route', 'Total Shops', 'Visited Shops', 'Productive Shops', 'Stock Checked', 'Submitted At'],
       "Error_Log": ['Timestamp', 'Error Message', 'Context', 'User', 'Role']
     };
 
@@ -1395,7 +1448,7 @@ async function startServer() {
     await ensureSheetsExist(sheets, spreadsheetId);
 
     const currentMonth = getPSTDate().slice(0, 7);
-    const orders = db.prepare("SELECT * FROM submitted_orders WHERE date LIKE ?").all(`${currentMonth}%`) as any[];
+    const orders = db.prepare("SELECT * FROM ob_sales WHERE date LIKE ?").all(`${currentMonth}%`) as any[];
     const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
     const timeInfo = calculateTimeGone();
 
@@ -1676,10 +1729,10 @@ async function startServer() {
     const lastEntryHeaders = ['OB Name', 'Contact', 'ASM/TSM', 'Distributor', 'Last Submission Date', 'Last Submission Time', 'Total Days Entered'];
     const lastEntries = db.prepare(`
       SELECT ob_assignments.name, ob_assignments.contact, ob_assignments.tsm, ob_assignments.distributor, 
-             MAX(submitted_orders.date) as last_date, MAX(submitted_orders.submitted_at) as last_ts,
-             COUNT(DISTINCT submitted_orders.date) as total_days
+             MAX(ob_sales.date) as last_date, MAX(ob_sales.submitted_at) as last_ts,
+             COUNT(DISTINCT ob_sales.date) as total_days
       FROM ob_assignments
-      LEFT JOIN submitted_orders ON ob_assignments.contact = submitted_orders.ob_contact
+      LEFT JOIN ob_sales ON ob_assignments.contact = ob_sales.ob_contact
       GROUP BY ob_assignments.contact
     `).all() as any[];
     
@@ -1704,7 +1757,7 @@ async function startServer() {
         COUNT(*) as total_visits,
         SUM(productive_shops) as total_productive,
         SUM(visited_shops) as total_visited
-      FROM submitted_orders
+      FROM ob_sales
       WHERE date LIKE ?
       GROUP BY date, order_booker, route, visit_type
     `).all(`${currentMonth}%`) as any[];
@@ -1730,6 +1783,13 @@ async function startServer() {
       return [a.date, a.order_booker, a.route, a.visit_type_label, a.total_visits, totalProductive, prodPercent, avgAch];
     });
 
+    // --- SHEET 7: TSM_Visits ---
+    const tsmVisitHeaders = ['Date', 'TSM Name', 'Town', 'Route', 'Total Shops', 'Visited Shops', 'Productive Shops', 'Stock Checked', 'Submitted At'];
+    const tsmVisits = db.prepare("SELECT * FROM tsm_visits ORDER BY date DESC, submitted_at DESC").all() as any[];
+    const tsmVisitRows = tsmVisits.map(v => [
+      v.date, v.tsm_name, v.town, v.route, v.total_shops, v.visited_shops, v.productive_shops, v.stock_checked ? 'YES' : 'NO', v.submitted_at
+    ]);
+
     // Consolidated Batch Update for all summary sheets
     try {
       // Clear existing data first to avoid stale rows at the bottom
@@ -1744,7 +1804,8 @@ async function startServer() {
             "Current_Stocks",
             "OB_Route_Performance",
             "Last_Entry_Date",
-            "Visit_Type_Analysis"
+            "Visit_Type_Analysis",
+            "TSM_Visits"
           ]
         }
       });
@@ -1761,7 +1822,8 @@ async function startServer() {
             { range: "Current_Stocks!A1", values: [matrixHeaders, ...matrixRows] },
             { range: "OB_Route_Performance!A1", values: [performanceHeaders, ...allPerformanceRows] },
             { range: "Last_Entry_Date!A1", values: [lastEntryHeaders, ...lastEntryRows] },
-            { range: "Visit_Type_Analysis!A1", values: [analysisHeaders, ...analysisRows] }
+            { range: "Visit_Type_Analysis!A1", values: [analysisHeaders, ...analysisRows] },
+            { range: "TSM_Visits!A1", values: [tsmVisitHeaders, ...tsmVisitRows] }
           ]
         }
       });
@@ -1831,12 +1893,19 @@ async function startServer() {
   }
 
   // Ensure Super Admin User
-  const superAdminCheck = db.prepare("SELECT * FROM users WHERE username = 'amjid.admin' OR email = 'amjid.bisconni@gmail.com'").get();
-  if (!superAdminCheck) {
-    const hashedPass = bcrypt.hashSync("Admin@123", 10);
-    db.prepare("INSERT INTO users (username, email, password, role, name) VALUES (?, ?, ?, ?, ?)")
-      .run("amjid.admin", "amjid.bisconni@gmail.com", hashedPass, "Super Admin", "Muhammad Amjid");
-  }
+      const superAdminCheck = db.prepare("SELECT * FROM users WHERE username = 'amjid.admin' OR email = 'amjid.bisconni@gmail.com'").get();
+      if (!superAdminCheck) {
+        const hashedPass = bcrypt.hashSync("Admin@123", 10);
+        db.prepare("INSERT INTO users (username, email, password, role, name) VALUES (?, ?, ?, ?, ?)")
+          .run("amjid.admin", "amjid.bisconni@gmail.com", hashedPass, "Super Admin", "Muhammad Amjid");
+      }
+
+      // Restore missing user ferozeneyez@gmail.com
+      const ferozCheck = db.prepare("SELECT * FROM users WHERE email = 'ferozeneyez@gmail.com'").get();
+      if (!ferozCheck) {
+        db.prepare("INSERT INTO users (username, email, password, role, name, region) VALUES (?, ?, ?, ?, ?, ?)")
+          .run("ferozeneyez", "ferozeneyez@gmail.com", "nopassword", "TSM", "Shahid Ali", "Central Punjab");
+      }
 
   // Daily Backup Cron (9:00 AM PST / 5:00 PM UTC)
   cron.schedule('0 9 * * *', async () => {
@@ -1866,7 +1935,7 @@ async function startServer() {
       
       // 1. Gather all data
       console.log(`[BACKUP] Gathering database and config...`);
-      const tables = ['submitted_orders', 'users', 'national_hierarchy', 'distributors', 'ob_assignments', 'app_config'];
+      const tables = ['ob_sales', 'users', 'national_hierarchy', 'distributors', 'ob_assignments', 'app_config'];
       const backupData: any = {
         timestamp: new Date().toISOString(),
         tables: {}
@@ -2069,6 +2138,49 @@ async function startServer() {
     }
   });
 
+  app.get("/api/admin/tsm-assignments", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    try {
+      const assignments = db.prepare("SELECT * FROM tsm_assignments").all();
+      res.json(assignments);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch TSM assignments" });
+    }
+  });
+
+  app.post("/api/admin/tsm-assignments", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    try {
+      const { tsm_name, town, routes } = req.body;
+      db.prepare("INSERT OR REPLACE INTO tsm_assignments (tsm_name, town, routes) VALUES (?, ?, ?)").run(tsm_name, town, routes);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to save TSM assignment" });
+    }
+  });
+
+  app.delete("/api/admin/tsm-assignments/:id", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+    try {
+      db.prepare("DELETE FROM tsm_assignments WHERE id = ?").run(req.params.id);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: "Failed to delete TSM assignment" });
+    }
+  });
+
+  app.get("/api/tsm-assignments", authenticateToken, (req: any, res) => {
+    try {
+      const { tsm_name } = req.query;
+      let assignments;
+      if (tsm_name) {
+        assignments = db.prepare("SELECT * FROM tsm_assignments WHERE tsm_name = ?").all(tsm_name);
+      } else {
+        assignments = db.prepare("SELECT * FROM tsm_assignments").all();
+      }
+      res.json(assignments);
+    } catch (err) {
+      res.status(500).json({ error: "Failed to fetch TSM assignments" });
+    }
+  });
+
   app.post("/api/admin/config", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     let { key, value } = req.body;
     
@@ -2205,7 +2317,7 @@ async function startServer() {
         
         if (oldOB && oldOB.contact !== contact) {
           db.prepare("UPDATE brand_targets SET ob_contact = ? WHERE ob_contact = ?").run(contact, oldOB.contact);
-          db.prepare("UPDATE submitted_orders SET ob_contact = ? WHERE ob_contact = ?").run(contact, oldOB.contact);
+          db.prepare("UPDATE ob_sales SET ob_contact = ? WHERE ob_contact = ?").run(contact, oldOB.contact);
         }
       } else {
         db.prepare("INSERT OR IGNORE INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, total_shops, routes) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
@@ -2269,7 +2381,7 @@ async function startServer() {
 
       // Fetch last 16 visits for this OB and route, ordered by date descending
       const visits = db.prepare(`
-        SELECT * FROM submitted_orders 
+        SELECT * FROM ob_sales 
         WHERE ob_contact = ? AND route = ?
         ORDER BY date DESC 
         LIMIT 16
@@ -2553,7 +2665,7 @@ async function startServer() {
 
   app.post("/api/admin/reset", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
     const transaction = db.transaction(() => {
-      db.prepare("DELETE FROM submitted_orders").run();
+      db.prepare("DELETE FROM ob_sales").run();
       db.prepare("DELETE FROM drafts").run();
     });
     try {
@@ -2566,11 +2678,27 @@ async function startServer() {
 
   app.get("/api/orders", authenticateToken, (req: any, res) => {
     try {
-      const { ob, tsm, from, to, ob_contact } = req.query;
+      const { ob, tsm, from, to, ob_contact, type } = req.query;
+      
+      if (type === 'tsm_visit') {
+        let query = "SELECT * FROM tsm_visits WHERE 1=1";
+        const params: any[] = [];
+        if (tsm) { query += " AND tsm_name = ?"; params.push(tsm); }
+        if (from) { query += " AND date >= ?"; params.push(from); }
+        if (to) { query += " AND date <= ?"; params.push(to); }
+        query += " ORDER BY date DESC, submitted_at DESC";
+        const rows = db.prepare(query).all(...params);
+        return res.json(rows.map((row: any) => ({
+          ...row,
+          order_data: JSON.parse(row.order_data || '{}'),
+          category_productive_data: JSON.parse(row.category_productive_data || '{}')
+        })));
+      }
+
       const visibleOBIds = getVisibleOBIds(req.user);
       const normalizedVisibleIds = visibleOBIds.map(id => String(id || '').trim().toLowerCase());
 
-      let query = "SELECT * FROM submitted_orders WHERE 1=1";
+      let query = "SELECT * FROM ob_sales WHERE 1=1";
       const params: any[] = [];
 
       if (visibleOBIds.length > 0) {
@@ -2682,7 +2810,7 @@ async function startServer() {
   app.get("/api/check-duplicate", authenticateToken, (req, res) => {
     const { date, ob_contact } = req.query;
     try {
-      const row = db.prepare("SELECT id FROM submitted_orders WHERE date = ? AND ob_contact = ?").get(date, ob_contact);
+      const row = db.prepare("SELECT id FROM ob_sales WHERE date = ? AND ob_contact = ?").get(date, ob_contact);
       res.json({ exists: !!row });
     } catch (e) {
       res.status(500).json({ error: "Failed to check duplicate" });
@@ -2706,13 +2834,13 @@ async function startServer() {
         }
       }
 
-      const submissions = db.prepare("SELECT order_booker, ob_contact, visit_type, submitted_at FROM submitted_orders WHERE date = ?").all(date) as any[];
+      const submissions = db.prepare("SELECT order_booker, ob_contact, visit_type, submitted_at FROM ob_sales WHERE date = ?").all(date) as any[];
       
       // Get entry days count for each OB in the current month
       const currentMonth = (date as string).slice(0, 7);
       const entryCounts = db.prepare(`
         SELECT ob_contact, COUNT(DISTINCT date) as count 
-        FROM submitted_orders 
+        FROM ob_sales 
         WHERE date LIKE ? 
         GROUP BY ob_contact
       `).all(`${currentMonth}%`) as any[];
@@ -2745,7 +2873,8 @@ async function startServer() {
         zone, region, nsm, rsm, sc, director,
         totalShops, visitedShops, productiveShops, 
         categoryProductiveShops, items, targets,
-        latitude, longitude, accuracy, visitType
+        latitude, longitude, accuracy, visitType, entryType, remarks,
+        stockChecked
       } = data;
 
       // Backend Validation - Relaxed to ensure entry always submits successfully
@@ -2762,6 +2891,9 @@ async function startServer() {
       const finalObContact = obContact || 'Unknown';
       const finalRoute = route || 'General';
       const finalVisitType = visitType || 'A';
+      const finalEntryType = entryType || 'OB Entry (Sales Execution)';
+      const finalRemarks = remarks || '';
+      const finalStockChecked = stockChecked ? 1 : 0;
 
       // RBAC check: TSM can only submit for their assigned OBs
       const { role, name } = req.user;
@@ -2771,23 +2903,51 @@ async function startServer() {
       // The frontend already filters the OBs based on role.
 
       // Duplicate check: Prevent same OB + same date + same route duplicate
-      const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(finalObContact, orderDate, finalRoute) as any;
+      const existing = db.prepare("SELECT id FROM ob_sales WHERE ob_contact = ? AND date = ? AND route = ?").get(finalObContact, orderDate, finalRoute) as any;
       
       if (existing) {
         return res.status(400).json({ error: `Entry for OB ${orderBooker || finalObContact} on ${orderDate} for route ${finalRoute} already exists!` });
       }
 
       const submittedAt = getPSTTimestamp();
+
+      if (finalEntryType === 'TSM Visit') {
+        const info = db.prepare(`
+          INSERT INTO tsm_visits (
+            date, month, tsm_name, town, route, 
+            total_shops, visited_shops, productive_shops, 
+            category_productive_data, order_data, remarks, stock_checked, submitted_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          orderDate,
+          orderMonth,
+          req.user.name || tsm || '',
+          town || '',
+          finalRoute,
+          totalShops || 0,
+          visitedShops || 0,
+          productiveShops || 0,
+          JSON.stringify(categoryProductiveShops || {}),
+          JSON.stringify(items || {}),
+          finalRemarks,
+          finalStockChecked,
+          submittedAt
+        );
+
+        logAction(req.user.id.toString(), req.user.name, req.user.role, "SUBMIT_TSM_VISIT", { town, date: orderDate, route: finalRoute });
+        return res.json({ success: true, message: "TSM Visit submitted successfully" });
+      }
       
       const info = db.prepare(`
-        INSERT OR REPLACE INTO submitted_orders (
+        INSERT OR REPLACE INTO ob_sales (
           date, month, tsm, town, distributor, order_booker, ob_contact, route, 
           zone, region, nsm, rsm, sc, director,
           total_shops, visited_shops, productive_shops, 
           category_productive_data, order_data, targets_data,
-          latitude, longitude, accuracy, visit_type, submitted_at
+          latitude, longitude, accuracy, visit_type, entry_type, remarks, submitted_at
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `).run(
         orderDate,
         orderMonth,
@@ -2813,13 +2973,15 @@ async function startServer() {
         longitude || null, 
         accuracy || null,
         finalVisitType,
+        finalEntryType,
+        finalRemarks,
         submittedAt
       );
 
       logAction(req.user.id.toString(), req.user.name, req.user.role, "SUBMIT_ORDER", { obContact: finalObContact, date: orderDate, route: finalRoute });
 
       // Async sync to Google Sheets
-      const newOrder = db.prepare("SELECT * FROM submitted_orders WHERE id = ?").get(info.lastInsertRowid);
+      const newOrder = db.prepare("SELECT * FROM ob_sales WHERE id = ?").get(info.lastInsertRowid);
       appendToSheet(newOrder).catch(console.error);
       
       res.json({ success: true, message: "Order submitted successfully" });
@@ -3011,12 +3173,12 @@ async function startServer() {
 
       let stats;
       if (isAdmin) {
-        stats = db.prepare(`SELECT * FROM submitted_orders WHERE month IN (${monthPlaceholders})`).all(...last6Months);
+        stats = db.prepare(`SELECT * FROM ob_sales WHERE month IN (${monthPlaceholders})`).all(...last6Months);
       } else {
         const normalizedVisibleIds = visibleOBIds.map(id => String(id || '').trim().toLowerCase());
         const placeholders = normalizedVisibleIds.map(() => '?').join(',');
         const query = `
-          SELECT * FROM submitted_orders 
+          SELECT * FROM ob_sales 
           WHERE LOWER(TRIM(ob_contact)) IN (${placeholders}) AND month IN (${monthPlaceholders})
         `;
         stats = db.prepare(query).all(...normalizedVisibleIds, ...last6Months);
@@ -3104,9 +3266,9 @@ async function startServer() {
           if (otherIds.length > 0) {
             const placeholders = otherIds.map(() => '?').join(',');
             
-            // Update submitted_orders
+            // Update ob_sales
             db.prepare(`
-              UPDATE submitted_orders 
+              UPDATE ob_sales 
               SET ob_contact = ? 
               WHERE ob_contact IN (${placeholders})
             `).run(mainId, ...otherIds);
@@ -3134,12 +3296,12 @@ async function startServer() {
           }
         }
 
-        // 2. Clean submitted_orders (Exact Duplicates: Same OB, Date, Route)
+        // 2. Clean ob_sales (Exact Duplicates: Same OB, Date, Route)
         db.exec(`
-          DELETE FROM submitted_orders 
+          DELETE FROM ob_sales 
           WHERE id NOT IN (
             SELECT MAX(id) 
-            FROM submitted_orders 
+            FROM ob_sales 
             GROUP BY ob_contact, date, route
           )
         `);
@@ -3408,12 +3570,98 @@ async function startServer() {
             item.town, item.distributor, item.distributor_code || '',
             item.name, item.contact, item.region, item.target_ctn, targetMonth
           );
+
+          // AUTO-REGISTER OB as user if not exists
+          try {
+            const obUsername = item.contact.toLowerCase();
+            db.prepare(`
+              INSERT INTO users (username, email, role, name, contact, region, town, password)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(username) DO UPDATE SET
+                role = COALESCE(NULLIF(excluded.role, ''), role),
+                name = COALESCE(NULLIF(excluded.name, ''), name),
+                region = COALESCE(NULLIF(excluded.region, ''), region),
+                town = COALESCE(NULLIF(excluded.town, ''), town)
+            `).run(obUsername, obUsername + "@salespulse.local", 'OB', item.name, item.contact, item.region, item.town, '123456');
+          } catch (e) {
+            console.error(`Auto-register OB ${item.name} failed:`, e);
+          }
+
+          // AUTO-REGISTER TSM as user if not exists
+          if (item.tsm) {
+            try {
+              const tsmUsername = `TSM-${item.tsm.replace(/\s+/g, '-')}`.toLowerCase();
+              db.prepare(`
+                INSERT INTO users (username, email, role, name, contact, region, town, password)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(username) DO UPDATE SET
+                  role = COALESCE(NULLIF(excluded.role, ''), role),
+                  name = COALESCE(NULLIF(excluded.name, ''), name),
+                  region = COALESCE(NULLIF(excluded.region, ''), region),
+                  town = COALESCE(NULLIF(excluded.town, ''), town)
+              `).run(tsmUsername, tsmUsername + "@salespulse.local", 'TSM', item.tsm, tsmUsername, item.region, item.town, '123456');
+            } catch (e) {
+              console.error(`Auto-register TSM ${item.tsm} failed:`, e);
+            }
+          }
         }
       });
       transaction();
       return { success: true, count: team.length };
     } catch (err: any) {
       console.error("Pull Team Error:", err);
+      throw err;
+    }
+  }
+
+  async function pullTSMAssignments(sheets: any, spreadsheetId: string) {
+    try {
+      console.log(`Pulling TSM Assignments from ${spreadsheetId}...`);
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "TSM_Assignments!A1:ZZ1000",
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length < 2) {
+        console.log("No data found in TSM_Assignments sheet.");
+        return { success: false, message: "No data found in 'TSM_Assignments' sheet" };
+      }
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      const assignments = dataRows.map(row => {
+        const getVal = (headerNames: string[]) => {
+          for (const name of headerNames) {
+            const idx = headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+            if (idx > -1 && row[idx] !== undefined) return row[idx];
+          }
+          return null;
+        };
+
+        return {
+          tsm_name: getVal(['TSM Name', 'tsm_name', 'tsm'])?.toString().trim() || '',
+          town: getVal(['Town', 'town', 'town name'])?.toString().trim() || '',
+          routes: getVal(['Routes', 'routes'])?.toString().trim() || ''
+        };
+      }).filter(a => a.tsm_name && a.town);
+
+      const transaction = db.transaction(() => {
+        // Clear existing assignments to match Google Sheet exactly
+        db.prepare("DELETE FROM tsm_assignments").run();
+        
+        for (const item of assignments) {
+          db.prepare(`
+            INSERT INTO tsm_assignments (tsm_name, town, routes)
+            VALUES (?, ?, ?)
+          `).run(item.tsm_name, item.town, item.routes);
+        }
+      });
+      transaction();
+      return { success: true, count: assignments.length };
+    } catch (err: any) {
+      console.error("Pull TSM Assignments Error:", err);
       throw err;
     }
   }
@@ -3491,11 +3739,21 @@ async function startServer() {
           return r;
         };
 
+        const cleanString = (val: any) => {
+          if (!val) return val;
+          let s = val.toString().trim();
+          // Strip leading '3' if it's followed by letters (common junk in this dump)
+          if (s.startsWith('3') && s.length > 3 && /[a-zA-Z]/.test(s[1])) {
+            s = s.substring(1);
+          }
+          return s;
+        };
+
         return {
-          username: (getVal(['Username', 'username']) || '').toLowerCase(),
+          username: (cleanString(getVal(['Username', 'username'])) || '').toLowerCase(),
           email: getVal(['Email', 'email']),
           role: getVal(['Role', 'role']),
-          name: getVal(['Name', 'name']),
+          name: cleanString(getVal(['Name', 'name'])),
           contact: getVal(['Contact', 'contact']),
           region: mapRegion(rawRegion),
           town: getVal(['Town', 'town'])
@@ -3561,7 +3819,7 @@ async function startServer() {
 
       const transaction = db.transaction(() => {
         const insertOrder = db.prepare(`
-          INSERT INTO submitted_orders (
+          INSERT INTO ob_sales (
             date, month, director, nsm, rsm, sc, tsm, town, distributor, order_booker, ob_contact, route, 
             zone, region,
             total_shops, visited_shops, productive_shops, 
@@ -3627,7 +3885,7 @@ async function startServer() {
           const cleanRoute = getVal(['Route'])?.toString().trim() || '';
 
           // For historical pull, we use INSERT OR IGNORE or check for existence
-          const existingRecord = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(cleanContact, cleanDate, cleanRoute);
+          const existingRecord = db.prepare("SELECT id FROM ob_sales WHERE ob_contact = ? AND date = ? AND route = ?").get(cleanContact, cleanDate, cleanRoute);
           if (existingRecord) continue;
 
           const visitTypeLabel = getVal(['Visit Type']);
@@ -3663,11 +3921,11 @@ async function startServer() {
           const lng = getVal(['Longitude']) || null;
           const acc = getVal(['Accuracy']) || null;
 
-          const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(cleanContact, cleanDate) as any;
+          const existing = db.prepare("SELECT id FROM ob_sales WHERE ob_contact = ? AND date = ?").get(cleanContact, cleanDate) as any;
           
           if (existing) {
             db.prepare(`
-              UPDATE submitted_orders SET
+              UPDATE ob_sales SET
                 month = ?,
                 director = ?, nsm = ?, rsm = ?, sc = ?, tsm = ?, town = ?, distributor = ?, order_booker = ?, route = ?,
                 zone = ?, region = ?,
@@ -3772,7 +4030,7 @@ async function startServer() {
   async function performFullSync(sheets: any, spreadsheetId: string, month?: string) {
     const targetMonth = month || new Date().toISOString().slice(0, 7);
     // 1. Ensure all sheets exist
-    const requiredSheets = ["Sales_Data", "Team_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report", "Current_Stocks", "Last_Entry_Date", "Visit_Type_Analysis", "OB_Performance", "TSM_Performance", "Product_Config", "Users"];
+    const requiredSheets = ["Sales_Data", "Team_Data", "TSM_Assignments", "TSM_Visits", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report", "Current_Stocks", "Last_Entry_Date", "Visit_Type_Analysis", "OB_Performance", "TSM_Performance", "Product_Config", "Users"];
     await ensureSheetsExist(sheets, spreadsheetId);
 
     // 2. Pull Product Config (Weights etc)
@@ -3780,6 +4038,9 @@ async function startServer() {
 
     // 3. Pull Team Data (Hierarchy & Targets)
     const pullTeamResult = await pullTeamData(sheets, spreadsheetId, targetMonth);
+
+    // 3.1 Pull TSM Assignments
+    const pullTSMResult = await pullTSMAssignments(sheets, spreadsheetId);
 
     // 4. Pull Users Data
     const pullUsersResult = await pullUsersData(sheets, spreadsheetId);
@@ -4030,7 +4291,7 @@ async function startServer() {
         // Optional: Clear existing history? User might want to append. 
         // Let's append but avoid exact duplicates (same OB, Date, and Submitted At)
         const insertOrder = db.prepare(`
-          INSERT INTO submitted_orders (
+          INSERT INTO ob_sales (
             date, month, director, nsm, rsm, tsm, town, distributor, order_booker, ob_contact, route, 
             zone, region,
             total_shops, visited_shops, productive_shops, 
@@ -4085,12 +4346,12 @@ async function startServer() {
           const orderMonth = date.slice(0, 7);
           // April 2026 is new insert only
           if (orderMonth === '2026-04') {
-            const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(obContact, date);
+            const existing = db.prepare("SELECT id FROM ob_sales WHERE ob_contact = ? AND date = ?").get(obContact, date);
             if (existing) continue;
           }
 
           // Check for duplicate - use ob_contact, date, and route for better matching
-          const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, date, route);
+          const existing = db.prepare("SELECT id FROM ob_sales WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, date, route);
           if (existing) continue;
 
           insertOrder.run(
@@ -4216,7 +4477,7 @@ async function startServer() {
       const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       const filteredObs = obs.filter(ob => visibleOBIds.includes(ob.contact));
       
-      const submissions = db.prepare("SELECT ob_contact, date FROM submitted_orders WHERE month = ?").all(month) as any[];
+      const submissions = db.prepare("SELECT ob_contact, date FROM ob_sales WHERE month = ?").all(month) as any[];
       
       const configRows = db.prepare("SELECT * FROM app_config").all() as any[];
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);

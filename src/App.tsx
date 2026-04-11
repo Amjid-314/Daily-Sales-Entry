@@ -51,6 +51,7 @@ import {
   Plus,
   ShieldCheck,
   Trash,
+  Check,
   Search,
   Lock,
   Store,
@@ -5919,7 +5920,8 @@ export default function App() {
     ob: '', 
     tsm: '', 
     from: new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0], 
-    to: new Date().toISOString().split('T')[0] 
+    to: new Date().toISOString().split('T')[0],
+    entryType: 'OB Entry'
   });
   const [historyPage, setHistoryPage] = useState(1);
   const itemsPerPage = 10;
@@ -5970,6 +5972,10 @@ export default function App() {
   const [isGoogleConfigLocked, setIsGoogleConfigLocked] = useState(false);
   const [dailyStatus, setDailyStatus] = useState<any[]>([]);
   const [isLoadingDailyStatus, setIsLoadingDailyStatus] = useState(false);
+  const [showStockReminder, setShowStockReminder] = useState(false);
+  const [reminderShown, setReminderShown] = useState(false);
+  const [tsmAssignments, setTsmAssignments] = useState<any[]>([]);
+  const [tsmVisitHistory, setTsmVisitHistory] = useState<any[]>([]);
 
   const [order, setOrder] = useState<OrderState>(() => {
     const defaultState: OrderState = {
@@ -5992,7 +5998,9 @@ export default function App() {
       categoryProductiveShops: {},
       items: {},
       targets: {},
-      visitType: ''
+      visitType: '',
+      entryType: 'OB Entry (Sales Execution)',
+      stockChecked: false
     };
 
     try {
@@ -6113,6 +6121,54 @@ export default function App() {
     }
   }, []);
 
+  const towns = useMemo(() => {
+    if (order.entryType === 'TSM Visit') {
+      // Use TSM Assignments from Google Sheet if available
+      const assignments = tsmAssignments.filter(a => a.tsm_name === userName);
+      if (assignments.length > 0) {
+        return Array.from(new Set(assignments.map(a => a.town))).sort();
+      }
+      // Fallback to OB assignments if no specific TSM assignment found
+      const tsmTowns = Array.from(new Set(obAssignments.filter(a => a.tsm === userName).map(a => a.town))).sort();
+      if (tsmTowns.length > 0) return tsmTowns;
+    }
+    return Array.from(new Set(obAssignments.map(a => a.town))).sort();
+  }, [obAssignments, tsmAssignments, order.entryType, userName]);
+
+  const routes = useMemo(() => {
+    if (order.entryType === 'TSM Visit' && order.town) {
+      // Try TSM Assignments first
+      const tsmAsgn = tsmAssignments.find(a => a.tsm_name === userName && a.town === order.town);
+      if (tsmAsgn && tsmAsgn.routes) {
+        return tsmAsgn.routes.split(',').map((s: string) => s.trim()).filter(Boolean);
+      }
+
+      // Fallback to OB assignments
+      const townAssignments = obAssignments.filter(a => a.town === order.town);
+      const allRoutes = new Set<string>();
+      townAssignments.forEach(a => {
+        if (!a.routes) return;
+        try {
+          const r = typeof a.routes === 'string' && a.routes.startsWith('[') 
+            ? JSON.parse(a.routes) 
+            : (typeof a.routes === 'string' ? a.routes.split(',').map(s => s.trim()) : a.routes);
+          
+          if (Array.isArray(r)) {
+            r.forEach((route: string) => allRoutes.add(route));
+          } else if (typeof r === 'string') {
+            allRoutes.add(r);
+          }
+        } catch (e) {
+          if (typeof a.routes === 'string') {
+            a.routes.split(',').map(s => s.trim()).forEach(route => allRoutes.add(route));
+          }
+        }
+      });
+      return Array.from(allRoutes).sort();
+    }
+    return ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+  }, [obAssignments, tsmAssignments, order.entryType, order.town, userName]);
+
   const focusableIds = useMemo(() => {
     const ids: string[] = [];
     CATEGORIES.forEach(category => {
@@ -6216,11 +6272,29 @@ export default function App() {
           targets: {},
           items: {},
           categoryProductiveShops: {},
-          visitType: ''
+          visitType: '',
+          stockChecked: false
         }));
         fetchTargetsForOB(String(value));
       } else {
         setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', sc: '', director: '' }));
+      }
+    } else if (field === 'entryType') {
+      if (value === 'TSM Visit') {
+        setOrder(prev => ({ 
+          ...prev, 
+          entryType: 'TSM Visit', 
+          obContact: '', 
+          orderBooker: '', 
+          tsm: userName || '',
+          town: '',
+          route: '',
+          distributor: '',
+          items: {},
+          categoryProductiveShops: {}
+        }));
+      } else {
+        setOrder(prev => ({ ...prev, entryType: 'OB Entry (Sales Execution)', tsm: '' }));
       }
     } else if (field === 'town') {
       const townDists = distributors.filter(d => d.town === value);
@@ -6229,6 +6303,20 @@ export default function App() {
         autoDist = townDists[0].name;
       }
       setOrder(prev => ({ ...prev, town: String(value), distributor: autoDist }));
+      
+      // Show stock reminder for TSM Visit when town and route are selected
+      if (order.entryType === 'TSM Visit' && value && order.route && !reminderShown) {
+        setShowStockReminder(true);
+        setReminderShown(true);
+      }
+    } else if (field === 'route') {
+      setOrder(prev => ({ ...prev, route: String(value) }));
+      
+      // Show stock reminder for TSM Visit when town and route are selected
+      if (order.entryType === 'TSM Visit' && order.town && value && !reminderShown) {
+        setShowStockReminder(true);
+        setReminderShown(true);
+      }
     } else {
       setOrder(prev => ({ ...prev, [field]: value }));
     }
@@ -6390,7 +6478,8 @@ export default function App() {
         tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
         zone: '', region: '', nsm: '', rsm: '', sc: '', director: '',
         totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {},
-        visitType: ''
+        visitType: '',
+        stockChecked: false
       });
       localStorage.removeItem(STORAGE_KEY);
     } catch (err) {
@@ -6511,6 +6600,15 @@ export default function App() {
       if (response.ok) {
         setLastSubmittedOrder({ ...order, order_booker: order.orderBooker });
         setMessage({ text: 'Submitted!', type: 'success' });
+        setOrder({
+          date: getPSTDate(),
+          tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
+          zone: '', region: '', nsm: '', rsm: '', sc: '', director: '',
+          totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {},
+          visitType: '',
+          stockChecked: false
+        });
+        setReminderShown(false);
         // Auto-sync to Google Sheets
         syncGoogle();
         fetchHistory(true);
@@ -6524,7 +6622,8 @@ export default function App() {
           tsm: '', town: '', distributor: '', orderBooker: '', obContact: '', route: '',
           zone: '', region: '', nsm: '', rsm: '', sc: '', director: '',
           totalShops: 50, visitedShops: 0, productiveShops: 0, categoryProductiveShops: {}, items: {}, targets: {},
-          visitType: ''
+          visitType: '',
+          entryType: 'OB Entry (Sales Execution)'
         });
         localStorage.removeItem(STORAGE_KEY);
       } else {
@@ -6548,6 +6647,9 @@ export default function App() {
         if (historyFilters.tsm) params.append('tsm', historyFilters.tsm);
         if (historyFilters.from) params.append('from', historyFilters.from);
         if (historyFilters.to) params.append('to', historyFilters.to);
+        if (historyFilters.entryType === 'TSM Visit') {
+          params.append('type', 'tsm_visit');
+        }
       }
 
       const response = await apiFetch(`/api/orders?${params.toString()}`);
@@ -6559,9 +6661,11 @@ export default function App() {
             category_productive_data: typeof h.category_productive_data === 'string' ? JSON.parse(h.category_productive_data) : (h.category_productive_data || {}),
             order_data: typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {})
           })).sort((a: any, b: any) => {
-            // Sort by OB Name then Date
-            if (a.order_booker < b.order_booker) return -1;
-            if (a.order_booker > b.order_booker) return 1;
+            // Sort by Name (OB or TSM) then Date
+            const nameA = a.order_booker || a.tsm_name || '';
+            const nameB = b.order_booker || b.tsm_name || '';
+            if (nameA < nameB) return -1;
+            if (nameA > nameB) return 1;
             if (a.date < b.date) return 1;
             if (a.date > b.date) return -1;
             return 0;
@@ -6830,7 +6934,7 @@ export default function App() {
             method: 'POST',
             body: JSON.stringify({
               username: member.contact, // Use contact ID as username
-              password: 'abc123', // Default password
+              password: '123456', // Default password
               role: member.role,
               name: member.name,
               contact: member.contact,
@@ -6867,6 +6971,8 @@ export default function App() {
         requests.push(apiFetch('/api/admin/distributors'));
         requests.push(apiFetch('/api/admin/config'));
         requests.push(apiFetch(`/api/admin/hierarchy?month=${selectedMonth}`));
+        requests.push(apiFetch('/api/admin/tsm-assignments'));
+        requests.push(apiFetch('/api/orders?type=tsm_visit'));
       }
       
       if (isAdmin) {
@@ -6888,6 +6994,10 @@ export default function App() {
         if (results[nextIdx]?.ok) setAppConfig(await results[nextIdx].json());
         nextIdx++;
         if (results[nextIdx]?.ok) setHierarchy(await results[nextIdx].json());
+        nextIdx++;
+        if (results[nextIdx]?.ok) setTsmAssignments(await results[nextIdx].json());
+        nextIdx++;
+        if (results[nextIdx]?.ok) setTsmVisitHistory(await results[nextIdx].json());
         nextIdx++;
       }
       
@@ -7532,15 +7642,15 @@ export default function App() {
   const groupedHistory = useMemo(() => {
     const groups: Record<string, any[]> = {};
     history.forEach(h => {
-      const ob = h.order_booker || 'Unknown';
-      if (!groups[ob]) groups[ob] = [];
-      groups[ob].push(h);
+      const groupKey = historyFilters.entryType === 'TSM Visit' ? (h.tsm_name || 'Unknown TSM') : (h.order_booker || 'Unknown OB');
+      if (!groups[groupKey]) groups[groupKey] = [];
+      groups[groupKey].push(h);
     });
-    return Object.keys(groups).sort().map(ob => ({
-      obName: ob,
-      entries: groups[ob].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+    return Object.keys(groups).sort().map(key => ({
+      obName: key,
+      entries: groups[key].sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
     }));
-  }, [history]);
+  }, [history, historyFilters.entryType]);
 
   const resetDatabase = async () => {
     if (window.confirm("WARNING: This will delete ALL history (submitted orders and drafts). Continue?")) {
@@ -9269,6 +9379,59 @@ export default function App() {
           </div>
 
           <section className="card-clean overflow-hidden">
+            <div className="bg-indigo-600 text-white px-4 py-2 flex justify-between items-center">
+              <div className="flex items-center gap-2">
+                <History className="w-4 h-4" />
+                <h2 className="text-sm font-bold uppercase tracking-widest">TSM Visits History</h2>
+              </div>
+              <button onClick={fetchAdminData} className="p-1 hover:bg-white/10 rounded transition-colors">
+                <RefreshCw className={`w-3 h-3 ${isLoadingAdmin ? 'animate-spin' : ''}`} />
+              </button>
+            </div>
+            <div className="p-4">
+              <div className="overflow-x-auto max-h-[400px]">
+                <table className="w-full text-left text-[10px]">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 uppercase">
+                      <th className="py-2">Date</th>
+                      <th className="py-2">TSM Name</th>
+                      <th className="py-2">Town</th>
+                      <th className="py-2">Route</th>
+                      <th className="py-2 text-center">Stock Checked</th>
+                      <th className="py-2 text-right">T/V/P</th>
+                      <th className="py-2 text-right">Submitted At</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {tsmVisitHistory.map(visit => (
+                      <tr key={visit.id} className="hover:bg-slate-50">
+                        <td className="py-2 font-bold text-slate-700">{visit.date}</td>
+                        <td className="py-2 text-slate-500">{visit.tsm_name}</td>
+                        <td className="py-2 text-slate-500">{visit.town}</td>
+                        <td className="py-2 text-slate-500">{visit.route}</td>
+                        <td className="py-2 text-center">
+                          {visit.stock_checked ? (
+                            <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded text-[8px] font-bold uppercase tracking-tighter">Checked</span>
+                          ) : (
+                            <span className="px-2 py-0.5 bg-slate-100 text-slate-400 rounded text-[8px] font-bold uppercase tracking-tighter">Pending</span>
+                          )}
+                        </td>
+                        <td className="py-2 text-right font-black text-seablue">{visit.total_shops}/{visit.visited_shops}/{visit.productive_shops}</td>
+                        <td className="py-2 text-right text-slate-400">{visit.submitted_at}</td>
+                      </tr>
+                    ))}
+                    {tsmVisitHistory.length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-8 text-center text-slate-400 italic">No TSM visits found.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+
+          <section className="card-clean overflow-hidden">
             <div className="bg-slate-800 text-white px-4 py-2 flex justify-between items-center">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4" />
@@ -10143,16 +10306,22 @@ export default function App() {
                   <RefreshCw className={`w-5 h-5 ${isLoadingHistory ? 'animate-spin' : ''}`} />
                 </button>
                 <button onClick={() => {
-                const headers = [
+                const isTSMVisit = historyFilters.entryType === 'TSM Visit';
+                const headers = isTSMVisit ? [
+                  'Date', 'Month', 'TSM Name', 'Town', 'Route', 
+                  'Total Shops', 'Visited Shops', 'Productive Shops',
+                  ...SKUS.map(sku => `${sku.name} (${sku.category})`),
+                  'Total Achievement', 'Remarks'
+                ] : [
                   'Date', 'Month', 'Director', 'NSM', 'RSM', 'Region', 'TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
                   'Total Shops', 'Visited Shops', 'Productive Shops',
                   ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-                  'Total Achievement'
+                  'Total Achievement', 'Visit Type', 'Entry Type', 'Remarks'
                 ];
                 
                 const rows = history.map(h => {
                   const items = h.order_data || {};
-                  const obInfo = obAssignments.find(ob => ob.contact === h.ob_contact) || {} as any;
+                  const obInfo = !isTSMVisit ? (obAssignments.find(ob => ob.contact === h.ob_contact) || {} as any) : {};
                   
                   const skuValues = SKUS.map(sku => {
                     const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
@@ -10163,11 +10332,24 @@ export default function App() {
                   const totalAch = skuValues.reduce((a, b) => a + parseFloat(b), 0);
                   const month = h.date ? h.date.slice(0, 7) : '';
 
+                  if (isTSMVisit) {
+                    return [
+                      h.date, month, h.tsm_name || h.tsm || '', h.town, h.route,
+                      h.total_shops, h.visited_shops, h.productive_shops,
+                      ...skuValues,
+                      totalAch.toFixed(3),
+                      h.remarks || ''
+                    ];
+                  }
+
                   return [
                     h.date, month, obInfo.director || '', obInfo.nsm || '', obInfo.rsm || '', obInfo.region || '', h.tsm, h.town, h.distributor, h.order_booker, h.ob_contact, h.route,
                     h.total_shops, h.visited_shops, h.productive_shops,
                     ...skuValues,
-                    totalAch.toFixed(3)
+                    totalAch.toFixed(3),
+                    h.visit_type || 'A',
+                    h.entry_type || 'OB Entry',
+                    h.remarks || ''
                   ];
                 });
 
@@ -10208,6 +10390,18 @@ export default function App() {
           </div>
 
               <div className="flex items-center gap-1 overflow-x-auto pb-1 scrollbar-none w-full">
+              <select 
+                value={historyFilters.entryType} 
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setHistoryFilters(prev => ({ ...prev, entryType: val, ob: '', tsm: '' }));
+                  setTimeout(() => fetchHistory(), 0);
+                }}
+                className="input-clean text-[10px] py-1 px-1.5 min-w-[100px] flex-1 bg-seablue/5 border-seablue/20 font-bold"
+              >
+                <option value="OB Entry">OB Sales</option>
+                <option value="TSM Visit">TSM Visits</option>
+              </select>
               <select 
                 value={historyFilters.tsm} 
                 onChange={(e) => {
@@ -10418,8 +10612,32 @@ export default function App() {
       </header>
 
       <main className="max-w-6xl mx-auto px-3 py-3 space-y-3">
+        {/* Entry Type Selector */}
+        <div className="card-clean p-3 bg-white shadow-sm border border-slate-100">
+          <div className="flex flex-col space-y-1">
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Entry Type</label>
+            <select 
+              value={order.entryType || 'OB Entry (Sales Execution)'}
+              onChange={(e) => {
+                const newType = e.target.value;
+                setOrder((prev: any) => ({ 
+                  ...prev, 
+                  entryType: newType,
+                  tsm: newType === 'TSM Visit' ? (userName || '') : prev.tsm,
+                  obContact: newType === 'TSM Visit' ? '' : prev.obContact,
+                  orderBooker: newType === 'TSM Visit' ? '' : prev.orderBooker
+                }));
+              }}
+              className="w-full px-3 py-2 bg-slate-50 border border-slate-100 rounded-lg focus:bg-white focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all text-[10px] font-bold text-slate-700 appearance-none"
+            >
+              <option value="OB Entry (Sales Execution)">OB Entry (Sales Execution)</option>
+              <option value="TSM Visit">TSM Visit</option>
+            </select>
+          </div>
+        </div>
+
         {/* TSM Filter - Restricted by Role */}
-        {userRole !== 'OB' && tsmList.length > 0 && (
+        {order.entryType === 'OB Entry (Sales Execution)' && userRole !== 'OB' && tsmList.length > 0 && (
           <div className="card-clean p-1.5 bg-seablue/5 border-seablue/10 overflow-x-auto">
             <div className="flex items-center gap-2 min-w-max">
               {['Super Admin', 'Admin', 'Director', 'NSM', 'RSM', 'SC'].includes(userRole || '') && (
@@ -10460,35 +10678,71 @@ export default function App() {
 
         {/* Meta Info Section */}
         <div className="card-clean p-3 grid grid-cols-2 md:grid-cols-6 gap-3">
+          {order.entryType === 'TSM Visit' && (
+            <>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase">TSM Name</label>
+                <input type="text" value={userName || ''} readOnly className="input-clean w-full text-[10px] py-1 bg-slate-50" />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase">Town</label>
+                <select 
+                  value={order.town} 
+                  onChange={(e) => handleMetaChange('town', e.target.value)} 
+                  className="input-clean w-full text-[10px] py-1"
+                >
+                  <option value="">Select Town</option>
+                  {towns.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase">Route</label>
+                <select 
+                  value={order.route} 
+                  onChange={(e) => handleMetaChange('route', e.target.value)} 
+                  className="input-clean w-full text-[10px] py-1"
+                >
+                  <option value="">Select Route</option>
+                  {routes.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+            </>
+          )}
+
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">Date</label>
             <input type="date" value={order.date} onChange={(e) => handleMetaChange('date', e.target.value)} className="input-clean w-full text-[10px] py-1" />
           </div>
-          <div className="space-y-1">
-            <label className="text-[9px] font-bold text-slate-400 uppercase">OB</label>
-            <select 
-              value={order.obContact} 
-              disabled={userRole === 'OB'}
-              onChange={(e) => handleMetaChange('obContact', e.target.value)} 
-              className="input-clean w-full text-[10px] py-1"
-            >
-              <option value="">Select OB</option>
-              {filteredOBs.map(ob => (
-                <option key={ob.contact} value={ob.contact}>
-                  {ob.name} ({ob.contact})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label className="text-[9px] font-bold text-slate-400 uppercase">Route</label>
-            <select value={order.route} onChange={(e) => handleMetaChange('route', e.target.value)} className="input-clean w-full text-[10px] py-1" disabled={!order.obContact}>
-              <option value="">Select Route</option>
-              {Array.from(new Set(obAssignments.find(a => a.contact === order.obContact)?.routes || [])).map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-          </div>
+
+          {order.entryType !== 'TSM Visit' && (
+            <>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase">OB</label>
+                <select 
+                  value={order.obContact} 
+                  disabled={userRole === 'OB'}
+                  onChange={(e) => handleMetaChange('obContact', e.target.value)} 
+                  className="input-clean w-full text-[10px] py-1"
+                >
+                  <option value="">Select OB</option>
+                  {filteredOBs.map(ob => (
+                    <option key={ob.contact} value={ob.contact}>
+                      {ob.name} ({ob.contact})
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase">Route</label>
+                <select value={order.route} onChange={(e) => handleMetaChange('route', e.target.value)} className="input-clean w-full text-[10px] py-1" disabled={!order.obContact}>
+                  <option value="">Select Route</option>
+                  {Array.from(new Set(obAssignments.find(a => a.contact === order.obContact)?.routes || [])).map(r => (
+                    <option key={r} value={r}>{r}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
 
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">Shops</label>
@@ -10533,7 +10787,7 @@ export default function App() {
         </div>
 
         {/* Never Visited Indicator */}
-        {order.totalShops > 0 && !order.isAbsent && (
+        {order.totalShops > 0 && order.visitType !== 'Absent' && (
           <div className="flex justify-center">
             <div className={`px-2 py-0.5 rounded-full text-[7px] font-black uppercase tracking-widest flex items-center gap-1.5 shadow-sm border ${Math.max(0, order.totalShops - order.visitedShops) > 0 ? 'bg-red-50 text-red-600 border-red-100' : 'bg-emerald-50 text-emerald-600 border-emerald-100'}`}>
               <EyeOff className="w-2 h-2" />
@@ -10542,7 +10796,7 @@ export default function App() {
           </div>
         )}
 
-        {order.obContact && !order.isAbsent ? (
+        {(order.obContact || order.entryType === 'TSM Visit') && order.visitType !== 'Absent' ? (
           <>
             {/* Categories Section */}
             <div className="space-y-4">
@@ -10663,6 +10917,17 @@ export default function App() {
                 </div>
               </div>
             </section>
+            
+            {/* Remarks Section */}
+            <section className="card-clean p-4">
+              <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Remarks / Notes</h3>
+              <textarea 
+                value={order.remarks || ''} 
+                onChange={(e) => setOrder(prev => ({ ...prev, remarks: e.target.value }))}
+                placeholder="Enter any additional notes or remarks here..."
+                className="input-clean w-full h-24 text-[11px] py-2 px-3 resize-none"
+              />
+            </section>
           </div>
         </>
       ) : (
@@ -10754,6 +11019,49 @@ export default function App() {
             {message.type === 'success' ? <CheckCircle2 className="w-5 h-5" /> : <AlertCircle className="w-5 h-5" />}
             <span className="text-sm font-bold uppercase tracking-widest">{message.text}</span>
           </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {showStockReminder && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }} 
+              animate={{ opacity: 1, scale: 1, y: 0 }} 
+              exit={{ opacity: 0, scale: 0.95, y: 20 }} 
+              className="card-clean p-6 max-w-sm w-full bg-white shadow-2xl border-t-4 border-amber-500"
+            >
+              <div className="flex items-center gap-3 mb-4">
+                <div className="p-3 bg-amber-100 text-amber-600 rounded-xl">
+                  <PackageSearch className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black uppercase tracking-tight text-slate-800">Stock Reminder</h3>
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">TSM Visit Protocol</p>
+                </div>
+              </div>
+              
+              <div className="bg-slate-50 p-4 rounded-xl mb-6 border border-slate-100">
+                <p className="text-sm text-slate-600 leading-relaxed">
+                  Please ensure <span className="font-bold text-slate-800">stock check/update</span> for this town during visit.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-3 mb-6 p-3 bg-emerald-50 rounded-xl border border-emerald-100 cursor-pointer hover:bg-emerald-100 transition-colors" onClick={() => setOrder(prev => ({ ...prev, stockChecked: !prev.stockChecked }))}>
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center transition-colors ${order.stockChecked ? 'bg-emerald-500 border-emerald-500' : 'bg-white border-slate-300'}`}>
+                  {order.stockChecked && <Check className="w-3.5 h-3.5 text-white" />}
+                </div>
+                <span className="text-sm font-bold text-slate-700">Stock Checked</span>
+              </div>
+
+              <button 
+                onClick={() => setShowStockReminder(false)} 
+                className="w-full py-3 bg-slate-800 text-white rounded-xl text-sm font-bold hover:bg-slate-900 transition-colors shadow-lg shadow-slate-200"
+              >
+                Continue
+              </button>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

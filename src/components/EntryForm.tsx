@@ -28,6 +28,21 @@ export const EntryForm: React.FC<EntryFormProps> = ({
 }) => {
   return (
     <main className="max-w-4xl mx-auto p-4 space-y-6 pb-40">
+      {/* Entry Type Selector */}
+      <div className="card-clean p-4 bg-white shadow-sm border border-slate-100">
+        <div className="flex flex-col space-y-2">
+          <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest ml-1">Entry Type</label>
+          <select 
+            value={order.entryType || 'OB Entry (Sales Execution)'}
+            onChange={(e) => setOrder((prev: any) => ({ ...prev, entryType: e.target.value }))}
+            className="w-full px-4 py-3 bg-slate-50 border border-slate-100 rounded-xl focus:bg-white focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all text-sm font-bold text-slate-700 appearance-none"
+          >
+            <option value="OB Entry (Sales Execution)">OB Entry (Sales Execution)</option>
+            <option value="TSM Visit">TSM Visit</option>
+          </select>
+        </div>
+      </div>
+
       {/* Never Visited Indicator */}
       {order.totalShops > 0 && !order.isAbsent && (
         <div className="flex justify-center">
