@@ -40,9 +40,6 @@ export interface OrderState {
   latitude?: number;
   longitude?: number;
   accuracy?: number;
-  entryType?: 'OB Entry (Sales Execution)' | 'TSM Visit';
-  remarks?: string;
-  stockChecked?: boolean;
 }
 
 export interface OBAssignment {

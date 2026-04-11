@@ -93,9 +93,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
                 required
               />
             </div>
-            <p className="text-[10px] text-slate-400 mt-1 ml-1 font-medium italic">
-              * OBs use their ID/Phone, TSMs use TSM-Name
-            </p>
           </div>
 
           {isAmjid && (
