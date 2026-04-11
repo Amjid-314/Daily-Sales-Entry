@@ -1992,11 +1992,25 @@ async function startServer() {
       username = username.trim();
       if (password) password = password.trim();
       
-      let user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)").get(username, username) as any;
+      let user = db.prepare(`
+        SELECT * FROM users 
+        WHERE LOWER(username) = LOWER(?) 
+           OR LOWER(email) = LOWER(?) 
+           OR LOWER(contact) = LOWER(?)
+           OR LOWER(name) = LOWER(?)
+           OR REPLACE(LOWER(name), ' ', '') = REPLACE(LOWER(?), ' ', '')
+           OR REPLACE(LOWER(contact), '-', '') = REPLACE(REPLACE(LOWER(?), '-', ''), ' ', '')
+           OR REPLACE(LOWER(username), '-', '') = REPLACE(REPLACE(LOWER(?), '-', ''), ' ', '')
+      `).get(username, username, username, username, username, username, username) as any;
+      
+      // Special case for Amjid
+      if (!user && (username.toLowerCase() === 'amjid' || username.toLowerCase() === 'amjid.bisconni@gmail.com')) {
+        user = db.prepare("SELECT * FROM users WHERE email = ?").get(ADMIN_EMAIL) as any;
+      }
       
       if (!user) {
         // Fallback for first time admin login
-        if (username === ADMIN_EMAIL || username.toLowerCase() === 'admin') {
+        if (username === ADMIN_EMAIL || username.toLowerCase() === 'admin' || username.toLowerCase() === 'amjid') {
           const role = 'Super Admin';
           const name = 'Admin';
           const hashedPassword = await bcrypt.hash(password || 'Admin@123', 10);
@@ -3749,9 +3763,12 @@ async function startServer() {
           return s;
         };
 
+        const email = getVal(['Email', 'email'])?.toString().trim();
+        const username = (cleanString(getVal(['Username', 'username'])) || email || '').toLowerCase();
+
         return {
-          username: (cleanString(getVal(['Username', 'username'])) || '').toLowerCase(),
-          email: getVal(['Email', 'email']),
+          username: username,
+          email: email,
           role: getVal(['Role', 'role']),
           name: cleanString(getVal(['Name', 'name'])),
           contact: getVal(['Contact', 'contact']),
@@ -3762,13 +3779,25 @@ async function startServer() {
 
       const transaction = db.transaction(() => {
         for (const user of users) {
-          db.prepare(`
-            INSERT INTO users (username, email, role, name, contact, region, town, password)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(username) DO UPDATE SET
-              email=excluded.email, role=excluded.role, name=excluded.name, 
-              contact=excluded.contact, region=excluded.region, town=excluded.town
-          `).run(user.username, user.email || null, user.role, user.name, user.contact, user.region, user.town, 'nopassword');
+          try {
+            // Check if user exists by username OR email
+            const existing = db.prepare("SELECT * FROM users WHERE username = ? OR (email = ? AND email IS NOT NULL)").get(user.username, user.email || null) as any;
+            
+            if (existing) {
+              db.prepare(`
+                UPDATE users SET 
+                  email = ?, role = ?, name = ?, contact = ?, region = ?, town = ?
+                WHERE id = ?
+              `).run(user.email || null, user.role, user.name, user.contact, user.region, user.town, existing.id);
+            } else {
+              db.prepare(`
+                INSERT INTO users (username, email, role, name, contact, region, town, password)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              `).run(user.username, user.email || null, user.role, user.name, user.contact, user.region, user.town, '123456');
+            }
+          } catch (e) {
+            console.error("Failed to sync user:", user.username, e);
+          }
         }
       });
       transaction();
