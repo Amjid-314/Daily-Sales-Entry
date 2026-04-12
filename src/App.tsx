@@ -4683,6 +4683,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
   const [selectedAnalysisOB, setSelectedAnalysisOB] = useState('');
   const [matrixView, setMatrixView] = useState('Total');
   const [targetView, setTargetView] = useState('Brand');
+  const [selectedAlertDetail, setSelectedAlertDetail] = useState<any>(null);
 
   // Hierarchy Filters for Reports
   const [topCategoryFilter, setTopCategoryFilter] = useState('All');
@@ -4700,77 +4701,61 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
   }, [userRole]);
 
   const filterOptions = useMemo(() => {
-    // First, get the OBs this user is allowed to see based on their role
-    let allowedOBs = [];
-    const role = (userRole || '').trim().toUpperCase();
-    const name = (userName || '').trim().toLowerCase();
-    const region = (userRegion || '').trim().toLowerCase();
-    const contact = (userContact || '').trim();
-
-    if (role === 'ADMIN' || role === 'SUPER ADMIN') {
-      allowedOBs = obAssignments;
-    } else if (role === 'DIRECTOR') {
-      allowedOBs = obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === name);
-    } else if (role === 'NSM') {
-      allowedOBs = obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === name);
-    } else if (role === 'RSM' || role === 'SC') {
-      allowedOBs = obAssignments.filter((ob: any) => 
-        (ob.region || '').trim().toLowerCase() === region || 
-        (ob.rsm || '').trim().toLowerCase() === name || 
-        (ob.sc || '').trim().toLowerCase() === name
-      );
-    } else if (role === 'TSM' || role === 'ASM') {
-      allowedOBs = obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === name);
-    } else if (role === 'OB') {
-      allowedOBs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === contact);
-    } else {
-      allowedOBs = obAssignments; // Fallback
-    }
-
+    // Use hierarchy as the primary source for filter options as it's more complete
     const options: any = {
-      Region: Array.from(new Set(allowedOBs.map((ob: any) => ob.region))).filter(Boolean).sort(),
-      Town: Array.from(new Set(allowedOBs.map((ob: any) => ob.town))).filter(Boolean).sort(),
-      TSM: Array.from(new Set(allowedOBs.map((ob: any) => ob.tsm))).filter(Boolean).sort(),
-      NSM: Array.from(new Set(allowedOBs.map((ob: any) => ob.nsm))).filter(Boolean).sort(),
-      RSM: Array.from(new Set(allowedOBs.map((ob: any) => ob.rsm))).filter(Boolean).sort(),
-      OB: allowedOBs.map((ob: any) => ({ name: ob.name, contact: ob.contact })).sort((a: any, b: any) => a.name.localeCompare(b.name))
+      Region: Array.from(new Set(hierarchy.map((h: any) => h.territory_region))).filter(Boolean).sort(),
+      Town: Array.from(new Set(hierarchy.map((h: any) => h.town_name))).filter(Boolean).sort(),
+      TSM: Array.from(new Set(hierarchy.map((h: any) => h.asm_tsm_name))).filter(Boolean).sort(),
+      NSM: Array.from(new Set(hierarchy.map((h: any) => h.nsm_name))).filter(Boolean).sort(),
+      RSM: Array.from(new Set(hierarchy.map((h: any) => h.rsm_name))).filter(Boolean).sort(),
+      SC: Array.from(new Set(hierarchy.map((h: any) => h.sc_name))).filter(Boolean).sort(),
+      OB: Array.from(new Set(hierarchy.map((h: any) => JSON.stringify({ name: h.ob_name, contact: h.ob_id }))))
+        .map((s: any) => JSON.parse(s))
+        .filter(ob => ob.name && ob.contact)
+        .sort((a: any, b: any) => a.name.localeCompare(b.name))
     };
     return options;
-  }, [obAssignments, userRole, userName, userRegion, userContact]);
+  }, [hierarchy]);
 
   const filteredOBs = useMemo(() => {
-    let obs = [];
+    let obs = obAssignments;
     const role = (userRole || '').trim().toUpperCase();
     const name = (userName || '').trim().toLowerCase();
     const region = (userRegion || '').trim().toLowerCase();
     const contact = (userContact || '').trim();
 
-    if (role === 'ADMIN' || role === 'SUPER ADMIN') {
-      obs = obAssignments;
-    } else if (role === 'DIRECTOR') {
-      obs = obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === name);
+    // Initial role-based filtering
+    if (role === 'DIRECTOR') {
+      obs = obs.filter((ob: any) => (ob.director || '').trim().toLowerCase() === name);
     } else if (role === 'NSM') {
-      obs = obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === name);
+      obs = obs.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === name);
     } else if (role === 'RSM' || role === 'SC') {
-      obs = obAssignments.filter((ob: any) => 
+      obs = obs.filter((ob: any) => 
         (ob.region || '').trim().toLowerCase() === region || 
         (ob.rsm || '').trim().toLowerCase() === name || 
         (ob.sc || '').trim().toLowerCase() === name
       );
     } else if (role === 'TSM' || role === 'ASM') {
-      obs = obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === name);
+      obs = obs.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === name);
     } else if (role === 'OB') {
-      obs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === contact);
+      obs = obs.filter((ob: any) => (ob.contact || '').trim() === contact);
     }
     
-    // Apply Hierarchy Filters (Level)
+    // Apply Hierarchy Filters (Level) using the hierarchy data for better accuracy
     if (filterLevel !== 'National' && filterValue) {
-      if (filterLevel === 'Region') obs = obs.filter((ob: any) => ob.region === filterValue);
-      if (filterLevel === 'Town') obs = obs.filter((ob: any) => ob.town === filterValue);
-      if (filterLevel === 'TSM') obs = obs.filter((ob: any) => ob.tsm === filterValue);
-      if (filterLevel === 'NSM') obs = obs.filter((ob: any) => ob.nsm === filterValue);
-      if (filterLevel === 'RSM') obs = obs.filter((ob: any) => ob.rsm === filterValue);
-      if (filterLevel === 'OB') obs = obs.filter((ob: any) => ob.contact === filterValue);
+      obs = obs.filter((ob: any) => {
+        const h = hierarchy?.find((h: any) => h.ob_id === ob.contact);
+        if (!h) return false;
+        
+        if (filterLevel === 'Region') return h.territory_region === filterValue;
+        if (filterLevel === 'Town') return h.town_name === filterValue;
+        if (filterLevel === 'TSM') return h.asm_tsm_name === filterValue;
+        if (filterLevel === 'NSM') return h.nsm_name === filterValue;
+        if (filterLevel === 'RSM') return h.rsm_name === filterValue;
+        if (filterLevel === 'SC') return h.sc_name === filterValue;
+        if (filterLevel === 'OB') return h.ob_id === filterValue;
+        return true;
+      });
     }
 
     // Exclude Test OBs from reports, but keep TSM entries functional as requested
@@ -4940,76 +4925,8 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
         </div>
       </motion.div>
 
-
-
-
-
       {userRole !== 'OB' && (
         <>
-      {/* Irregular Activities & Performance Gaps */}
-      <section className="card-clean bg-slate-50 border border-slate-200 p-6 rounded-3xl shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 bg-rose-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-rose-200">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Irregular Activities & Performance Gaps</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Critical Alerts for {currentMonth}</p>
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Block 1: Productivity Issues */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between px-2">
-              <h3 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em]">1. Productivity Issues (1 Error/Issue)</h3>
-              <span className="text-[10px] font-bold text-slate-400">{alerts.productivityAlerts.length} OBs</span>
-            </div>
-            <div className="grid grid-cols-1 gap-3">
-              {alerts.productivityAlerts.length === 0 ? (
-                <div className="bg-white/50 p-6 rounded-2xl border border-dashed border-slate-200 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">No productivity issues found</div>
-              ) : (
-                alerts.productivityAlerts.map((alert, i) => (
-                  <div key={i} className="bg-white p-4 rounded-2xl border border-rose-100 shadow-sm flex items-center gap-4 group hover:border-rose-300 transition-all">
-                    <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center text-rose-500 group-hover:bg-rose-500 group-hover:text-white transition-all">
-                      <TrendingDown className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xs font-black text-slate-800">{alert.title}</h4>
-                      <p className="text-[10px] font-bold text-rose-500 uppercase">{alert.desc}</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-
-          {/* Block 2: Inactivity Issues */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between px-2">
-              <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em]">2. Inactivity Issues (2nd Issues)</h3>
-              <span className="text-[10px] font-bold text-slate-400">{alerts.inactivityAlerts.length} OBs</span>
-            </div>
-            <div className="grid grid-cols-1 gap-3">
-              {alerts.inactivityAlerts.length === 0 ? (
-                <div className="bg-white/50 p-6 rounded-2xl border border-dashed border-slate-200 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">No inactivity issues found</div>
-              ) : (
-                alerts.inactivityAlerts.map((alert, i) => (
-                  <div key={i} className="bg-white p-4 rounded-2xl border border-amber-100 shadow-sm flex items-center gap-4 group hover:border-amber-300 transition-all">
-                    <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-all">
-                      <Clock className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xs font-black text-slate-800">{alert.title}</h4>
-                      <p className="text-[10px] font-bold text-amber-500 uppercase">{alert.desc}</p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
-      </section>
 
       {/* OB Date-wise Sales Matrix (MTD) */}
       <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
@@ -5536,6 +5453,156 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
           </table>
         </div>
       </section>
+
+      {/* Irregular Activities & Performance Gaps */}
+      <section className="card-clean bg-slate-50 border border-slate-200 p-6 rounded-3xl shadow-sm">
+        <div className="flex items-center gap-3 mb-6">
+          <div className="w-10 h-10 bg-rose-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-rose-200">
+            <AlertTriangle className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Irregular Activities & Performance Gaps</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Critical Alerts for {currentMonth}</p>
+          </div>
+        </div>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Block 1: Productivity Issues */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-2">
+              <h3 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em]">1. Productivity Issues (1 Error/Issue)</h3>
+              <span className="text-[10px] font-bold text-slate-400">{alerts.productivityAlerts.length} OBs</span>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              {alerts.productivityAlerts.length === 0 ? (
+                <div className="bg-white/50 p-6 rounded-2xl border border-dashed border-slate-200 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">No productivity issues found</div>
+              ) : (
+                alerts.productivityAlerts.map((alert, i) => (
+                  <button 
+                    key={i} 
+                    onClick={() => setSelectedAlertDetail({ ...alert, category: 'Productivity' })}
+                    className="bg-white p-4 rounded-2xl border border-rose-100 shadow-sm flex items-center gap-4 group hover:border-rose-300 transition-all text-left w-full"
+                  >
+                    <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center text-rose-500 group-hover:bg-rose-500 group-hover:text-white transition-all">
+                      <TrendingDown className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-black text-slate-800">{alert.title}</h4>
+                      <p className="text-[10px] font-bold text-rose-500 uppercase">{alert.desc}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-rose-500 transition-all" />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Block 2: Inactivity Issues */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-2">
+              <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em]">2. Inactivity Issues (2nd Issues)</h3>
+              <span className="text-[10px] font-bold text-slate-400">{alerts.inactivityAlerts.length} OBs</span>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              {alerts.inactivityAlerts.length === 0 ? (
+                <div className="bg-white/50 p-6 rounded-2xl border border-dashed border-slate-200 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">No inactivity issues found</div>
+              ) : (
+                alerts.inactivityAlerts.map((alert, i) => (
+                  <button 
+                    key={i} 
+                    onClick={() => setSelectedAlertDetail({ ...alert, category: 'Inactivity' })}
+                    className="bg-white p-4 rounded-2xl border border-amber-100 shadow-sm flex items-center gap-4 group hover:border-amber-300 transition-all text-left w-full"
+                  >
+                    <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-all">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-black text-slate-800">{alert.title}</h4>
+                      <p className="text-[10px] font-bold text-amber-500 uppercase">{alert.desc}</p>
+                    </div>
+                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-amber-500 transition-all" />
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Alert Detail Modal */}
+      <AnimatePresence>
+        {selectedAlertDetail && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden"
+            >
+              <div className={`p-6 flex items-center justify-between ${selectedAlertDetail.category === 'Productivity' ? 'bg-rose-500' : 'bg-amber-500'} text-white`}>
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    {selectedAlertDetail.category === 'Productivity' ? <TrendingDown className="w-6 h-6" /> : <Clock className="w-6 h-6" />}
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black uppercase tracking-tight">{selectedAlertDetail.title}</h3>
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">{selectedAlertDetail.category} Issue Detail</p>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setSelectedAlertDetail(null)}
+                  className="p-2 hover:bg-white/20 rounded-full transition-all"
+                >
+                  <Plus className="w-6 h-6 rotate-45" />
+                </button>
+              </div>
+              
+              <div className="p-6 space-y-6">
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Region</p>
+                    <p className="text-xs font-black text-slate-700">{hierarchy?.find((h: any) => h.ob_id === selectedAlertDetail.contact || h.ob_name === selectedAlertDetail.title)?.territory_region || 'N/A'}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">RSM</p>
+                    <p className="text-xs font-black text-slate-700">{hierarchy?.find((h: any) => h.ob_id === selectedAlertDetail.contact || h.ob_name === selectedAlertDetail.title)?.rsm_name || 'N/A'}</p>
+                  </div>
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
+                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">TSM</p>
+                    <p className="text-xs font-black text-slate-700">{hierarchy?.find((h: any) => h.ob_id === selectedAlertDetail.contact || h.ob_name === selectedAlertDetail.title)?.asm_tsm_name || 'N/A'}</p>
+                  </div>
+                </div>
+
+                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
+                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Performance Summary</h4>
+                  <div className="space-y-4">
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-600">Issue Type:</span>
+                      <span className={`text-xs font-black ${selectedAlertDetail.category === 'Productivity' ? 'text-rose-500' : 'text-amber-500'}`}>{selectedAlertDetail.type}</span>
+                    </div>
+                    <div className="flex justify-between items-center">
+                      <span className="text-xs font-bold text-slate-600">Description:</span>
+                      <span className="text-xs font-bold text-slate-800">{selectedAlertDetail.desc}</span>
+                    </div>
+                    <div className="pt-4 border-t border-slate-200">
+                      <p className="text-[10px] text-slate-500 font-medium leading-relaxed italic">
+                        * This alert was triggered based on real-time data analysis for the current month. Please coordinate with the respective TSM and RSM to address this performance gap.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  onClick={() => setSelectedAlertDetail(null)}
+                  className={`w-full py-4 rounded-2xl text-white text-xs font-black uppercase tracking-widest shadow-lg transition-all ${selectedAlertDetail.category === 'Productivity' ? 'bg-rose-500 shadow-rose-200 hover:bg-rose-600' : 'bg-amber-500 shadow-amber-200 hover:bg-amber-600'}`}
+                >
+                  Close Detail View
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
         </>
       )}
     </div>
