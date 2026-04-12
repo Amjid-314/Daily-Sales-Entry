@@ -4684,22 +4684,95 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
   const [matrixView, setMatrixView] = useState('Total');
   const [targetView, setTargetView] = useState('Brand');
 
+  // Hierarchy Filters for Reports
+  const [topCategoryFilter, setTopCategoryFilter] = useState('All');
+  const [topBrandFilter, setTopBrandFilter] = useState('All');
+  const [filterLevel, setFilterLevel] = useState('National');
+  const [filterValue, setFilterValue] = useState('');
+
+  const visibleFilterLevels = useMemo(() => {
+    if (userRole === 'Admin' || userRole === 'Super Admin') return ['National', 'Region', 'Town', 'TSM', 'OB'];
+    if (userRole === 'Director') return ['National', 'NSM', 'RSM', 'TSM', 'OB'];
+    if (userRole === 'NSM') return ['National', 'RSM', 'TSM', 'OB'];
+    if (userRole === 'RSM' || userRole === 'SC') return ['National', 'Town', 'TSM', 'OB'];
+    if (userRole === 'TSM' || userRole === 'ASM') return ['National', 'OB'];
+    return ['National'];
+  }, [userRole]);
+
+  const filterOptions = useMemo(() => {
+    // First, get the OBs this user is allowed to see based on their role
+    let allowedOBs = [];
+    const role = (userRole || '').trim().toUpperCase();
+    const name = (userName || '').trim().toLowerCase();
+    const region = (userRegion || '').trim().toLowerCase();
+    const contact = (userContact || '').trim();
+
+    if (role === 'ADMIN' || role === 'SUPER ADMIN') {
+      allowedOBs = obAssignments;
+    } else if (role === 'DIRECTOR') {
+      allowedOBs = obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === name);
+    } else if (role === 'NSM') {
+      allowedOBs = obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === name);
+    } else if (role === 'RSM' || role === 'SC') {
+      allowedOBs = obAssignments.filter((ob: any) => 
+        (ob.region || '').trim().toLowerCase() === region || 
+        (ob.rsm || '').trim().toLowerCase() === name || 
+        (ob.sc || '').trim().toLowerCase() === name
+      );
+    } else if (role === 'TSM' || role === 'ASM') {
+      allowedOBs = obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === name);
+    } else if (role === 'OB') {
+      allowedOBs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === contact);
+    } else {
+      allowedOBs = obAssignments; // Fallback
+    }
+
+    const options: any = {
+      Region: Array.from(new Set(allowedOBs.map((ob: any) => ob.region))).filter(Boolean).sort(),
+      Town: Array.from(new Set(allowedOBs.map((ob: any) => ob.town))).filter(Boolean).sort(),
+      TSM: Array.from(new Set(allowedOBs.map((ob: any) => ob.tsm))).filter(Boolean).sort(),
+      NSM: Array.from(new Set(allowedOBs.map((ob: any) => ob.nsm))).filter(Boolean).sort(),
+      RSM: Array.from(new Set(allowedOBs.map((ob: any) => ob.rsm))).filter(Boolean).sort(),
+      OB: allowedOBs.map((ob: any) => ({ name: ob.name, contact: ob.contact })).sort((a: any, b: any) => a.name.localeCompare(b.name))
+    };
+    return options;
+  }, [obAssignments, userRole, userName, userRegion, userContact]);
+
   const filteredOBs = useMemo(() => {
     let obs = [];
-    if (userRole === 'Admin' || userRole === 'Super Admin') {
+    const role = (userRole || '').trim().toUpperCase();
+    const name = (userName || '').trim().toLowerCase();
+    const region = (userRegion || '').trim().toLowerCase();
+    const contact = (userContact || '').trim();
+
+    if (role === 'ADMIN' || role === 'SUPER ADMIN') {
       obs = obAssignments;
-    } else if (userRole === 'Director') {
-      obs = obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    } else if (userRole === 'NSM') {
-      obs = obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    } else if (userRole === 'RSM' || userRole === 'SC') {
-      obs = obAssignments.filter((ob: any) => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
-      obs = obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    } else if (userRole === 'OB') {
-      obs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === (userContact || '').trim());
+    } else if (role === 'DIRECTOR') {
+      obs = obAssignments.filter((ob: any) => (ob.director || '').trim().toLowerCase() === name);
+    } else if (role === 'NSM') {
+      obs = obAssignments.filter((ob: any) => (ob.nsm || '').trim().toLowerCase() === name);
+    } else if (role === 'RSM' || role === 'SC') {
+      obs = obAssignments.filter((ob: any) => 
+        (ob.region || '').trim().toLowerCase() === region || 
+        (ob.rsm || '').trim().toLowerCase() === name || 
+        (ob.sc || '').trim().toLowerCase() === name
+      );
+    } else if (role === 'TSM' || role === 'ASM') {
+      obs = obAssignments.filter((ob: any) => (ob.tsm || '').trim().toLowerCase() === name);
+    } else if (role === 'OB') {
+      obs = obAssignments.filter((ob: any) => (ob.contact || '').trim() === contact);
     }
     
+    // Apply Hierarchy Filters (Level)
+    if (filterLevel !== 'National' && filterValue) {
+      if (filterLevel === 'Region') obs = obs.filter((ob: any) => ob.region === filterValue);
+      if (filterLevel === 'Town') obs = obs.filter((ob: any) => ob.town === filterValue);
+      if (filterLevel === 'TSM') obs = obs.filter((ob: any) => ob.tsm === filterValue);
+      if (filterLevel === 'NSM') obs = obs.filter((ob: any) => ob.nsm === filterValue);
+      if (filterLevel === 'RSM') obs = obs.filter((ob: any) => ob.rsm === filterValue);
+      if (filterLevel === 'OB') obs = obs.filter((ob: any) => ob.contact === filterValue);
+    }
+
     // Exclude Test OBs from reports, but keep TSM entries functional as requested
     return obs.filter((ob: any) => !ob.name.toLowerCase().includes('test')).map((ob: any) => {
       const obHierarchy = hierarchy?.find((h: any) => h.ob_id === ob.contact);
@@ -4729,7 +4802,9 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
   }, [history, currentMonth]);
 
   const alerts = useMemo(() => {
-    const list: any[] = [];
+    const productivityList: any[] = [];
+    const inactivityList: any[] = [];
+    
     filteredOBs.forEach((ob: any) => {
       const obStats = reportsMonthStats.filter((s: any) => s.ob_contact === ob.contact);
       const visited = obStats.reduce((sum: number, s: any) => sum + s.visited_shops, 0);
@@ -4737,7 +4812,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
       const productivity = visited > 0 ? (productive / visited) * 100 : 0;
       
       if (visited > 50 && productivity < 20) {
-        list.push({
+        productivityList.push({
           type: 'Low Productivity',
           title: ob.name,
           desc: `${productivity.toFixed(1)}% Productivity (${ob.town})`,
@@ -4751,17 +4826,25 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
         const todayDate = new Date(getPSTDate());
         const diffDays = Math.floor((todayDate.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24));
         if (diffDays > 3) {
-          list.push({
+          inactivityList.push({
             type: 'Inactivity',
             title: ob.name,
             desc: `No submission for ${diffDays} days`,
             severity: 'critical'
           });
         }
+      } else {
+        // No submissions at all this month
+        inactivityList.push({
+          type: 'No Activity',
+          title: ob.name,
+          desc: `No submissions recorded for ${currentMonth}`,
+          severity: 'critical'
+        });
       }
     });
-    return list;
-  }, [filteredOBs, reportsMonthStats, getPSTDate]);
+    return { productivityAlerts: productivityList, inactivityAlerts: inactivityList };
+  }, [filteredOBs, reportsMonthStats, getPSTDate, currentMonth]);
 
   const [routeAnalysisData, setRouteAnalysisData] = useState<any[]>([]);
   const [isLoadingRouteAnalysis, setIsLoadingRouteAnalysis] = useState(false);
@@ -4792,7 +4875,15 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
                 return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
               }, 0);
               brandSales[cat] = sales;
-              totalSales += sales;
+              
+              // Apply hierarchy filters to totalSales
+              let isIncluded = true;
+              if (topBrandFilter !== 'All' && cat !== topBrandFilter) isIncluded = false;
+              if (topCategoryFilter !== 'All') {
+                const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
+                if (!brandsInGroup.includes(cat)) isIncluded = false;
+              }
+              if (isIncluded) totalSales += sales;
             });
             return {
               date: h.date,
@@ -4813,7 +4904,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
     };
 
     fetchRouteAnalysis();
-  }, [selectedAnalysisOB, selectedAnalysisRoute, CATEGORIES, SKUS]);
+  }, [selectedAnalysisOB, selectedAnalysisRoute, CATEGORIES, SKUS, topCategoryFilter, topBrandFilter]);
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
@@ -4856,55 +4947,159 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
       {userRole !== 'OB' && (
         <>
       {/* Irregular Activities & Performance Gaps */}
-      <section className="card-clean bg-amber-50 border border-amber-100 p-6 rounded-3xl shadow-sm">
+      <section className="card-clean bg-slate-50 border border-slate-200 p-6 rounded-3xl shadow-sm">
         <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-amber-200">
+          <div className="w-10 h-10 bg-rose-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-rose-200">
             <AlertTriangle className="w-5 h-5" />
           </div>
           <div>
-            <h2 className="text-sm font-black text-amber-900 uppercase tracking-tight">Irregular Activities & Performance Gaps</h2>
-            <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest">Critical Alerts for {currentMonth}</p>
+            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Irregular Activities & Performance Gaps</h2>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Critical Alerts for {currentMonth}</p>
           </div>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {alerts.length === 0 ? (
-            <div className="col-span-full py-8 text-center text-amber-600 font-bold uppercase text-[10px] tracking-widest">No critical alerts found for this period</div>
-          ) : (
-            alerts.map((alert, i) => (
-              <div key={i} className="bg-white p-4 rounded-2xl border border-amber-100 shadow-sm flex flex-col gap-1">
-                <span className="text-[8px] font-black text-amber-500 uppercase tracking-widest">{alert.type}</span>
-                <h4 className="text-xs font-black text-slate-800">{alert.title}</h4>
-                <p className="text-[10px] font-bold text-slate-400 uppercase">{alert.desc}</p>
-              </div>
-            ))
-          )}
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Block 1: Productivity Issues */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-2">
+              <h3 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em]">1. Productivity Issues (1 Error/Issue)</h3>
+              <span className="text-[10px] font-bold text-slate-400">{alerts.productivityAlerts.length} OBs</span>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              {alerts.productivityAlerts.length === 0 ? (
+                <div className="bg-white/50 p-6 rounded-2xl border border-dashed border-slate-200 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">No productivity issues found</div>
+              ) : (
+                alerts.productivityAlerts.map((alert, i) => (
+                  <div key={i} className="bg-white p-4 rounded-2xl border border-rose-100 shadow-sm flex items-center gap-4 group hover:border-rose-300 transition-all">
+                    <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center text-rose-500 group-hover:bg-rose-500 group-hover:text-white transition-all">
+                      <TrendingDown className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-black text-slate-800">{alert.title}</h4>
+                      <p className="text-[10px] font-bold text-rose-500 uppercase">{alert.desc}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Block 2: Inactivity Issues */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between px-2">
+              <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em]">2. Inactivity Issues (2nd Issues)</h3>
+              <span className="text-[10px] font-bold text-slate-400">{alerts.inactivityAlerts.length} OBs</span>
+            </div>
+            <div className="grid grid-cols-1 gap-3">
+              {alerts.inactivityAlerts.length === 0 ? (
+                <div className="bg-white/50 p-6 rounded-2xl border border-dashed border-slate-200 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">No inactivity issues found</div>
+              ) : (
+                alerts.inactivityAlerts.map((alert, i) => (
+                  <div key={i} className="bg-white p-4 rounded-2xl border border-amber-100 shadow-sm flex items-center gap-4 group hover:border-amber-300 transition-all">
+                    <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-all">
+                      <Clock className="w-4 h-4" />
+                    </div>
+                    <div className="flex-1">
+                      <h4 className="text-xs font-black text-slate-800">{alert.title}</h4>
+                      <p className="text-[10px] font-bold text-amber-500 uppercase">{alert.desc}</p>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
         </div>
       </section>
 
       {/* OB Date-wise Sales Matrix (MTD) */}
       <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
-        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-              <LayoutDashboard className="w-4 h-4" />
+        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+                <LayoutDashboard className="w-4 h-4" />
+              </div>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
             </div>
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
+              <select 
+                className="input-clean text-[10px] py-1 px-2 rounded-lg"
+                value={matrixView}
+                onChange={(e) => setMatrixView(e.target.value)}
+              >
+                <option value="Total">Total Bags/Ctns</option>
+                <optgroup label="Category-wise">
+                  {BRAND_GROUP_NAMES.map(cat => <option key={`cat_${cat}`} value={`cat_${cat}`}>{cat}</option>)}
+                </optgroup>
+                <optgroup label="Brand-wise">
+                  {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
+                </optgroup>
+              </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
-            <select 
-              className="input-clean text-[10px] py-1 px-2 rounded-lg"
-              value={matrixView}
-              onChange={(e) => setMatrixView(e.target.value)}
-            >
-              <option value="Total">Total Bags/Ctns</option>
-              <optgroup label="Category-wise">
-                {BRAND_GROUP_NAMES.map(cat => <option key={`cat_${cat}`} value={`cat_${cat}`}>{cat}</option>)}
-              </optgroup>
-              <optgroup label="Brand-wise">
-                {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-              </optgroup>
-            </select>
+
+          {/* Hierarchy Filters */}
+          <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-100">
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Category:</span>
+              <select 
+                value={topCategoryFilter} 
+                onChange={(e) => { setTopCategoryFilter(e.target.value); setTopBrandFilter('All'); }}
+                className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
+              >
+                <option value="All">All Categories</option>
+                {BRAND_GROUP_NAMES.map(cat => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Brand:</span>
+              <select 
+                value={topBrandFilter} 
+                onChange={(e) => setTopBrandFilter(e.target.value)}
+                className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
+              >
+                <option value="All">All Brands</option>
+                {(topCategoryFilter === 'All' ? CATEGORIES : BRAND_GROUPS[topCategoryFilter] || []).map(brand => (
+                  <option key={brand} value={brand}>{brand}</option>
+                ))}
+              </select>
+            </div>
+            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Level:</span>
+              <select 
+                value={filterLevel} 
+                onChange={(e) => { setFilterLevel(e.target.value as any); setFilterValue(''); }}
+                className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
+              >
+                {visibleFilterLevels.map(level => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
+              </select>
+            </div>
+            {filterLevel !== 'National' && (
+              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Select:</span>
+                <select 
+                  value={filterValue} 
+                  onChange={(e) => setFilterValue(e.target.value)}
+                  className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none max-w-[150px]"
+                >
+                  <option value="">All {filterLevel}s</option>
+                  {filterLevel === 'OB' ? (
+                    (filterOptions['OB'] as any[]).map(ob => (
+                      <option key={ob.contact} value={ob.contact}>{ob.name} ({ob.contact})</option>
+                    ))
+                  ) : (
+                    (filterOptions[filterLevel as keyof typeof filterOptions] || []).map(opt => (
+                      <option key={opt as string} value={opt as string}>{opt as string}</option>
+                    ))
+                  )}
+                </select>
+              </div>
+            )}
           </div>
         </div>
         <div className="overflow-x-auto scrollbar-thin">
@@ -4935,33 +5130,34 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
                       const dayOrders = obStats.filter((h: any) => h.date === dateStr);
                       const daySales = dayOrders.reduce((acc, h) => {
                         const data = h.order_data || {};
-                        if (matrixView === 'Total') {
-                          SKUS.forEach(sku => {
-                            const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                            const val = (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                            if (sku.unit === 'Bags') acc.bags += val;
-                            else acc.ctns += val;
-                          });
-                        } else if (matrixView.startsWith('cat_')) {
-                          const categoryName = matrixView.replace('cat_', '');
-                          const brandsInGroup = BRAND_GROUPS[categoryName] || [];
-                          SKUS.filter(s => brandsInGroup.includes(s.category)).forEach(sku => {
-                            const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                            const val = (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                            if (sku.unit === 'Bags') acc.bags += val;
-                            else acc.ctns += val;
-                          });
-                        } else {
-                          SKUS.filter(s => s.category === matrixView).forEach(sku => {
-                            const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                            const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                            const val = (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                            if (sku.unit === 'Bags') acc.bags += val;
-                            else acc.ctns += val;
-                          });
+                        
+                        // Apply Hierarchy Filters (Category/Brand)
+                        let targetSKUs = SKUS;
+                        if (topBrandFilter !== 'All') {
+                          targetSKUs = SKUS.filter(s => s.category === topBrandFilter);
+                        } else if (topCategoryFilter !== 'All') {
+                          const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
+                          targetSKUs = SKUS.filter(s => brandsInGroup.includes(s.category));
                         }
+
+                        // Further filter based on matrixView
+                        if (matrixView !== 'Total') {
+                          if (matrixView.startsWith('cat_')) {
+                            const categoryName = matrixView.replace('cat_', '');
+                            const brandsInGroup = BRAND_GROUPS[categoryName] || [];
+                            targetSKUs = targetSKUs.filter(s => brandsInGroup.includes(s.category));
+                          } else {
+                            targetSKUs = targetSKUs.filter(s => s.category === matrixView);
+                          }
+                        }
+
+                        targetSKUs.forEach(sku => {
+                          const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                          const val = (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                          if (sku.unit === 'Bags') acc.bags += val;
+                          else acc.ctns += val;
+                        });
                         return acc;
                       }, { bags: 0, ctns: 0 });
 
@@ -4991,95 +5187,6 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
           <p className="text-[8px] text-slate-400 italic font-medium uppercase tracking-wider">
             * Matrix shows {matrixView === 'Total' ? 'total bags/cartons' : matrixView + ' sales'} per day for the current month. Scroll horizontally to see all dates.
           </p>
-        </div>
-      </section>
-
-      {/* Target vs Achievement (MTD) */}
-      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
-        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-              <Target className="w-4 h-4" />
-            </div>
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">{targetView} Target vs Achievement (MTD)</h3>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
-            <select 
-              className="input-clean text-[10px] py-1 px-2 rounded-lg"
-              value={targetView}
-              onChange={(e) => setTargetView(e.target.value)}
-            >
-              <option value="Brand">Brand-wise</option>
-              <option value="Category">Category-wise</option>
-            </select>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-6 py-4 whitespace-nowrap">{targetView} Name</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">Target</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">Achievement</th>
-                <th className="px-6 py-4 text-right whitespace-nowrap">Ach %</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {(targetView === 'Brand' ? CATEGORIES : BRAND_GROUP_NAMES).map(cat => {
-                let catTarget = 0;
-                let catAch = 0;
-                let unit = 'Ctns';
-
-                if (targetView === 'Brand') {
-                  unit = SKUS.find(s => s.category === cat)?.unit || 'Ctns';
-                  catTarget = filteredOBs.reduce((sum: number, ob: any) => sum + (ob.targets?.[cat] || 0), 0);
-                  const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
-                  catAch = history
-                    .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
-                    .reduce((sum: number, h: any) => {
-                      const data = h.order_data || {};
-                      return sum + SKUS.filter((s: any) => s.category === cat).reduce((s: number, sku: any) => {
-                        const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                        return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                      }, 0);
-                    }, 0);
-                } else {
-                  const brandsInGroup = BRAND_GROUPS[cat] || [];
-                  unit = SKUS.find(s => brandsInGroup.includes(s.category))?.unit || 'Ctns';
-                  catTarget = filteredOBs.reduce((sum: number, ob: any) => {
-                    return sum + brandsInGroup.reduce((s, brand) => s + (ob.targets?.[brand] || 0), 0);
-                  }, 0);
-                  const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
-                  catAch = history
-                    .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
-                    .reduce((sum: number, h: any) => {
-                      const data = h.order_data || {};
-                      return sum + SKUS.filter((s: any) => brandsInGroup.includes(s.category)).reduce((s: number, sku: any) => {
-                        const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                        return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                      }, 0);
-                    }, 0);
-                }
-
-                const percent = catTarget > 0 ? (catAch / catTarget) * 100 : 0;
-                return (
-                  <tr key={cat} className="group hover:bg-slate-50/80 transition-all">
-                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors whitespace-nowrap">{cat}</td>
-                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500 font-mono whitespace-nowrap">{catTarget.toFixed(1)} <span className="text-[8px] opacity-60">{unit}</span></td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{catAch.toFixed(1)} <span className="text-[8px] opacity-60">{unit}</span></td>
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
-                      <span className={`text-[10px] font-black px-3 py-1 rounded-full shadow-sm ${percent > 80 ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
-                        {percent.toFixed(1)}%
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
         </div>
       </section>
 
@@ -5183,7 +5290,16 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
                   <th className="px-6 py-4 whitespace-nowrap">Date</th>
                   <th className="px-6 py-4 text-center whitespace-nowrap">Visited</th>
                   <th className="px-6 py-4 text-center whitespace-nowrap">Productive</th>
-                  {CATEGORIES.map(cat => <th key={cat} className="px-6 py-4 text-center whitespace-nowrap">{cat}</th>)}
+                  {CATEGORIES
+                    .filter(cat => {
+                      if (topBrandFilter !== 'All') return cat === topBrandFilter;
+                      if (topCategoryFilter !== 'All') {
+                        const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
+                        return brandsInGroup.includes(cat);
+                      }
+                      return true;
+                    })
+                    .map(cat => <th key={cat} className="px-6 py-4 text-center whitespace-nowrap">{cat}</th>)}
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-50">
@@ -5194,9 +5310,18 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
                     <td className="px-6 py-4 text-center whitespace-nowrap">
                       <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{h.productive}</span>
                     </td>
-                    {CATEGORIES.map(cat => (
-                      <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-seablue font-black whitespace-nowrap">{h.brandSales[cat].toFixed(1)}</td>
-                    ))}
+                    {CATEGORIES
+                      .filter(cat => {
+                        if (topBrandFilter !== 'All') return cat === topBrandFilter;
+                        if (topCategoryFilter !== 'All') {
+                          const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
+                          return brandsInGroup.includes(cat);
+                        }
+                        return true;
+                      })
+                      .map(cat => (
+                        <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-seablue font-black whitespace-nowrap">{h.brandSales[cat].toFixed(1)}</td>
+                      ))}
                   </tr>
                 ))}
               </tbody>
@@ -5212,6 +5337,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
           </div>
         )}
       </section>
+
 
       {/* Route-to-Route Analysis (MTD) */}
       <section className="card-clean bg-white overflow-hidden">
@@ -5235,7 +5361,16 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
                 <th className="px-6 py-3">Route Name</th>
                 <th className="px-6 py-3">OB Name</th>
                 <th className="px-6 py-3 text-center">T/V/P</th>
-                {CATEGORIES.map(cat => <th key={cat} className="px-6 py-3 text-center">{cat}</th>)}
+                {CATEGORIES
+                  .filter(cat => {
+                    if (topBrandFilter !== 'All') return cat === topBrandFilter;
+                    if (topCategoryFilter !== 'All') {
+                      const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
+                      return brandsInGroup.includes(cat);
+                    }
+                    return true;
+                  })
+                  .map(cat => <th key={cat} className="px-6 py-3 text-center">{cat}</th>)}
                 <th className="px-6 py-3 text-right">Total Ach</th>
               </tr>
             </thead>
@@ -5262,20 +5397,140 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
                     }, 0);
                   });
 
-                  const totalAch = Object.values(brandSales).reduce((a, b) => a + b, 0);
-
                   return (
                     <tr key={`${ob.contact}-${route}`} className="hover:bg-slate-50/50 transition-colors">
                       <td className="px-6 py-4 text-xs font-bold text-slate-700">{route}</td>
                       <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.name}</td>
                       <td className="px-6 py-4 text-center text-[10px] font-mono text-slate-600">{t}/{v}/{p}</td>
-                      {CATEGORIES.map(cat => (
-                        <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-slate-500">{brandSales[cat].toFixed(1)}</td>
-                      ))}
-                      <td className="px-6 py-4 text-right text-xs font-black text-seablue">{totalAch.toFixed(1)}</td>
+                      {CATEGORIES
+                        .filter(cat => {
+                          if (topBrandFilter !== 'All') return cat === topBrandFilter;
+                          if (topCategoryFilter !== 'All') {
+                            const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
+                            return brandsInGroup.includes(cat);
+                          }
+                          return true;
+                        })
+                        .map(cat => (
+                          <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-slate-500">{brandSales[cat].toFixed(1)}</td>
+                        ))}
+                      <td className="px-6 py-4 text-right text-xs font-black text-seablue">
+                        {Object.entries(brandSales)
+                          .filter(([cat]) => {
+                            if (topBrandFilter !== 'All') return cat === topBrandFilter;
+                            if (topCategoryFilter !== 'All') {
+                              const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
+                              return brandsInGroup.includes(cat);
+                            }
+                            return true;
+                          })
+                          .reduce((a, [_, b]) => a + b, 0).toFixed(1)}
+                      </td>
                     </tr>
                   );
                 });
+              })}
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      {/* Target vs Achievement (MTD) */}
+      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+              <Target className="w-4 h-4" />
+            </div>
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">{targetView} Target vs Achievement (MTD)</h3>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
+            <select 
+              className="input-clean text-[10px] py-1 px-2 rounded-lg"
+              value={targetView}
+              onChange={(e) => setTargetView(e.target.value)}
+            >
+              <option value="Brand">Brand-wise</option>
+              <option value="Category">Category-wise</option>
+            </select>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
+                <th className="px-6 py-4 whitespace-nowrap">{targetView} Name</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Target</th>
+                <th className="px-6 py-4 text-center whitespace-nowrap">Achievement</th>
+                <th className="px-6 py-4 text-right whitespace-nowrap">Ach %</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {(targetView === 'Brand' ? CATEGORIES : BRAND_GROUP_NAMES)
+                .filter(cat => {
+                  if (topBrandFilter !== 'All') return cat === topBrandFilter;
+                  if (topCategoryFilter !== 'All') {
+                    if (targetView === 'Brand') {
+                      const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
+                      return brandsInGroup.includes(cat);
+                    } else {
+                      return cat === topCategoryFilter;
+                    }
+                  }
+                  return true;
+                })
+                .map(cat => {
+                let catTarget = 0;
+                let catAch = 0;
+                let unit = 'Ctns';
+
+                if (targetView === 'Brand') {
+                  unit = SKUS.find(s => s.category === cat)?.unit || 'Ctns';
+                  catTarget = filteredOBs.reduce((sum: number, ob: any) => sum + (ob.targets?.[cat] || 0), 0);
+                  const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
+                  catAch = history
+                    .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
+                    .reduce((sum: number, h: any) => {
+                      const data = h.order_data || {};
+                      return sum + SKUS.filter((s: any) => s.category === cat).reduce((s: number, sku: any) => {
+                        const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                        return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                      }, 0);
+                    }, 0);
+                } else {
+                  const brandsInGroup = BRAND_GROUPS[cat] || [];
+                  unit = SKUS.find(s => brandsInGroup.includes(s.category))?.unit || 'Ctns';
+                  catTarget = filteredOBs.reduce((sum: number, ob: any) => {
+                    return sum + brandsInGroup.reduce((s, brand) => s + (ob.targets?.[brand] || 0), 0);
+                  }, 0);
+                  const filteredOBContacts = new Set(filteredOBs.map((ob: any) => ob.contact));
+                  catAch = history
+                    .filter((h: any) => h.date.startsWith(currentMonth) && filteredOBContacts.has(h.ob_contact))
+                    .reduce((sum: number, h: any) => {
+                      const data = h.order_data || {};
+                      return sum + SKUS.filter((s: any) => brandsInGroup.includes(s.category)).reduce((s: number, sku: any) => {
+                        const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                        const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                        return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                      }, 0);
+                    }, 0);
+                }
+
+                const percent = catTarget > 0 ? (catAch / catTarget) * 100 : 0;
+                return (
+                  <tr key={cat} className="group hover:bg-slate-50/80 transition-all">
+                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors whitespace-nowrap">{cat}</td>
+                    <td className="px-6 py-4 text-center text-xs font-bold text-slate-500 font-mono whitespace-nowrap">{catTarget.toFixed(1)} <span className="text-[8px] opacity-60">{unit}</span></td>
+                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{catAch.toFixed(1)} <span className="text-[8px] opacity-60">{unit}</span></td>
+                    <td className="px-6 py-4 text-right whitespace-nowrap">
+                      <span className={`text-[10px] font-black px-3 py-1 rounded-full shadow-sm ${percent > 80 ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}`}>
+                        {percent.toFixed(1)}%
+                      </span>
+                    </td>
+                  </tr>
+                );
               })}
             </tbody>
           </table>
