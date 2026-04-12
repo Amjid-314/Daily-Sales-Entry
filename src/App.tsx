@@ -151,7 +151,8 @@ const NationalDashboard = ({
   userRole, userEmail, userRegion, userName, userContact, 
   timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, 
   apiFetch, backupLogs = [], stockHistory = [],
-  missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries
+  missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries,
+  users = [], obAssignments = []
 }: { 
   view?: string, setView: (v: any) => void, stats: any[], hierarchy: any[], categories: string[], skus: any[], 
   isSyncing?: boolean, onRefresh?: () => void, userRole: any, 
@@ -159,7 +160,8 @@ const NationalDashboard = ({
   userContact?: string | null, timeGone: number, holidays: string, 
   lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, 
   apiFetch: any, backupLogs?: any[], stockHistory?: any[],
-  missingEntriesReport: any[], fetchMissingEntriesReport: (m?: string) => void, isLoadingMissingEntries: boolean
+  missingEntriesReport: any[], fetchMissingEntriesReport: (m?: string) => void, isLoadingMissingEntries: boolean,
+  users?: any[], obAssignments?: any[]
 }) => {
   const filteredOBs = useMemo(() => {
     const uniqueOBs = new Map();
@@ -276,6 +278,53 @@ const NationalDashboard = ({
       setFilterLevel(visibleFilterLevels[0] as any);
     }
   }, [visibleFilterLevels]);
+
+  const headCountStats = useMemo(() => {
+    if (!users || !obAssignments || !stats) return [];
+
+    const currentMonth = selectedMonth;
+    const currentMonthHistory = stats.filter((s: any) => s.date.startsWith(currentMonth));
+
+    const getRoleStats = (roleName: string) => {
+      const roleUsers = users.filter((u: any) => u.role === roleName);
+      const total = roleUsers.length;
+      let active = 0;
+      roleUsers.forEach((u: any) => {
+        const hasEntry = currentMonthHistory.some((s: any) => {
+          if (roleName === 'RSM') return (s.rsm || '').toLowerCase() === (u.name || '').toLowerCase();
+          if (roleName === 'SC') return (s.sc || '').toLowerCase() === (u.name || '').toLowerCase();
+          if (roleName === 'TSM' || roleName === 'ASM') return (s.tsm || '').toLowerCase() === (u.name || '').toLowerCase();
+          return false;
+        });
+        if (hasEntry) active++;
+      });
+      return { designation: roleName, total, active };
+    };
+
+    const rsmStats = getRoleStats('RSM');
+    const asmStats = getRoleStats('ASM');
+    const tsmStats = getRoleStats('TSM');
+    const scStats = getRoleStats('SC');
+
+    const obMap = new Map();
+    obAssignments.forEach((ob: any) => {
+      const name = ob.name || ob.ob_name || '';
+      const id = ob.contact || ob.ob_id || '';
+      const tsm = ob.tsm || ob.asm_tsm_name || '';
+      if (name.trim() !== '' && !isTSMEntry(name, tsm)) {
+        obMap.set(id, name);
+      }
+    });
+    const totalOBs = obMap.size;
+    let activeOBs = 0;
+    obMap.forEach((name, id) => {
+      const hasEntry = currentMonthHistory.some((s: any) => s.ob_contact === id);
+      if (hasEntry) activeOBs++;
+    });
+
+    const obStats = { designation: 'OB', total: totalOBs, active: activeOBs };
+    return [rsmStats, asmStats, tsmStats, scStats, obStats];
+  }, [users, obAssignments, stats, selectedMonth]);
 
   const brands = useMemo(() => {
     if (topBrandFilter !== 'All') return [topBrandFilter];
@@ -1231,6 +1280,39 @@ const NationalDashboard = ({
             />
           </div>
         </div>
+
+        {/* Head Count System (MTD) - Dynamic Block */}
+        <section className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-slate-50">
+          {headCountStats.map((stat, idx) => (
+            <motion.div 
+              key={idx}
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              transition={{ delay: idx * 0.05 }}
+              className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col justify-between"
+            >
+              <div className="flex justify-between items-start mb-2">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{stat.designation}</span>
+                <div className={`w-1.5 h-1.5 rounded-full ${stat.active > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
+              </div>
+              <div className="flex items-end justify-between">
+                <div>
+                  <p className="text-xl font-black text-slate-800 leading-none">{stat.active}<span className="text-[10px] text-slate-400 font-bold ml-1">/ {stat.total}</span></p>
+                  <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">Active Staff</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] font-black text-emerald-600">{stat.total > 0 ? Math.round((stat.active / stat.total) * 100) : 0}%</p>
+                  <div className="w-10 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                    <div 
+                      className="h-full bg-emerald-500 transition-all duration-1000" 
+                      style={{ width: `${stat.total > 0 ? (stat.active / stat.total) * 100 : 0}%` }}
+                    ></div>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          ))}
+        </section>
 
         <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-slate-50">
           <button 
@@ -3716,42 +3798,6 @@ const StatsView = ({
         </div>
       </motion.div>
 
-      {/* Head Count System */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Users className="w-4 h-4 text-seablue" />
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Head Count System (MTD)</h3>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="p-4">Designation</th>
-                <th className="p-4 text-center">Total Count</th>
-                <th className="p-4 text-center">Active Count</th>
-                <th className="p-4 text-center">Active %</th>
-              </tr>
-            </thead>
-            <tbody className="text-xs font-medium text-slate-600">
-              {headCountStats.map((stat, idx) => (
-                <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
-                  <td className="p-4 font-bold text-slate-800">{stat.designation}</td>
-                  <td className="p-4 text-center">{stat.total}</td>
-                  <td className="p-4 text-center text-emerald-600 font-bold">{stat.active}</td>
-                  <td className="p-4 text-center">
-                    <span className="bg-slate-100 px-2 py-1 rounded-lg text-[10px] font-bold">
-                      {stat.total > 0 ? Math.round((stat.active / stat.total) * 100) : 0}%
-                    </span>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 flex items-center gap-4">
@@ -5456,75 +5502,31 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
 
       {/* Irregular Activities & Performance Gaps */}
       <section className="card-clean bg-slate-50 border border-slate-200 p-6 rounded-3xl shadow-sm">
-        <div className="flex items-center gap-3 mb-6">
-          <div className="w-10 h-10 bg-rose-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-rose-200">
-            <AlertTriangle className="w-5 h-5" />
-          </div>
-          <div>
-            <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Irregular Activities & Performance Gaps</h2>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Critical Alerts for {currentMonth}</p>
-          </div>
-        </div>
-        
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Block 1: Productivity Issues */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between px-2">
-              <h3 className="text-[10px] font-black text-rose-500 uppercase tracking-[0.2em]">1. Productivity Issues (1 Error/Issue)</h3>
-              <span className="text-[10px] font-bold text-slate-400">{alerts.productivityAlerts.length} OBs</span>
+        <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 bg-rose-500 rounded-xl flex items-center justify-center text-white shadow-lg shadow-rose-200">
+              <AlertTriangle className="w-5 h-5" />
             </div>
-            <div className="grid grid-cols-1 gap-3">
-              {alerts.productivityAlerts.length === 0 ? (
-                <div className="bg-white/50 p-6 rounded-2xl border border-dashed border-slate-200 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">No productivity issues found</div>
-              ) : (
-                alerts.productivityAlerts.map((alert, i) => (
-                  <button 
-                    key={i} 
-                    onClick={() => setSelectedAlertDetail({ ...alert, category: 'Productivity' })}
-                    className="bg-white p-4 rounded-2xl border border-rose-100 shadow-sm flex items-center gap-4 group hover:border-rose-300 transition-all text-left w-full"
-                  >
-                    <div className="w-8 h-8 bg-rose-50 rounded-lg flex items-center justify-center text-rose-500 group-hover:bg-rose-500 group-hover:text-white transition-all">
-                      <TrendingDown className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xs font-black text-slate-800">{alert.title}</h4>
-                      <p className="text-[10px] font-bold text-rose-500 uppercase">{alert.desc}</p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-rose-500 transition-all" />
-                  </button>
-                ))
-              )}
+            <div>
+              <h2 className="text-sm font-black text-slate-800 uppercase tracking-tight">Irregular Activities & Performance Gaps</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Critical Alerts for {currentMonth}</p>
             </div>
           </div>
-
-          {/* Block 2: Inactivity Issues */}
-          <div className="space-y-4">
-            <div className="flex items-center justify-between px-2">
-              <h3 className="text-[10px] font-black text-amber-500 uppercase tracking-[0.2em]">2. Inactivity Issues (2nd Issues)</h3>
-              <span className="text-[10px] font-bold text-slate-400">{alerts.inactivityAlerts.length} OBs</span>
-            </div>
-            <div className="grid grid-cols-1 gap-3">
-              {alerts.inactivityAlerts.length === 0 ? (
-                <div className="bg-white/50 p-6 rounded-2xl border border-dashed border-slate-200 text-center text-[9px] font-bold text-slate-400 uppercase tracking-widest">No inactivity issues found</div>
-              ) : (
-                alerts.inactivityAlerts.map((alert, i) => (
-                  <button 
-                    key={i} 
-                    onClick={() => setSelectedAlertDetail({ ...alert, category: 'Inactivity' })}
-                    className="bg-white p-4 rounded-2xl border border-amber-100 shadow-sm flex items-center gap-4 group hover:border-amber-300 transition-all text-left w-full"
-                  >
-                    <div className="w-8 h-8 bg-amber-50 rounded-lg flex items-center justify-center text-amber-500 group-hover:bg-amber-500 group-hover:text-white transition-all">
-                      <Clock className="w-4 h-4" />
-                    </div>
-                    <div className="flex-1">
-                      <h4 className="text-xs font-black text-slate-800">{alert.title}</h4>
-                      <p className="text-[10px] font-bold text-amber-500 uppercase">{alert.desc}</p>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-300 group-hover:text-amber-500 transition-all" />
-                  </button>
-                ))
-              )}
-            </div>
+          <div className="flex gap-2">
+            <button 
+              onClick={() => setSelectedAlertDetail({ category: 'Productivity', title: 'Productivity Issues', alerts: alerts.productivityAlerts })}
+              className="px-4 py-2 bg-rose-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-rose-200 hover:bg-rose-600 transition-all flex items-center gap-2"
+            >
+              <TrendingDown className="w-3 h-3" />
+              Productivity ({alerts.productivityAlerts.length})
+            </button>
+            <button 
+              onClick={() => setSelectedAlertDetail({ category: 'Inactivity', title: 'Inactivity Issues', alerts: alerts.inactivityAlerts })}
+              className="px-4 py-2 bg-amber-500 text-white text-[10px] font-black uppercase tracking-widest rounded-xl shadow-lg shadow-amber-200 hover:bg-amber-600 transition-all flex items-center gap-2"
+            >
+              <Clock className="w-3 h-3" />
+              Inactivity ({alerts.inactivityAlerts.length})
+            </button>
           </div>
         </div>
       </section>
@@ -5537,7 +5539,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
               initial={{ opacity: 0, scale: 0.95, y: 20 }}
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.95, y: 20 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-2xl overflow-hidden"
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]"
             >
               <div className={`p-6 flex items-center justify-between ${selectedAlertDetail.category === 'Productivity' ? 'bg-rose-500' : 'bg-amber-500'} text-white`}>
                 <div className="flex items-center gap-3">
@@ -5546,7 +5548,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
                   </div>
                   <div>
                     <h3 className="text-lg font-black uppercase tracking-tight">{selectedAlertDetail.title}</h3>
-                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">{selectedAlertDetail.category} Issue Detail</p>
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">{selectedAlertDetail.category} Issues List</p>
                   </div>
                 </div>
                 <button 
@@ -5557,41 +5559,43 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
                 </button>
               </div>
               
-              <div className="p-6 space-y-6">
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Region</p>
-                    <p className="text-xs font-black text-slate-700">{hierarchy?.find((h: any) => h.ob_id === selectedAlertDetail.contact || h.ob_name === selectedAlertDetail.title)?.territory_region || 'N/A'}</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">RSM</p>
-                    <p className="text-xs font-black text-slate-700">{hierarchy?.find((h: any) => h.ob_id === selectedAlertDetail.contact || h.ob_name === selectedAlertDetail.title)?.rsm_name || 'N/A'}</p>
-                  </div>
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100">
-                    <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">TSM</p>
-                    <p className="text-xs font-black text-slate-700">{hierarchy?.find((h: any) => h.ob_id === selectedAlertDetail.contact || h.ob_name === selectedAlertDetail.title)?.asm_tsm_name || 'N/A'}</p>
-                  </div>
+              <div className="p-6 overflow-y-auto flex-1">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                        <th className="p-4">Region</th>
+                        <th className="p-4">TSM</th>
+                        <th className="p-4">Town</th>
+                        <th className="p-4">OB Name</th>
+                        <th className="p-4">Route</th>
+                        <th className="p-4">Issue</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-[11px] font-bold text-slate-600">
+                      {(selectedAlertDetail.alerts || []).map((alert: any, i: number) => {
+                        const h = hierarchy?.find((h: any) => h.ob_id === alert.contact || h.ob_name === alert.title);
+                        return (
+                          <tr key={i} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
+                            <td className="p-4">{h?.territory_region || 'N/A'}</td>
+                            <td className="p-4">{h?.asm_tsm_name || 'N/A'}</td>
+                            <td className="p-4">{h?.town_name || 'N/A'}</td>
+                            <td className="p-4 text-slate-800 font-black">{alert.title}</td>
+                            <td className="p-4">{h?.route || 'N/A'}</td>
+                            <td className="p-4">
+                              <span className={`px-2 py-1 rounded-lg text-[9px] font-black ${selectedAlertDetail.category === 'Productivity' ? 'bg-rose-50 text-rose-500' : 'bg-amber-50 text-amber-500'}`}>
+                                {alert.desc}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
                 </div>
+              </div>
 
-                <div className="bg-slate-50 p-6 rounded-2xl border border-slate-100">
-                  <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4">Performance Summary</h4>
-                  <div className="space-y-4">
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-slate-600">Issue Type:</span>
-                      <span className={`text-xs font-black ${selectedAlertDetail.category === 'Productivity' ? 'text-rose-500' : 'text-amber-500'}`}>{selectedAlertDetail.type}</span>
-                    </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-xs font-bold text-slate-600">Description:</span>
-                      <span className="text-xs font-bold text-slate-800">{selectedAlertDetail.desc}</span>
-                    </div>
-                    <div className="pt-4 border-t border-slate-200">
-                      <p className="text-[10px] text-slate-500 font-medium leading-relaxed italic">
-                        * This alert was triggered based on real-time data analysis for the current month. Please coordinate with the respective TSM and RSM to address this performance gap.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
+              <div className="p-6 bg-slate-50 border-t border-slate-100">
                 <button 
                   onClick={() => setSelectedAlertDetail(null)}
                   className={`w-full py-4 rounded-2xl text-white text-xs font-black uppercase tracking-widest shadow-lg transition-all ${selectedAlertDetail.category === 'Productivity' ? 'bg-rose-500 shadow-rose-200 hover:bg-rose-600' : 'bg-amber-500 shadow-amber-200 hover:bg-amber-600'}`}
@@ -8141,6 +8145,8 @@ export default function App() {
                 missingEntriesReport={missingEntriesReport}
                 fetchMissingEntriesReport={fetchMissingEntriesReport}
                 isLoadingMissingEntries={isLoadingMissingEntries}
+                users={users}
+                obAssignments={obAssignments}
               />
             )}
           </div>
