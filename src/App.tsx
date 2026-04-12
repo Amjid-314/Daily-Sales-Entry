@@ -3526,7 +3526,7 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, u
 };
 
 const StatsView = ({ 
-  history, obAssignments, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, 
+  history, obAssignments, users, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, 
   userRole, userName, userRegion, userContact, onRefresh, isSyncing, 
   selectedMonth, setSelectedMonth,
   dailyStatus, fetchDailyStatus, isLoadingDailyStatus,
@@ -3627,6 +3627,61 @@ const StatsView = ({
     }).slice(0, 10); // Show last 10 days
   }, [history, filteredOBs, currentMonth]);
 
+  const headCountStats = useMemo(() => {
+    if (!users || !obAssignments || !history) return [];
+
+    const currentMonthHistory = history.filter((s: any) => s.date.startsWith(currentMonth));
+
+    // 1. RSM / ASM / TSM / SC Count
+    const getRoleStats = (roleName: string) => {
+      // Filter users by role
+      const roleUsers = users.filter((u: any) => u.role === roleName);
+      const total = roleUsers.length;
+      
+      // Active logic: user has at least 1 entry in current month where their team submitted data
+      let active = 0;
+      roleUsers.forEach((u: any) => {
+        // Check if their team submitted data
+        const hasEntry = currentMonthHistory.some((s: any) => {
+          if (roleName === 'RSM') return (s.rsm || '').toLowerCase() === (u.name || '').toLowerCase();
+          if (roleName === 'SC') return (s.sc || '').toLowerCase() === (u.name || '').toLowerCase();
+          if (roleName === 'TSM' || roleName === 'ASM') return (s.tsm || '').toLowerCase() === (u.name || '').toLowerCase();
+          return false;
+        });
+        if (hasEntry) active++;
+      });
+      return { designation: roleName, total, active };
+    };
+
+    const rsmStats = getRoleStats('RSM');
+    const asmStats = getRoleStats('ASM');
+    const tsmStats = getRoleStats('TSM');
+    const scStats = getRoleStats('SC');
+
+    // 2. OB Count Logic
+    const obMap = new Map();
+    obAssignments.forEach((ob: any) => {
+      const name = ob.name || ob.ob_name || '';
+      const id = ob.contact || ob.ob_id || '';
+      const tsm = ob.tsm || ob.asm_tsm_name || '';
+      if (name.trim() !== '' && !isTSMEntry(name, tsm)) {
+        obMap.set(id, name);
+      }
+    });
+    const totalOBs = obMap.size;
+
+    // Active OBs: OB has entry in current month
+    let activeOBs = 0;
+    obMap.forEach((name, id) => {
+      const hasEntry = currentMonthHistory.some((s: any) => s.ob_contact === id);
+      if (hasEntry) activeOBs++;
+    });
+
+    const obStats = { designation: 'OB', total: totalOBs, active: activeOBs };
+
+    return [rsmStats, asmStats, tsmStats, scStats, obStats];
+  }, [users, obAssignments, history, currentMonth]);
+
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
       <motion.div 
@@ -3660,6 +3715,42 @@ const StatsView = ({
           </div>
         </div>
       </motion.div>
+
+      {/* Head Count System */}
+      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Users className="w-4 h-4 text-seablue" />
+            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Head Count System (MTD)</h3>
+          </div>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse">
+            <thead>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                <th className="p-4">Designation</th>
+                <th className="p-4 text-center">Total Count</th>
+                <th className="p-4 text-center">Active Count</th>
+                <th className="p-4 text-center">Active %</th>
+              </tr>
+            </thead>
+            <tbody className="text-xs font-medium text-slate-600">
+              {headCountStats.map((stat, idx) => (
+                <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50/50 transition-colors">
+                  <td className="p-4 font-bold text-slate-800">{stat.designation}</td>
+                  <td className="p-4 text-center">{stat.total}</td>
+                  <td className="p-4 text-center text-emerald-600 font-bold">{stat.active}</td>
+                  <td className="p-4 text-center">
+                    <span className="bg-slate-100 px-2 py-1 rounded-lg text-[10px] font-bold">
+                      {stat.total > 0 ? Math.round((stat.active / stat.total) * 100) : 0}%
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -6752,10 +6843,31 @@ export default function App() {
     }
   }, [view, token, selectedMonth]);
 
+  useEffect(() => {
+    if (!token || token === 'null') return;
+    if (view === 'entry' && (userRole === 'TSM' || userRole === 'ASM')) {
+      fetchTsmAssignments();
+    }
+  }, [view, token, userRole]);
+
   const [users, setUsers] = useState<any[]>([]);
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isRegisteringUser, setIsRegisteringUser] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '', email: '', tsm: '', ob: '' });
+
+  const [tsmAssignments, setTsmAssignments] = useState<any[]>([]);
+
+  const fetchTsmAssignments = async () => {
+    try {
+      const res = await apiFetch('/api/admin/tsm_assignments');
+      if (res.ok) {
+        const data = await res.json();
+        setTsmAssignments(data);
+      }
+    } catch (e) {
+      console.error("Failed to fetch TSM assignments", e);
+    }
+  };
 
   const fetchUsers = async () => {
     if (!token || token === 'null') return;
@@ -7016,9 +7128,7 @@ export default function App() {
     const normalizedRole = (userRole || '').toUpperCase();
     if (['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole)) {
       fetchAdminData();
-      if (normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN') {
-        fetchUsers();
-      }
+      fetchUsers();
     }
     fetchHistory();
     fetchNationalData();
@@ -8551,6 +8661,7 @@ export default function App() {
           <StatsView 
             history={nationalStats} 
             obAssignments={hierarchy} 
+            users={users}
             tsmList={tsmList} 
             appConfig={appConfig} 
             getPSTDate={getPSTDate} 

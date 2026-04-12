@@ -333,6 +333,7 @@ ensureColumn('national_hierarchy', 'distributor_code', 'TEXT');
 ensureColumn('national_hierarchy', 'supervisor_name', 'TEXT');
 ensureColumn('national_hierarchy', 'sc_name', 'TEXT');
 ensureColumn('national_hierarchy', 'target_ctn', 'REAL DEFAULT 0');
+ensureColumn('national_hierarchy', 'email', 'TEXT');
 
 // Ensure missing columns in users
 ensureColumn('users', 'username', 'TEXT');
@@ -460,6 +461,14 @@ try {
     tsm TEXT,
     ob TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS tsm_assignments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    tsm_name TEXT,
+    town TEXT,
+    routes TEXT,
+    UNIQUE(tsm_name, town)
   );
 
   CREATE TABLE IF NOT EXISTS audit_logs (
@@ -2049,9 +2058,18 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/users", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req, res) => {
+  app.get("/api/admin/tsm_assignments", authenticateToken, (req, res) => {
     try {
-      const rows = db.prepare("SELECT id, username, role, name, contact, region, town, created_at FROM users").all();
+      const assignments = db.prepare("SELECT * FROM tsm_assignments").all();
+      res.json(assignments);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/admin/users", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'Director', 'NSM', 'RSM', 'SC', 'TSM', 'ASM'), (req, res) => {
+    try {
+      const rows = db.prepare("SELECT id, username, email, role, name, contact, region, town, created_at FROM users").all();
       res.json(rows);
     } catch (err) {
       res.status(500).json({ error: "Failed to fetch users" });
@@ -3266,6 +3284,50 @@ async function startServer() {
 
 
 
+  async function pullTsmAssignments(sheets: any, spreadsheetId: string) {
+    try {
+      console.log(`Pulling TSM Assignments from ${spreadsheetId}...`);
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: `TSM_Assignments!A1:Z1000`,
+      });
+      const rows = response.data.values;
+      if (!rows || rows.length < 2) return { success: false };
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      const assignments = dataRows.map(row => {
+        const getVal = (headerNames: string[]) => {
+          for (const name of headerNames) {
+            const idx = headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+            if (idx > -1 && row[idx] !== undefined) return row[idx];
+          }
+          return null;
+        };
+        return {
+          tsm_name: getVal(['TSM Name', 'tsm name', 'tsm'])?.toString().trim() || '',
+          town: getVal(['Town', 'town'])?.toString().trim() || '',
+          routes: getVal(['Routes', 'routes'])?.toString().trim() || ''
+        };
+      }).filter(a => a.tsm_name && a.town);
+
+      const transaction = db.transaction(() => {
+        db.prepare("DELETE FROM tsm_assignments").run();
+        const stmt = db.prepare("INSERT INTO tsm_assignments (tsm_name, town, routes) VALUES (?, ?, ?)");
+        for (const a of assignments) {
+          stmt.run(a.tsm_name, a.town, a.routes);
+        }
+      });
+      transaction();
+      return { success: true, count: assignments.length };
+    } catch (err: any) {
+      console.error("Pull TSM Assignments Error:", err);
+      // Don't throw, just return false so it doesn't break the whole sync
+      return { success: false, error: err.message };
+    }
+  }
+
   async function pullTeamData(sheets: any, spreadsheetId: string, month?: string, customSheetName?: string) {
     try {
       const targetMonth = month || new Date().toISOString().slice(0, 7);
@@ -3342,6 +3404,8 @@ async function startServer() {
           rsm: getVal(['RSM', 'rsm', 'rsm name'])?.toString().trim() || '',
           sc: getVal(['SC', 'sc', 'sc name'])?.toString().trim() || '',
           director: getVal(['Director', 'director', 'director sales'])?.toString().trim() || '',
+          email: getVal(['Email', 'email', 'email address'])?.toString().trim() || '',
+          role: getVal(['Role', 'role', 'designation'])?.toString().trim() || '',
           total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
           target_ctn: parseFloat(getVal(['Target Ctn', 'target_ctn', 'target'])) || 0,
           routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
@@ -3353,10 +3417,32 @@ async function startServer() {
             "Match": parseFloat(getVal(['Match Target', 'match', 'match_target'])) || 0
           }
         };
-      }).filter(t => t.name && t.contact);
+      }).filter(t => (t.name && t.contact) || t.email);
 
       const transaction = db.transaction(() => {
         for (const item of team) {
+          if (item.email && item.role) {
+            // Determine name based on role if OB Name is empty
+            let userName = item.name;
+            if (!userName) {
+              if (item.role.toUpperCase() === 'TSM' || item.role.toUpperCase() === 'ASM') userName = item.tsm;
+              else if (item.role.toUpperCase() === 'RSM') userName = item.rsm;
+              else if (item.role.toUpperCase() === 'NSM') userName = item.nsm;
+              else if (item.role.toUpperCase() === 'SC') userName = item.sc;
+              else if (item.role.toUpperCase() === 'DIRECTOR') userName = item.director;
+            }
+            
+            db.prepare(`
+              INSERT INTO users (username, email, role, name, contact, region, town, password)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(username) DO UPDATE SET
+                email=excluded.email, role=excluded.role, name=COALESCE(NULLIF(excluded.name, ''), name), 
+                region=COALESCE(NULLIF(excluded.region, ''), region), town=COALESCE(NULLIF(excluded.town, ''), town)
+            `).run(item.email, item.email, item.role, userName || item.email.split('@')[0], item.contact || '', item.region, item.town, 'nopassword');
+          }
+
+          if (!item.contact) continue; // Skip OB assignments if no OB ID
+
           db.prepare(`
             INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -3388,9 +3474,9 @@ async function startServer() {
           db.prepare(`
             INSERT INTO national_hierarchy (
               director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, 
-              town_name, distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn, month
+              town_name, distributor_name, distributor_code, ob_name, ob_id, territory_region, target_ctn, month, email
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(ob_id, month) DO UPDATE SET
               director_sales = COALESCE(NULLIF(excluded.director_sales, ''), director_sales),
               nsm_name = COALESCE(NULLIF(excluded.nsm_name, ''), nsm_name),
@@ -3402,11 +3488,12 @@ async function startServer() {
               distributor_code = COALESCE(NULLIF(excluded.distributor_code, ''), distributor_code),
               ob_name = COALESCE(NULLIF(excluded.ob_name, ''), ob_name),
               territory_region = COALESCE(NULLIF(excluded.territory_region, ''), territory_region),
-              target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn)
+              target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn),
+              email = COALESCE(NULLIF(excluded.email, ''), email)
           `).run(
             item.director, item.nsm, item.rsm, item.sc || '', item.tsm,
             item.town, item.distributor, item.distributor_code || '',
-            item.name, item.contact, item.region, item.target_ctn, targetMonth
+            item.name, item.contact, item.region, item.target_ctn, targetMonth, item.email
           );
         }
       });
@@ -3780,6 +3867,9 @@ async function startServer() {
 
     // 3. Pull Team Data (Hierarchy & Targets)
     const pullTeamResult = await pullTeamData(sheets, spreadsheetId, targetMonth);
+
+    // 3.5 Pull TSM Assignments
+    await pullTsmAssignments(sheets, spreadsheetId);
 
     // 4. Pull Users Data
     const pullUsersResult = await pullUsersData(sheets, spreadsheetId);
