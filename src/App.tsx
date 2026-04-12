@@ -6271,44 +6271,67 @@ export default function App() {
     if (field === 'obContact') {
       const assignment = filteredOBs.find(a => a.contact === value);
       if (assignment) {
-        // Filter distributors for this town
-        const townDists = distributors.filter(d => d.town === assignment.town);
-        let autoDist = assignment.distributor;
-        
-        // If town has distributors in the independent list, use those
-        if (townDists.length === 1) {
-          autoDist = townDists[0].name;
-        } else if (townDists.length > 1) {
-          // If multiple, and the assignment distributor is one of them, keep it.
-          // Otherwise, let the user select.
-          const found = townDists.find(d => d.name === assignment.distributor);
-          if (found) {
-            autoDist = found.name;
-          } else {
-            autoDist = '';
+        if (String(value).startsWith('TSM-')) {
+          setOrder(prev => ({
+            ...prev,
+            obContact: String(value),
+            orderBooker: assignment.name,
+            town: assignment.town || '',
+            distributor: assignment.distributor || '',
+            tsm: assignment.tsm || '',
+            zone: assignment.zone || '',
+            region: assignment.region || '',
+            nsm: assignment.nsm || '',
+            rsm: assignment.rsm || '',
+            sc: assignment.sc || '',
+            director: assignment.director || '',
+            route: assignment.routes?.[0] || '',
+            totalShops: 50,
+            targets: {},
+            items: {},
+            categoryProductiveShops: {},
+            visitType: ''
+          }));
+        } else {
+          // Filter distributors for this town
+          const townDists = distributors.filter(d => d.town === assignment.town);
+          let autoDist = assignment.distributor;
+          
+          // If town has distributors in the independent list, use those
+          if (townDists.length === 1) {
+            autoDist = townDists[0].name;
+          } else if (townDists.length > 1) {
+            // If multiple, and the assignment distributor is one of them, keep it.
+            // Otherwise, let the user select.
+            const found = townDists.find(d => d.name === assignment.distributor);
+            if (found) {
+              autoDist = found.name;
+            } else {
+              autoDist = '';
+            }
           }
-        }
 
-        setOrder(prev => ({
-          ...prev,
-          obContact: String(value),
-          orderBooker: assignment.name,
-          town: assignment.town,
-          distributor: autoDist,
-          tsm: assignment.tsm || '',
-          zone: assignment.zone || '',
-          region: assignment.region || '',
-          nsm: assignment.nsm || '',
-          rsm: assignment.rsm || '',
-          sc: assignment.sc || '',
-          director: assignment.director || '',
-          route: assignment.routes?.[0] || '',
-          totalShops: assignment.total_shops || 50,
-          targets: {},
-          items: {},
-          categoryProductiveShops: {},
-          visitType: ''
-        }));
+          setOrder(prev => ({
+            ...prev,
+            obContact: String(value),
+            orderBooker: assignment.name,
+            town: assignment.town,
+            distributor: autoDist,
+            tsm: assignment.tsm || '',
+            zone: assignment.zone || '',
+            region: assignment.region || '',
+            nsm: assignment.nsm || '',
+            rsm: assignment.rsm || '',
+            sc: assignment.sc || '',
+            director: assignment.director || '',
+            route: assignment.routes?.[0] || '',
+            totalShops: assignment.total_shops || 50,
+            targets: {},
+            items: {},
+            categoryProductiveShops: {},
+            visitType: ''
+          }));
+        }
         fetchTargetsForOB(String(value));
       } else {
         setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', sc: '', director: '' }));
@@ -7615,29 +7638,51 @@ export default function App() {
         const tsmName = (ob.tsm || '').trim().toLowerCase();
         return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
       });
+      
+      // Add TSM themselves as an option
+      if (userName) {
+        const tsmAssign = tsmAssignments.find(t => (t.tsm_name || '').trim().toLowerCase() === trimmedName);
+        const tsmTown = tsmAssign?.town || distributors.find(d => (d.tsm || '').trim().toLowerCase() === trimmedName)?.town || '';
+        const tsmRoutes = tsmAssign?.routes ? tsmAssign.routes.split(',').map((r: string) => r.trim()) : ['TSM Route'];
+        
+        obs.unshift({
+          name: `*TSM - ${userName}`,
+          contact: `TSM-${userName.replace(/\s+/g, '-')}`,
+          town: tsmTown,
+          distributor: distributors.find(d => d.town === tsmTown)?.name || '',
+          routes: tsmRoutes,
+          tsm: userName,
+          total_shops: 50
+        });
+      }
     } else if (userRole === 'OB') {
       obs = obs.filter(ob => (ob.contact || '').trim() === (userContact || '').trim());
     }
 
-    if (selectedTSM) {
+    if (selectedTSM && userRole !== 'TSM' && userRole !== 'ASM') {
       const trimmedSelected = selectedTSM.trim().toLowerCase();
       obs = obs.filter(ob => {
         const tsmName = (ob.tsm || '').trim().toLowerCase();
         return tsmName === trimmedSelected || tsmName.includes(trimmedSelected) || trimmedSelected.includes(tsmName);
       });
+      
       // Add TSM themselves as an option
+      const tsmAssign = tsmAssignments.find(t => (t.tsm_name || '').trim().toLowerCase() === trimmedSelected);
+      const tsmTown = tsmAssign?.town || distributors.find(d => (d.tsm || '').trim().toLowerCase() === trimmedSelected)?.town || '';
+      const tsmRoutes = tsmAssign?.routes ? tsmAssign.routes.split(',').map((r: string) => r.trim()) : ['TSM Route'];
+
       obs.unshift({
         name: `*TSM - ${selectedTSM}`,
         contact: `TSM-${selectedTSM.replace(/\s+/g, '-')}`,
-        town: distributors.find(d => (d.tsm || '').trim().toLowerCase() === selectedTSM.trim().toLowerCase())?.town || '',
-        distributor: distributors.find(d => (d.tsm || '').trim().toLowerCase() === selectedTSM.trim().toLowerCase())?.name || '',
-        routes: ['TSM Route'],
+        town: tsmTown,
+        distributor: distributors.find(d => d.town === tsmTown)?.name || '',
+        routes: tsmRoutes,
         tsm: selectedTSM,
         total_shops: 50
       });
     }
     return obs;
-  }, [obAssignments, selectedTSM, distributors, userRole, userRegion, userName, userContact]);
+  }, [obAssignments, selectedTSM, distributors, userRole, userRegion, userName, userContact, tsmAssignments]);
 
   const groupedHistory = useMemo(() => {
     const groups: Record<string, any[]> = {};

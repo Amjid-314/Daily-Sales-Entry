@@ -1944,7 +1944,24 @@ async function startServer() {
             .run(username, username === ADMIN_EMAIL ? username : 'admin@salespulse.local', role, name, hashedPassword);
           user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid) as any;
         } else {
-          return res.status(401).json({ error: "User not registered. Contact Admin" });
+          // Try to sync users from Google Sheets on the fly
+          try {
+            const config = await getAppConfig();
+            if (config.google_spreadsheet_id) {
+              const client = await getGoogleSheetsClient();
+              if (client) {
+                await pullUsersData(client.sheets, config.google_spreadsheet_id);
+                // Try fetching the user again
+                user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)").get(username, username) as any;
+              }
+            }
+          } catch (syncErr) {
+            console.error("On-the-fly user sync failed:", syncErr);
+          }
+
+          if (!user) {
+            return res.status(401).json({ error: "User not registered. Contact Admin" });
+          }
         }
       } else {
         // If password is provided, check it. If not, allow login if it's an email-only request
@@ -3578,16 +3595,20 @@ async function startServer() {
           return r;
         };
 
+        const emailVal = getVal(['Email', 'email'])?.toString().trim() || '';
+        let usernameVal = getVal(['Username', 'username'])?.toString().trim() || '';
+        if (!usernameVal && emailVal) usernameVal = emailVal;
+
         return {
-          username: (getVal(['Username', 'username']) || '').toLowerCase(),
-          email: getVal(['Email', 'email']),
+          username: usernameVal.toLowerCase(),
+          email: emailVal,
           role: getVal(['Role', 'role']),
           name: getVal(['Name', 'name']),
           contact: getVal(['Contact', 'contact']),
           region: mapRegion(rawRegion),
           town: getVal(['Town', 'town'])
         };
-      }).filter(u => u.username);
+      }).filter(u => u.username || u.email);
 
       const transaction = db.transaction(() => {
         for (const user of users) {
