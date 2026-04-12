@@ -75,59 +75,47 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
     return tab.roles.map(r => r.toUpperCase()).includes(normalizedRole) || isAdmin;
   });
 
+  const activeTab = APP_TABS.find(t => t.id === view);
+
   return (
-    <nav className="bg-white border-b border-slate-100 px-4 h-14 flex justify-around items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar gap-2">
-      <div className="flex-shrink-0 mr-2 flex items-center justify-center">
-        {logo ? (
-          <img src={logo} alt="Logo" className="h-8 w-auto object-contain" />
-        ) : (
-          <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white shadow-sm overflow-hidden">
-            <Logo className="w-5 h-5" />
+    <nav className="bg-white border-b border-slate-100 px-4 h-14 flex justify-between items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar gap-2">
+      <div className="flex items-center gap-4">
+        <div className="flex-shrink-0 flex items-center justify-center">
+          {logo ? (
+            <img src={logo} alt="Logo" className="h-8 w-auto object-contain" />
+          ) : (
+            <div className="w-8 h-8 bg-seablue rounded-lg flex items-center justify-center text-white shadow-sm overflow-hidden">
+              <Logo className="w-5 h-5" />
+            </div>
+          )}
+        </div>
+
+        {/* Back to Home Button */}
+        <button
+          onClick={() => setView('home')}
+          className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all border border-slate-200 group"
+        >
+          <Home className="w-4 h-4 group-hover:scale-110 transition-transform" />
+          <span className="text-[10px] font-black uppercase tracking-widest">Back to Menu</span>
+        </button>
+      </div>
+
+      <div className="flex items-center gap-2">
+        {activeTab && (
+          <div className="flex items-center gap-2 px-4 py-1.5 bg-seablue/5 border border-seablue/10 rounded-xl">
+            <activeTab.icon className="w-4 h-4 text-seablue" />
+            <span className="text-[10px] font-black text-seablue uppercase tracking-widest">{activeTab.label}</span>
           </div>
         )}
-      </div>
-      <button
-        onClick={() => setView('home')}
-        className={`relative py-2 px-1 flex flex-col items-center gap-1 transition-all min-w-[56px] ${
-          view === 'home' ? 'text-seablue' : 'text-slate-400 hover:text-slate-600'
-        }`}
-      >
-        <Home className={`w-5 h-5 transition-transform ${view === 'home' ? 'scale-110' : ''}`} />
-        <span className={`text-[9px] font-black uppercase tracking-tight ${view === 'home' ? 'opacity-100' : 'opacity-60'}`}>Home</span>
-        {view === 'home' && (
-          <motion.div 
-            layoutId="nav-indicator" 
-            className="absolute -bottom-[1px] h-0.5 w-full bg-seablue rounded-full" 
-            transition={{ type: "spring", stiffness: 380, damping: 30 }}
-          />
-        )}
-      </button>
-      {visibleTabs.map((tab) => (
-        <button
-          key={tab.id}
-          onClick={() => setView(tab.id as any)}
-          className={`relative py-2 px-1 flex flex-col items-center gap-1 transition-all min-w-[56px] ${
-            view === tab.id ? 'text-seablue' : 'text-slate-400 hover:text-slate-600'
-          }`}
+
+        <button 
+          onClick={onLogout} 
+          className="p-2 text-slate-400 hover:text-rose-500 transition-all rounded-xl hover:bg-rose-50"
+          title="Logout"
         >
-          <tab.icon className={`w-5 h-5 transition-transform ${view === tab.id ? 'scale-110' : ''}`} />
-          <span className={`text-[9px] font-black uppercase tracking-tight ${view === tab.id ? 'opacity-100' : 'opacity-60'}`}>{tab.label}</span>
-          {view === tab.id && (
-            <motion.div 
-              layoutId="nav-indicator" 
-              className="absolute -bottom-[1px] h-0.5 w-full bg-seablue rounded-full" 
-              transition={{ type: "spring", stiffness: 380, damping: 30 }}
-            />
-          )}
+          <EyeOff className="w-5 h-5" />
         </button>
-      ))}
-      <button 
-        onClick={onLogout} 
-        className="py-2 px-1 flex flex-col items-center gap-1 text-slate-400 hover:text-rose-500 transition-all min-w-[56px]"
-      >
-        <EyeOff className="w-5 h-5" />
-        <span className="text-[9px] font-black uppercase tracking-tight opacity-60">Logout</span>
-      </button>
+      </div>
     </nav>
   );
 };
