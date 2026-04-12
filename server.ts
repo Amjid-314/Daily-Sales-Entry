@@ -1946,17 +1946,19 @@ async function startServer() {
         } else {
           // Try to sync users from Google Sheets on the fly
           try {
-            const config = await getAppConfig();
-            if (config.google_spreadsheet_id) {
-              const client = await getGoogleSheetsClient();
-              if (client) {
-                await pullUsersData(client.sheets, config.google_spreadsheet_id);
-                // Try fetching the user again
-                user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)").get(username, username) as any;
-              }
+            const client = await getGoogleSheetsClient();
+            if (client) {
+              console.log(`[LOGIN] User ${username} not found. Triggering on-the-fly sync...`);
+              // Pull Users, Team and TSM Assignments to ensure everything is ready
+              await pullUsersData(client.sheets, client.spreadsheetId);
+              await pullTeamData(client.sheets, client.spreadsheetId);
+              await pullTsmAssignments(client.sheets, client.spreadsheetId);
+              
+              // Try fetching the user again
+              user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)").get(username, username) as any;
             }
           } catch (syncErr) {
-            console.error("On-the-fly user sync failed:", syncErr);
+            console.error("[LOGIN] On-the-fly user sync failed:", syncErr);
           }
 
           if (!user) {
@@ -1964,6 +1966,25 @@ async function startServer() {
           }
         }
       } else {
+        // User found, but let's ensure their team data is synced if they are TSM or higher
+        // and it's been a while or data is missing
+        const isManagement = ['ADMIN', 'SUPER ADMIN', 'DIRECTOR', 'NSM', 'RSM', 'TSM', 'ASM', 'SC'].includes(user.role?.toUpperCase());
+        if (isManagement) {
+           const obCount = db.prepare("SELECT COUNT(*) as count FROM ob_assignments").get() as any;
+           if (obCount.count === 0) {
+             console.log(`[LOGIN] Management user ${username} logged in but team data is empty. Syncing...`);
+             try {
+               const client = await getGoogleSheetsClient();
+               if (client) {
+                 await pullTeamData(client.sheets, client.spreadsheetId);
+                 await pullTsmAssignments(client.sheets, client.spreadsheetId);
+               }
+             } catch (e) {
+               console.error("[LOGIN] Background team sync failed:", e);
+             }
+           }
+        }
+        
         // If password is provided, check it. If not, allow login if it's an email-only request
         if (password) {
           if (user.password === 'nopassword' || user.password === '123456' || user.password === 'password123' || user.password === '123') {
@@ -3450,11 +3471,8 @@ async function startServer() {
             }
             
             db.prepare(`
-              INSERT INTO users (username, email, role, name, contact, region, town, password)
+              INSERT OR REPLACE INTO users (username, email, role, name, contact, region, town, password)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-              ON CONFLICT(username) DO UPDATE SET
-                email=excluded.email, role=excluded.role, name=COALESCE(NULLIF(excluded.name, ''), name), 
-                region=COALESCE(NULLIF(excluded.region, ''), region), town=COALESCE(NULLIF(excluded.town, ''), town)
             `).run(item.email, item.email, item.role, userName || item.email.split('@')[0], item.contact || '', item.region, item.town, 'nopassword');
           }
 
@@ -3563,7 +3581,7 @@ async function startServer() {
 
   async function pullUsersData(sheets: any, spreadsheetId: string) {
     try {
-      console.log(`Pulling Users Data from ${spreadsheetId}...`);
+      console.log(`[SYNC] Pulling Users Data from ${spreadsheetId}...`);
       const response = await sheets.spreadsheets.values.get({
         spreadsheetId,
         range: "Users!A1:ZZ1000",
@@ -3571,17 +3589,18 @@ async function startServer() {
 
       const rows = response.data.values;
       if (!rows || rows.length < 2) {
-        console.log("No data found in Users sheet.");
+        console.log("[SYNC] No data found in Users sheet or sheet missing.");
         return { success: false, count: 0 };
       }
 
       const headers = rows[0];
+      console.log("[SYNC] Users sheet headers:", headers);
       const dataRows = rows.slice(1);
 
-      const users = dataRows.map(row => {
+      const users = dataRows.map((row, index) => {
         const getVal = (headerNames: string[]) => {
           for (const name of headerNames) {
-            const idx = headers.findIndex(h => h.trim().toLowerCase() === name.toLowerCase());
+            const idx = headers.findIndex(h => h && h.trim().toLowerCase() === name.toLowerCase());
             if (idx > -1 && row[idx] !== undefined) return row[idx];
           }
           return null;
@@ -3597,34 +3616,46 @@ async function startServer() {
 
         const emailVal = getVal(['Email', 'email'])?.toString().trim() || '';
         let usernameVal = getVal(['Username', 'username'])?.toString().trim() || '';
+        
+        // If username is missing, use email. If email is also missing, skip.
         if (!usernameVal && emailVal) usernameVal = emailVal;
+        
+        if (!usernameVal) {
+          console.log(`[SYNC] Skipping row ${index + 2}: No username or email found.`);
+          return null;
+        }
 
         return {
           username: usernameVal.toLowerCase(),
           email: emailVal,
-          role: getVal(['Role', 'role']),
-          name: getVal(['Name', 'name']),
-          contact: getVal(['Contact', 'contact']),
+          role: getVal(['Role', 'role', 'Designation', 'designation'])?.toString().trim() || 'OB',
+          name: getVal(['Name', 'name', 'Full Name', 'full name'])?.toString().trim() || usernameVal.split('@')[0],
+          contact: getVal(['Contact', 'contact', 'Phone', 'phone'])?.toString().trim() || '',
           region: mapRegion(rawRegion),
-          town: getVal(['Town', 'town'])
+          town: getVal(['Town', 'town'])?.toString().trim() || ''
         };
-      }).filter(u => u.username || u.email);
+      }).filter(u => u !== null);
+
+      console.log(`[SYNC] Found ${users.length} valid users in sheet.`);
 
       const transaction = db.transaction(() => {
         for (const user of users) {
-          db.prepare(`
-            INSERT INTO users (username, email, role, name, contact, region, town, password)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(username) DO UPDATE SET
-              email=excluded.email, role=excluded.role, name=excluded.name, 
-              contact=excluded.contact, region=excluded.region, town=excluded.town
-          `).run(user.username, user.email || null, user.role, user.name, user.contact, user.region, user.town, 'nopassword');
+          if (!user) continue;
+          try {
+            db.prepare(`
+              INSERT OR REPLACE INTO users (username, email, role, name, contact, region, town, password)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(user.username, user.email || null, user.role, user.name, user.contact, user.region, user.town, 'nopassword');
+          } catch (err) {
+            console.error(`[SYNC] Error inserting user ${user.username}:`, err);
+          }
         }
       });
       transaction();
+      console.log(`[SYNC] Successfully synced ${users.length} users to database.`);
       return { success: true, count: users.length };
     } catch (e) {
-      console.error("pullUsersData Error:", e);
+      console.error("[SYNC] pullUsersData Error:", e);
       return { success: false, count: 0 };
     }
   }
