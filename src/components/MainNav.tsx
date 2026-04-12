@@ -13,7 +13,8 @@ import {
   HelpCircle, 
   EyeOff,
   Target,
-  ClipboardList
+  ClipboardList,
+  Home
 } from 'lucide-react';
 
 const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
@@ -21,7 +22,7 @@ const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 export const APP_TABS = [
   { id: 'entry', label: 'Entry', icon: ClipboardEdit, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'] },
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
-  { id: 'command_center', label: 'Command Center', icon: Activity, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'command_center', label: 'SalesPulse', icon: Activity, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'insights', label: 'Insights', icon: LineChart, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'stats', label: 'Stats', icon: PieChart, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
   { id: 'reports', label: 'Reports', icon: FileSpreadsheet, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
@@ -85,6 +86,22 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
           </div>
         )}
       </div>
+      <button
+        onClick={() => setView('home')}
+        className={`relative py-2 px-1 flex flex-col items-center gap-1 transition-all min-w-[56px] ${
+          view === 'home' ? 'text-seablue' : 'text-slate-400 hover:text-slate-600'
+        }`}
+      >
+        <Home className={`w-5 h-5 transition-transform ${view === 'home' ? 'scale-110' : ''}`} />
+        <span className={`text-[9px] font-black uppercase tracking-tight ${view === 'home' ? 'opacity-100' : 'opacity-60'}`}>Home</span>
+        {view === 'home' && (
+          <motion.div 
+            layoutId="nav-indicator" 
+            className="absolute -bottom-[1px] h-0.5 w-full bg-seablue rounded-full" 
+            transition={{ type: "spring", stiffness: 380, damping: 30 }}
+          />
+        )}
+      </button>
       {visibleTabs.map((tab) => (
         <button
           key={tab.id}

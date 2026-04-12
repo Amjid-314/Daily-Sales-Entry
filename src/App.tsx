@@ -146,23 +146,188 @@ class ErrorBoundary extends React.Component<any, any> {
   }
 }
 
+const HomeHub = ({ setView, userRole, userName, logo, tabs }: any) => {
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  
+  const menuItems = tabs.filter((tab: any) => {
+    if (!userRole) return false;
+    const normalizedRole = userRole.toUpperCase();
+    if (!tab.roles.map((r: string) => r.toUpperCase()).includes(normalizedRole)) return false;
+    return true;
+  });
+
+  return (
+    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      {/* Background Glows */}
+      <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-seablue/20 rounded-full blur-[100px] animate-pulse"></div>
+      <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px] animate-pulse delay-1000"></div>
+
+      {/* Welcome Section */}
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-center mb-20 z-10"
+      >
+        {logo ? (
+          <img src={logo} alt="Logo" className="w-20 h-20 mx-auto mb-6 rounded-2xl shadow-2xl border border-white/10" referrerPolicy="no-referrer" />
+        ) : (
+          <div className="w-20 h-20 bg-seablue rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-2xl">
+            <LayoutDashboard className="w-10 h-10 text-white" />
+          </div>
+        )}
+        <h1 className="text-3xl font-black text-white uppercase tracking-tighter leading-none">SalesPulse</h1>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.3em] mt-3">Welcome back, {userName}</p>
+      </motion.div>
+
+      {/* Radial Menu Container */}
+      <div className="relative w-80 h-80 flex items-center justify-center z-20">
+        {/* Central Button */}
+        <motion.button
+          onClick={() => setIsMenuOpen(!isMenuOpen)}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="w-24 h-24 bg-white rounded-full shadow-[0_0_50px_rgba(255,255,255,0.2)] flex flex-col items-center justify-center z-30 border-4 border-seablue/20 group"
+        >
+          <div className={`transition-transform duration-500 ${isMenuOpen ? 'rotate-180' : ''}`}>
+            {isMenuOpen ? <Plus className="w-8 h-8 text-seablue rotate-45" /> : <Activity className="w-8 h-8 text-seablue animate-pulse" />}
+          </div>
+          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Menu</span>
+        </motion.button>
+
+        {/* Menu Items (Radial) */}
+        <AnimatePresence>
+          {isMenuOpen && menuItems.map((item: any, idx: number) => {
+            const angle = (idx * (360 / menuItems.length)) - 90;
+            const radius = 120;
+            const x = radius * Math.cos(angle * (Math.PI / 180));
+            const y = radius * Math.sin(angle * (Math.PI / 180));
+
+            return (
+              <motion.button
+                key={item.id}
+                initial={{ opacity: 0, scale: 0, x: 0, y: 0 }}
+                animate={{ opacity: 1, scale: 1, x, y }}
+                exit={{ opacity: 0, scale: 0, x: 0, y: 0 }}
+                transition={{ type: 'spring', stiffness: 200, damping: 20, delay: idx * 0.05 }}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setView(item.id);
+                }}
+                type="button"
+                className="absolute w-16 h-16 bg-slate-800 border border-white/10 rounded-2xl flex flex-col items-center justify-center shadow-2xl hover:bg-seablue hover:scale-110 transition-all group z-50 cursor-pointer"
+              >
+                <item.icon className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
+                <span className="text-[7px] font-black text-slate-400 group-hover:text-white uppercase tracking-tighter mt-1 text-center px-1 leading-none">{item.label}</span>
+              </motion.button>
+            );
+          })}
+        </AnimatePresence>
+
+        {/* Decorative Rings */}
+        <div className="absolute inset-0 border border-white/5 rounded-full animate-[spin_20s_linear_infinite]"></div>
+        <div className="absolute inset-4 border border-white/5 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
+      </div>
+
+      {/* Quick Stats Footer */}
+      <motion.div 
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.5 }}
+        className="mt-20 grid grid-cols-3 gap-8 text-center"
+      >
+        <div>
+          <p className="text-xl font-black text-white">24/7</p>
+          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Active</p>
+        </div>
+        <div className="px-8 border-x border-white/10">
+          <p className="text-xl font-black text-seablue">LIVE</p>
+          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Status</p>
+        </div>
+        <div>
+          <p className="text-xl font-black text-white">MTD</p>
+          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Ready</p>
+        </div>
+      </motion.div>
+    </div>
+  );
+};
+
+interface NationalDashboardProps {
+  view?: string;
+  setView: (v: any) => void;
+  stats: any[];
+  hierarchy: any[];
+  categories: string[];
+  skus: any[];
+  isSyncing?: boolean;
+  onRefresh?: () => void;
+  userRole: any;
+  userEmail?: string | null;
+  userRegion?: string | null;
+  userName?: string | null;
+  userContact?: string | null;
+  timeGone: number;
+  holidays: string;
+  lastSync?: string;
+  selectedMonth: string;
+  setSelectedMonth: (m: string) => void;
+  apiFetch: any;
+  backupLogs?: any[];
+  stockHistory?: any[];
+  missingEntriesReport: any[];
+  fetchMissingEntriesReport: (m?: string) => void;
+  isLoadingMissingEntries: boolean;
+  users?: any[];
+  obAssignments?: any[];
+  selectedHeadCountDetail: any;
+  setSelectedHeadCountDetail: (d: any) => void;
+}
+
 const NationalDashboard = ({ 
   view, setView, stats, hierarchy, categories, skus, isSyncing, onRefresh, 
   userRole, userEmail, userRegion, userName, userContact, 
   timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, 
   apiFetch, backupLogs = [], stockHistory = [],
   missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries,
-  users = [], obAssignments = []
-}: { 
-  view?: string, setView: (v: any) => void, stats: any[], hierarchy: any[], categories: string[], skus: any[], 
-  isSyncing?: boolean, onRefresh?: () => void, userRole: any, 
-  userEmail?: string | null, userRegion?: string | null, userName?: string | null, 
-  userContact?: string | null, timeGone: number, holidays: string, 
-  lastSync?: string, selectedMonth: string, setSelectedMonth: (m: string) => void, 
-  apiFetch: any, backupLogs?: any[], stockHistory?: any[],
-  missingEntriesReport: any[], fetchMissingEntriesReport: (m?: string) => void, isLoadingMissingEntries: boolean,
-  users?: any[], obAssignments?: any[]
-}) => {
+  users = [], obAssignments = [],
+  selectedHeadCountDetail, setSelectedHeadCountDetail
+}: NationalDashboardProps) => {
+  const [expandedOB, setExpandedOB] = useState<string | null>(null);
+  const [headCountDrillDown, setHeadCountDrillDown] = useState<{ level: string, value: string }[]>([]);
+
+  const filteredHeadCountData = useMemo(() => {
+    if (!selectedHeadCountDetail) return [];
+    const role = selectedHeadCountDetail.designation;
+    const currentMonth = selectedMonth;
+    const currentMonthHistory = stats.filter((s: any) => s.date.startsWith(currentMonth));
+
+    // Base data: all users for this role
+    let data = users.filter((u: any) => u.role === role).map(u => {
+      const h = hierarchy.find(h => h.ob_id === u.contact || h.asm_tsm_name === u.name || h.rsm_name === u.name);
+      const entries = currentMonthHistory.filter(s => {
+        if (role === 'RSM') return (s.rsm || '').toLowerCase() === (u.name || '').toLowerCase();
+        if (role === 'SC') return (s.sc || '').toLowerCase() === (u.name || '').toLowerCase();
+        if (role === 'TSM' || role === 'ASM') return (s.tsm || '').toLowerCase() === (u.name || '').toLowerCase();
+        if (role === 'OB') return (s.ob_contact || '').toLowerCase() === (u.contact || '').toLowerCase();
+        return false;
+      });
+      return { ...u, h, entries, isActive: entries.length > 0 };
+    });
+
+    // Apply drill-down filters
+    headCountDrillDown.forEach(filter => {
+      if (filter.level === 'Region') {
+        data = data.filter(u => u.h?.territory_region === filter.value);
+      } else if (filter.level === 'TSM') {
+        data = data.filter(u => u.h?.asm_tsm_name === filter.value);
+      } else if (filter.level === 'Town') {
+        data = data.filter(u => u.h?.town_name === filter.value);
+      }
+    });
+
+    return data;
+  }, [selectedHeadCountDetail, headCountDrillDown, users, hierarchy, stats, selectedMonth]);
+
   const filteredOBs = useMemo(() => {
     const uniqueOBs = new Map();
     hierarchy.forEach(h => {
@@ -745,7 +910,7 @@ const NationalDashboard = ({
     return gaps.sort((a, b) => b.count - a.count);
   }, [stockHistory, hierarchy]);
 
-  const summary = useMemo(() => {
+  const data = useMemo(() => {
     const totalBags = monthStats.reduce((sum, s) => sum + (s.totalBags || 0), 0);
     const totalCtns = monthStats.reduce((sum, s) => sum + (s.totalCtns || 0), 0);
     const uniqueOBs = new Set(monthStats.filter(s => !s.isTSMEntry).map(s => s.ob_contact)).size;
@@ -844,8 +1009,31 @@ const NationalDashboard = ({
       };
     });
 
-    return { totalBags, totalCtns, totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, avgSalesPerOB, dropSize, totalVisited, totalProductive, totalShops, brandWiseStats };
-  }, [monthStats, filteredHierarchy, brands, skus, obPerformance, topCategoryFilter, topBrandFilter]);
+    const weakestRoutes = routeWeakness.map(rw => ({
+      route: rw.route,
+      ob: rw.ob,
+      reasons: rw.reasons,
+      avgSales: rw.latestSales,
+      efficiency: rw.latestProd
+    })).sort((a, b) => a.efficiency - b.efficiency).slice(0, 5);
+
+    const last8Visits = monthStats.filter(s => !s.isTSMEntry).sort((a, b) => b.date.localeCompare(a.date)).slice(0, 8).map(s => ({
+      date: s.date,
+      route: s.route,
+      obName: s.ob_name,
+      brands: s.brandSales
+    }));
+
+    return { 
+      totalBags, totalCtns, totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, 
+      totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, 
+      brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, 
+      avgSalesPerOB, dropSize, totalVisited, totalProductive, totalShops, brandWiseStats,
+      weakestRoutes, last8Visits
+    };
+  }, [monthStats, filteredHierarchy, brands, skus, obPerformance, routeWeakness, topCategoryFilter, topBrandFilter]);
+
+  const summary = data;
 
   const categoryStats = useMemo(() => {
     const cats = { A: { count: 0, sales: 0 }, B: { count: 0, sales: 0 }, C: { count: 0, sales: 0 }, D: { count: 0, sales: 0 } };
@@ -1190,19 +1378,19 @@ const NationalDashboard = ({
 
   const dayOfWeekData = useMemo(() => {
     const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-    const data = days.map(day => ({ name: day, sales: 0, productive: 0, visited: 0 }));
+    const dayStats = days.map(day => ({ name: day, sales: 0, productive: 0, visited: 0 }));
     
     monthStats.filter(s => !s.isTSMEntry).forEach(s => {
       const date = new Date(s.date);
       if (!isNaN(date.getTime())) {
         const dayIdx = date.getDay();
-        data[dayIdx].sales += (s.totalBags + s.totalCtns);
-        data[dayIdx].productive += s.productive_shops;
-        data[dayIdx].visited += s.visited_shops;
+        dayStats[dayIdx].sales += (s.totalBags + s.totalCtns);
+        dayStats[dayIdx].productive += s.productive_shops;
+        dayStats[dayIdx].visited += s.visited_shops;
       }
     });
     
-    return data.map(d => ({
+    return dayStats.map(d => ({
       ...d,
       dropSize: d.productive > 0 ? d.sales / d.productive : 0,
       productivity: d.visited > 0 ? (d.productive / d.visited) * 100 : 0
@@ -1282,37 +1470,40 @@ const NationalDashboard = ({
         </div>
 
         {/* Head Count System (MTD) - Dynamic Block */}
-        <section className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-slate-50">
-          {headCountStats.map((stat, idx) => (
-            <motion.div 
-              key={idx}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: idx * 0.05 }}
-              className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col justify-between"
-            >
-              <div className="flex justify-between items-start mb-2">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{stat.designation}</span>
-                <div className={`w-1.5 h-1.5 rounded-full ${stat.active > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
-              </div>
-              <div className="flex items-end justify-between">
-                <div>
-                  <p className="text-xl font-black text-slate-800 leading-none">{stat.active}<span className="text-[10px] text-slate-400 font-bold ml-1">/ {stat.total}</span></p>
-                  <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">Active Staff</p>
+        {view === 'dashboard' && (
+          <section className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-slate-50">
+            {headCountStats.map((stat, idx) => (
+              <motion.button 
+                key={idx}
+                onClick={() => setSelectedHeadCountDetail(stat)}
+                initial={{ opacity: 0, scale: 0.95 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ delay: idx * 0.05 }}
+                className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col justify-between text-left hover:bg-slate-100 transition-all group"
+              >
+                <div className="flex justify-between items-start mb-2">
+                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest group-hover:text-seablue transition-colors">{stat.designation}</span>
+                  <div className={`w-1.5 h-1.5 rounded-full ${stat.active > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
                 </div>
-                <div className="text-right">
-                  <p className="text-[10px] font-black text-emerald-600">{stat.total > 0 ? Math.round((stat.active / stat.total) * 100) : 0}%</p>
-                  <div className="w-10 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                    <div 
-                      className="h-full bg-emerald-500 transition-all duration-1000" 
-                      style={{ width: `${stat.total > 0 ? (stat.active / stat.total) * 100 : 0}%` }}
-                    ></div>
+                <div className="flex items-end justify-between">
+                  <div>
+                    <p className="text-xl font-black text-slate-800 leading-none">{stat.active}<span className="text-[10px] text-slate-400 font-bold ml-1">/ {stat.total}</span></p>
+                    <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">Active Staff</p>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-[10px] font-black text-emerald-600">{stat.total > 0 ? Math.round((stat.active / stat.total) * 100) : 0}%</p>
+                    <div className="w-10 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
+                      <div 
+                        className="h-full bg-emerald-500 transition-all duration-1000" 
+                        style={{ width: `${stat.total > 0 ? (stat.active / stat.total) * 100 : 0}%` }}
+                      ></div>
+                    </div>
                   </div>
                 </div>
-              </div>
-            </motion.div>
-          ))}
-        </section>
+              </motion.button>
+            ))}
+          </section>
+        )}
 
         <div className="flex flex-wrap items-center gap-2 pt-4 border-t border-slate-50">
           <button 
@@ -1972,7 +2163,7 @@ const NationalDashboard = ({
         <div className="card-clean bg-white overflow-hidden">
           <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
             <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-              Command Center ({filterLevel}) {categoryWiseCategoryFilter === 'All' ? '(All Categories)' : `(${categoryWiseCategoryFilter})`}
+              SalesPulse ({filterLevel}) {categoryWiseCategoryFilter === 'All' ? '(All Categories)' : `(${categoryWiseCategoryFilter})`}
             </h3>
             <div className="flex items-center gap-2">
               <button
@@ -3171,363 +3362,8 @@ const NationalDashboard = ({
           </ResponsiveContainer>
         </div>
       </div>
-        </>
-      )}
-    </div>
-  );
-};
-
-
-const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, userEmail }: { user: any, data: any, setView: (v: any) => void, onRefresh?: () => void, isSyncing?: boolean, role: string | null, userEmail?: string | null }) => {
-  if (!user || !data) return (
-    <div className="flex items-center justify-center min-h-screen bg-slate-50">
-      <Loader2 className="w-8 h-8 text-seablue animate-spin" />
-    </div>
-  );
-
-  const CATEGORY_COLORS: Record<string, string> = {
-    "Kite Glow": "#38bdf8",
-    "Burq Action": "#f97316",
-    "Vero": "#eab308",
-    "DWB": "#22c55e",
-    "Match": "#1e3a8a"
-  };
-
-  return (
-    <div className="p-4 space-y-6 bg-slate-50 min-h-screen pb-40">
-      {/* Profile Header */}
-      <div className="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-white flex items-center gap-4 relative overflow-hidden">
-        <div className="absolute top-0 right-0 p-4">
-          <button 
-            onClick={onRefresh}
-            disabled={isSyncing}
-            className={`p-2 rounded-full bg-slate-50 text-slate-400 hover:text-seablue transition-all ${isSyncing ? 'animate-spin' : ''}`}
-            title="Sync Data"
-          >
-            <RefreshCw className="w-4 h-4" />
-          </button>
-        </div>
-        <div className="w-16 h-16 bg-seablue/10 rounded-2xl flex items-center justify-center text-seablue">
-          <User className="w-8 h-8" />
-        </div>
-        <div className="flex-1">
-          <h1 className="text-xl font-black text-slate-800 uppercase tracking-tight">{user.name}</h1>
-          <div className="flex flex-wrap gap-2 mt-1">
-            <span className="px-2 py-0.5 bg-seablue/10 text-seablue text-[8px] font-black uppercase tracking-widest rounded-full">{user.role}</span>
-            {user.region && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[8px] font-black uppercase tracking-widest rounded-full">{user.region}</span>}
-            {user.town && <span className="px-2 py-0.5 bg-slate-100 text-slate-500 text-[8px] font-black uppercase tracking-widest rounded-full">{user.town}</span>}
-          </div>
-          <p className="text-[10px] text-slate-400 font-bold mt-2 flex items-center gap-1">
-            <Mail className="w-3 h-3" /> {user.email}
-          </p>
-        </div>
-      </div>
-
-      {/* Brand Achievement (MTD) with RPD */}
-      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <Target className="w-4 h-4 text-seablue" />
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Brand Performance</h3>
-          </div>
-          <div className="flex gap-2">
-            <div className="text-right">
-              <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Days Gone</div>
-              <div className="text-[10px] font-black text-slate-700">{data.workingDaysPassed} / {data.totalWorkingDays}</div>
-            </div>
-            <div className="text-right">
-              <div className="text-[8px] font-black text-amber-500 uppercase tracking-widest">Remaining</div>
-              <div className="text-[10px] font-black text-amber-600">{data.remainingWorkingDays} Days</div>
-            </div>
-          </div>
-        </div>
-        <div className="space-y-6">
-          {data.brandPerformance.map((bp: any, idx: number) => (
-            <motion.div 
-              key={bp.category}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: idx * 0.05 }}
-              className="space-y-3"
-            >
-              <div className="flex justify-between items-end">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[bp.category] }} />
-                  <span className="text-[11px] font-black text-slate-700 uppercase">{bp.category}</span>
-                </div>
-                <div className="text-right flex flex-col items-end">
-                  <div className="flex items-center gap-1">
-                    <span className="text-[12px] font-black text-seablue">{bp.achievement.toFixed(1)}</span>
-                    <span className="text-[9px] font-bold text-slate-400">/</span>
-                    <span className="text-[12px] font-black text-slate-400">{bp.target.toFixed(1)}</span>
-                    <span className={`ml-2 text-[11px] font-black ${bp.percentage >= 100 ? 'text-emerald-600' : bp.percentage >= 80 ? 'text-amber-500' : 'text-rose-500'}`}>
-                      {bp.percentage.toFixed(0)}%
-                    </span>
-                  </div>
-                  <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">
-                    {bp.achTons.toFixed(2)} Tons
-                  </div>
-                </div>
-              </div>
-              
-              <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden border border-slate-50">
-                <motion.div 
-                  initial={{ width: 0 }}
-                  animate={{ width: `${Math.min(100, bp.percentage)}%` }}
-                  transition={{ duration: 1, delay: 0.5 + idx * 0.1 }}
-                  className="h-full rounded-full shadow-sm"
-                  style={{ backgroundColor: CATEGORY_COLORS[bp.category] }}
-                />
-              </div>
-
-              <div className="grid grid-cols-4 gap-2 mt-2">
-                <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
-                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Avg Daily</div>
-                  <div className="text-[10px] font-black text-slate-700">{bp.avgDailySales.toFixed(1)}</div>
-                </div>
-                <div className="bg-amber-50 rounded-lg p-2 text-center border border-amber-100">
-                  <div className="text-[8px] font-black text-amber-500 uppercase tracking-widest mb-1">Target (RPD)</div>
-                  <div className={`text-[10px] font-black ${bp.rpd > bp.avgDailySales ? 'text-red-600' : 'text-amber-600'}`}>{bp.rpd.toFixed(1)}</div>
-                </div>
-                <div className="bg-slate-50 rounded-lg p-2 text-center border border-slate-100">
-                  <div className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Remaining</div>
-                  <div className="text-[10px] font-black text-slate-700">{bp.remainingTarget.toFixed(1)}</div>
-                </div>
-                <div className="bg-emerald-50 rounded-lg p-2 text-center border border-emerald-100">
-                  <div className="text-[8px] font-black text-emerald-500 uppercase tracking-widest mb-1">Prod %</div>
-                  <div className="text-[10px] font-black text-emerald-600">{(bp.productivity || 0).toFixed(0)}%</div>
-                </div>
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </section>
-
-      {/* Quick Stats Grid */}
-      <div className="grid grid-cols-2 gap-4">
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="card-clean p-5 bg-gradient-to-br from-seablue to-blue-700 text-white shadow-xl shadow-blue-100"
-        >
-          <div className="text-[9px] font-black uppercase tracking-widest opacity-70 mb-1">Today's Sales</div>
-          <div className="text-3xl font-black">{data.todaySales.toFixed(1)}</div>
-          <div className="text-[8px] font-bold opacity-60 mt-2 uppercase">Bags / Cartons</div>
-        </motion.div>
-        <motion.div 
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="card-clean p-5 bg-gradient-to-br from-emerald-600 to-emerald-800 text-white shadow-xl shadow-emerald-100"
-        >
-          <div className="text-[9px] font-black uppercase tracking-widest opacity-70 mb-1">MTD Volume</div>
-          <div className="text-3xl font-black">{data.mtdVolumeTons.toFixed(1)} <span className="text-sm font-normal opacity-70">Tons</span></div>
-          <div className="text-[8px] font-bold opacity-60 mt-2 uppercase">{data.mtdSales.toFixed(0)} Total Bags</div>
-        </motion.div>
-      </div>
-
-      {/* Last 8 Visits Brand Wise Sales */}
-      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
-        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-3">
-          <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-            <History className="w-4 h-4" />
-          </div>
-          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Last 8 Visits (Brand-wise)</h3>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-6 py-4 whitespace-nowrap">Date / Route</th>
-                {CATEGORIES.map(cat => (
-                  <th key={cat} className="px-4 py-4 text-right whitespace-nowrap">{cat}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {data.last8Visits.map((v: any, idx: number) => (
-                <tr key={idx} className="group hover:bg-slate-50/80 transition-all duration-200">
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    <div className="text-xs font-black text-slate-700">{v.date}</div>
-                    <div className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{v.route}</div>
-                  </td>
-                  {CATEGORIES.map(cat => (
-                    <td key={cat} className="px-4 py-4 text-right whitespace-nowrap">
-                      <span className={`text-xs font-black ${v.brands[cat] > 0 ? 'text-seablue' : 'text-slate-200'}`}>
-                        {(v.brands[cat] || 0).toFixed(1)}
-                      </span>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Brand-wise Active OBs & Volume */}
-      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
-        <div className="flex items-center gap-2 mb-6">
-          <Users className="w-4 h-4 text-seablue" />
-          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Active OBs & Volume (Brand-wise)</h3>
-        </div>
-        <div className="space-y-4">
-          <div className="grid grid-cols-3 gap-2 text-[8px] font-black text-slate-400 uppercase tracking-widest border-b pb-2">
-            <div>Brand</div>
-            <div className="text-center">Active OBs</div>
-            <div className="text-right">MTD Volume (Tons)</div>
-          </div>
-          {CATEGORIES.map(cat => (
-            <div key={cat} className="grid grid-cols-3 gap-2 items-center">
-              <div className="flex items-center gap-2">
-                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[cat] }} />
-                <span className="text-[10px] font-bold text-slate-700">{cat}</span>
-              </div>
-              <div className="text-center">
-                <span className="text-[10px] font-black text-seablue bg-seablue/5 px-2 py-0.5 rounded-full">
-                  {data.activeOBsBrandWise[cat] || 0}
-                </span>
-              </div>
-              <div className="text-right text-[10px] font-black text-slate-600">
-                {(data.mtdVolumeBrandWise[cat] || 0).toFixed(2)}
-              </div>
-            </div>
-          ))}
-          <div className="grid grid-cols-3 gap-2 items-center pt-2 border-t border-dashed">
-            <div className="text-[10px] font-black text-slate-800">Total</div>
-            <div className="text-center">
-              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                {data.totalActiveOBs}
-              </span>
-            </div>
-            <div className="text-right text-[10px] font-black text-slate-800">
-              {data.mtdVolumeTons.toFixed(2)}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Sales Trend (Last 7 Days) */}
-      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <TrendingUp className="w-4 h-4 text-emerald-500" />
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Last 7 Days Sales</h3>
-          </div>
-        </div>
-        <div className="h-32 w-full min-h-[128px]">
-          <ResponsiveContainer width="100%" height="100%">
-            <AreaChart data={data.last7DaysSales}>
-              <defs>
-                <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.3}/>
-                  <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
-                </linearGradient>
-              </defs>
-              <Tooltip 
-                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px', fontWeight: 'bold' }}
-                labelStyle={{ display: 'none' }}
-              />
-              <Area 
-                type="monotone" 
-                dataKey="sales" 
-                stroke="#0ea5e9" 
-                strokeWidth={3}
-                fillOpacity={1} 
-                fill="url(#colorSales)" 
-              />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-        <div className="flex justify-between mt-2">
-          {data.last7DaysSales.map((d: any, i: number) => (
-            <span key={i} className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">
-              {d.day}
-            </span>
-          ))}
-        </div>
-      </section>
-
-      {/* OB Target vs Achievement (Brand wise) */}
-      {data.obPerformance && data.obPerformance.length > 0 && (
-        <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-2">
-              <Users className="w-4 h-4 text-indigo-500" />
-              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Team Performance (Brand wise)</h3>
-            </div>
-          </div>
-          <div className="space-y-6">
-            {data.obPerformance.map((ob: any, idx: number) => (
-              <div key={ob.name} className="space-y-3 p-4 rounded-2xl bg-slate-50 border border-slate-100">
-                <div className="text-[11px] font-black text-slate-800 uppercase tracking-tight border-b pb-2 flex justify-between">
-                  <span>{ob.name}</span>
-                  <span className="text-[8px] text-slate-400">MTD Achievement</span>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  {ob.brands.map((b: any) => (
-                    <div key={b.category} className="flex flex-col">
-                      <span className="text-[8px] font-black text-slate-400 uppercase">{b.category}</span>
-                      <div className="flex items-center gap-1">
-                        <span className="text-[10px] font-black text-slate-700">{b.achievement.toFixed(1)}</span>
-                        <span className="text-[8px] text-slate-400">/</span>
-                        <span className="text-[10px] font-bold text-slate-400">{b.target.toFixed(1)}</span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {/* Brand wise Sales (Last 8 Visits) */}
-      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <History className="w-4 h-4 text-amber-500" />
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Last 8 Visits Brand Sales</h3>
-          </div>
-        </div>
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="text-[8px] font-black text-slate-400 uppercase tracking-widest border-b">
-                <th className="py-2 pr-2">Date / Info</th>
-                {["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].map(cat => (
-                  <th key={cat} className="py-2 px-2 text-center">{cat}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {data.last8Visits.map((v: any, idx: number) => (
-                <tr key={idx} className="border-b border-slate-50 hover:bg-slate-50 transition-colors">
-                  <td className="py-2 pr-2">
-                    <div className="text-[9px] font-black text-slate-700">{v.date}</div>
-                    <div className="text-[7px] font-bold text-slate-400 uppercase">{v.route}</div>
-                    {role !== 'OB' && <div className="text-[7px] font-black text-seablue uppercase truncate max-w-[80px]">{v.obName}</div>}
-                  </td>
-                  {["Kite Glow", "Burq Action", "Vero", "DWB", "Match"].map(cat => (
-                    <td key={cat} className="py-2 px-2 text-center">
-                      <span className={`text-[10px] font-black ${v.brands[cat] > 0 ? 'text-seablue' : 'text-slate-300'}`}>
-                        {v.brands[cat].toFixed(1)}
-                      </span>
-                    </td>
-                  ))}
-                </tr>
-              ))}
-              {data.last8Visits.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="py-10 text-center text-[10px] font-black text-slate-400 uppercase">No recent visits found</td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* Weakest Routes (Bottom to Top) */}
+    </>
+  )}
       <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center gap-2">
@@ -3571,38 +3407,165 @@ const PostLoginDashboard = ({ user, data, setView, onRefresh, isSyncing, role, u
         </div>
       </section>
 
-      {/* Action Buttons */}
-      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
-        <div className="flex items-center gap-2 mb-6">
-          <LayoutDashboard className="w-4 h-4 text-seablue" />
-          <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Quick Navigation</h3>
-        </div>
-        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-          {APP_TABS.filter(tab => {
-            if (!role) return false;
-            const normalizedRole = role.toUpperCase();
-            if (!tab.roles.map(r => r.toUpperCase()).includes(normalizedRole)) return false;
-            // Strict Admin check
-            if (tab.id === 'admin') {
-              return ADMIN_EMAILS.map(e => e.toLowerCase()).includes((userEmail || '').toLowerCase());
-            }
-            return true;
-          }).map((tab) => {
-            return (
-              <button 
-                key={tab.id}
-                onClick={() => setView(tab.id as any)}
-                className="flex flex-col items-center justify-center p-4 bg-slate-50 border border-slate-100 rounded-2xl shadow-sm hover:bg-seablue/5 hover:border-seablue/20 transition-all group"
-              >
-                <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center text-seablue mb-2 shadow-sm group-hover:scale-110 transition-transform">
-                  <tab.icon className="w-5 h-5" />
+      {/* Head Count Detail Modal */}
+      <AnimatePresence>
+        {selectedHeadCountDetail && (
+          <div className="fixed inset-0 z-[110] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 20 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              <div className="p-6 flex items-center justify-between bg-seablue text-white">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                    <Users className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-black uppercase tracking-tight">{selectedHeadCountDetail.designation} SalesPulse</h3>
+                    <p className="text-[10px] font-bold uppercase tracking-widest opacity-80">Active vs Total Staff Drill-down</p>
+                  </div>
                 </div>
-                <span className="text-[9px] font-black text-slate-700 uppercase tracking-widest text-center">{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-      </section>
+                <button 
+                  onClick={() => setSelectedHeadCountDetail(null)}
+                  className="p-2 hover:bg-white/20 rounded-full transition-all"
+                >
+                  <Plus className="w-6 h-6 rotate-45" />
+                </button>
+              </div>
+              
+              <div className="p-6 overflow-y-auto flex-1">
+                {/* Breadcrumbs for Head Count Drill-down */}
+                {headCountDrillDown.length > 0 && (
+                  <div className="flex items-center gap-2 mb-4 bg-slate-50 p-2 rounded-xl">
+                    <button 
+                      onClick={() => {
+                        setHeadCountDrillDown([]);
+                        setSelectedHeadCountDetail({ designation: 'RSM' }); // Reset to top level
+                      }}
+                      className="text-[10px] font-black text-seablue uppercase hover:underline"
+                    >
+                      National
+                    </button>
+                    {headCountDrillDown.map((d, idx) => (
+                      <React.Fragment key={idx}>
+                        <ChevronRight className="w-3 h-3 text-slate-300" />
+                        <button 
+                          onClick={() => setHeadCountDrillDown(prev => prev.slice(0, idx + 1))}
+                          className="text-[10px] font-black text-slate-600 uppercase"
+                        >
+                          {d.value}
+                        </button>
+                      </React.Fragment>
+                    ))}
+                  </div>
+                )}
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                        <th className="p-4">Name / ID</th>
+                        <th className="p-4">Region</th>
+                        <th className="p-4">TSM / ASM</th>
+                        <th className="p-4">Town</th>
+                        <th className="p-4">Status</th>
+                        <th className="p-4 text-right">MTD Activity</th>
+                      </tr>
+                    </thead>
+                    <tbody className="text-[11px] font-bold text-slate-600">
+                      {filteredHeadCountData.map((item: any, i: number) => {
+                        const h = item.h;
+                        const entries = item.entries;
+                        const isActive = item.isActive;
+                        
+                        return (
+                          <React.Fragment key={i}>
+                            <tr 
+                              onClick={() => {
+                                if (selectedHeadCountDetail.designation === 'RSM' || selectedHeadCountDetail.designation === 'SC') {
+                                  setHeadCountDrillDown([{ level: 'Region', value: h?.territory_region || 'N/A' }]);
+                                  setSelectedHeadCountDetail({ designation: 'TSM' });
+                                } else if (selectedHeadCountDetail.designation === 'TSM' || selectedHeadCountDetail.designation === 'ASM') {
+                                  setHeadCountDrillDown(prev => [...prev, { level: 'TSM', value: item.name }]);
+                                  setSelectedHeadCountDetail({ designation: 'OB' });
+                                } else if (selectedHeadCountDetail.designation === 'OB') {
+                                  setExpandedOB(expandedOB === item.contact ? null : item.contact);
+                                }
+                              }}
+                              className="border-b border-slate-50 hover:bg-slate-50 transition-colors cursor-pointer group"
+                            >
+                              <td className="p-4">
+                                <div className="flex items-center gap-2">
+                                  {selectedHeadCountDetail.designation === 'OB' && (
+                                    <div className={`transition-transform ${expandedOB === item.contact ? 'rotate-90' : ''}`}>
+                                      <ChevronRight className="w-3 h-3 text-slate-400" />
+                                    </div>
+                                  )}
+                                  <div>
+                                    <div className="text-slate-800 font-black group-hover:text-seablue transition-colors">{item.name}</div>
+                                    <div className="text-[9px] text-slate-400 font-bold">{item.contact}</div>
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="p-4">{h?.territory_region || 'N/A'}</td>
+                              <td className="p-4">{h?.asm_tsm_name || 'N/A'}</td>
+                              <td className="p-4">{h?.town_name || 'N/A'}</td>
+                              <td className="p-4">
+                                <span className={`px-2 py-1 rounded-lg text-[9px] font-black ${isActive ? 'bg-emerald-50 text-emerald-600' : 'bg-rose-50 text-rose-600'}`}>
+                                  {isActive ? 'ACTIVE' : 'INACTIVE'}
+                                </span>
+                              </td>
+                              <td className="p-4 text-right">
+                                <div className="text-slate-800 font-black">{entries.length} Visits</div>
+                                <div className="text-[9px] text-slate-400 font-bold">{entries.reduce((sum: number, s: any) => sum + (s.totalBags || 0), 0).toFixed(1)} Bags</div>
+                              </td>
+                            </tr>
+                            {expandedOB === item.contact && (
+                              <tr className="bg-slate-50/50">
+                                <td colSpan={6} className="p-4">
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                                    <div className="p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Assigned Route</p>
+                                      <p className="text-[10px] font-black text-slate-800">{h?.route || 'N/A'}</p>
+                                    </div>
+                                    <div className="p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Target (Bags)</p>
+                                      <p className="text-[10px] font-black text-seablue">{h?.target_ctn || 0}</p>
+                                    </div>
+                                    <div className="p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Distributor</p>
+                                      <p className="text-[10px] font-black text-slate-800">{h?.distributor_name || 'N/A'}</p>
+                                    </div>
+                                    <div className="p-3 bg-white rounded-xl border border-slate-100 shadow-sm">
+                                      <p className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Last Visit</p>
+                                      <p className="text-[10px] font-black text-slate-800">{entries[0]?.date || 'No visits'}</p>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="p-6 bg-slate-50 border-t border-slate-100">
+                <button 
+                  onClick={() => setSelectedHeadCountDetail(null)}
+                  className="w-full py-4 rounded-2xl bg-seablue text-white text-xs font-black uppercase tracking-widest shadow-lg shadow-blue-200 hover:bg-seablue/90 transition-all"
+                >
+                  Close SalesPulse
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
@@ -4826,7 +4789,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
       }
       return { ...ob, targets, target_ctn: obHierarchy?.target_ctn || ob.target_ctn || 0 };
     });
-  }, [obAssignments, hierarchy, userRole, userRegion, userName, userContact]);
+  }, [obAssignments, hierarchy, userRole, userRegion, userName, userContact, filterLevel, filterValue]);
 
   const reportsMonthStats = useMemo(() => {
     return history.filter((h: any) => h.date.startsWith(currentMonth));
@@ -4846,6 +4809,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
         productivityList.push({
           type: 'Low Productivity',
           title: ob.name,
+          contact: ob.contact,
           desc: `${productivity.toFixed(1)}% Productivity (${ob.town})`,
           severity: 'high'
         });
@@ -4860,6 +4824,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
           inactivityList.push({
             type: 'Inactivity',
             title: ob.name,
+            contact: ob.contact,
             desc: `No submission for ${diffDays} days`,
             severity: 'critical'
           });
@@ -4869,6 +4834,7 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
         inactivityList.push({
           type: 'No Activity',
           title: ob.name,
+          contact: ob.contact,
           desc: `No submissions recorded for ${currentMonth}`,
           severity: 'critical'
         });
@@ -6137,13 +6103,13 @@ const normalizeRole = (role: string): any => {
 };
 
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'intro' | 'help' | 'tsm_performance' | 'command_center' | 'insights' | 'stats'>(() => {
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'intro' | 'help' | 'tsm_performance' | 'command_center' | 'insights' | 'stats' | 'home'>(() => {
     const saved = localStorage.getItem('user_data');
     if (saved) {
       try {
         const role = normalizeRole(JSON.parse(saved).role);
         if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(role)) {
-          return 'dashboard';
+          return 'home';
         }
       } catch(e) {}
     }
@@ -6168,6 +6134,7 @@ export default function App() {
   const [targetView, setTargetView] = useState('Brand');
   const [showUserManual, setShowUserManual] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
+  const [selectedHeadCountDetail, setSelectedHeadCountDetail] = useState<any>(null);
 
   const handleLogin = (token: string, userData: any) => {
     const role = normalizeRole(userData.role);
@@ -8081,11 +8048,26 @@ export default function App() {
         stats={nationalStats} 
         hierarchy={hierarchy} 
         logo={appLogo}
-        onEnter={() => setShowWelcome(false)}
+        onEnter={() => {
+          setShowWelcome(false);
+          setView('home');
+        }}
         isLoading={isLoadingNational}
         timeGone={timeGone}
         userEmail={userEmail}
         stockHistory={stockHistory}
+      />
+    );
+  }
+
+  if (view === 'home') {
+    return (
+      <HomeHub 
+        setView={setView}
+        userRole={userRole}
+        userName={userName}
+        logo={appLogo}
+        tabs={APP_TABS}
       />
     );
   }
@@ -8147,6 +8129,8 @@ export default function App() {
                 isLoadingMissingEntries={isLoadingMissingEntries}
                 users={users}
                 obAssignments={obAssignments}
+                selectedHeadCountDetail={selectedHeadCountDetail}
+                setSelectedHeadCountDetail={setSelectedHeadCountDetail}
               />
             )}
           </div>
@@ -10231,7 +10215,7 @@ export default function App() {
       },
       {
         id: 'command_center',
-        title: 'Command Center',
+        title: 'SalesPulse',
         roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'],
         color: 'border-indigo-500',
         content: (
@@ -10255,7 +10239,7 @@ export default function App() {
             <p className="text-sm text-slate-600 mb-2">High-level overview of TSM performance for regional and national managers.</p>
             <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
               <li><strong>Summary Table:</strong> Compare all TSMs based on achievement %, productivity, and active OBs.</li>
-              <li><strong>Drill Down:</strong> Click on any TSM row to open their specific Command Center view.</li>
+              <li><strong>Drill Down:</strong> Click on any TSM row to open their specific SalesPulse view.</li>
               <li><strong>Sorting:</strong> Click column headers to sort by different metrics (e.g., lowest achievement to highest).</li>
             </ul>
           </>
@@ -10833,11 +10817,12 @@ export default function App() {
     return <Login onLogin={handleLogin} logo={appLogo} />;
   }
 
-  return (
-    <ErrorBoundary>
-      <div className="min-h-screen bg-slate-50 pb-40">
-      <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-      <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+  if (view === 'entry') {
+    return (
+      <ErrorBoundary>
+        <div className="min-h-screen bg-slate-50 pb-40">
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-3 py-2">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -11266,5 +11251,20 @@ export default function App() {
       {/* Chatbot removed as per user request */}
     </div>
     </ErrorBoundary>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
+      <div className="text-center">
+        <h2 className="text-2xl font-black text-white mb-4 uppercase tracking-tighter">View Not Found</h2>
+        <button 
+          onClick={() => setView('home')}
+          className="px-6 py-3 bg-seablue text-white rounded-2xl font-black uppercase tracking-widest"
+        >
+          Return Home
+        </button>
+      </div>
+    </div>
   );
 }
