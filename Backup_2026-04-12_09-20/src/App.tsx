@@ -6561,42 +6561,15 @@ export default function App() {
   };
 
   const handleMetaChange = async (field: keyof Omit<OrderState, 'items' | 'targets' | 'categoryProductiveShops'>, value: string | number) => {
-    if (field === 'town' && order.obContact.startsWith('TSM-')) {
-      const tsmAssigns = tsmAssignments.filter(t => (t.tsm_name || '').trim().toLowerCase() === (order.tsm || '').trim().toLowerCase() && t.town === value);
-      let routes: string[] = [];
-      tsmAssigns.forEach(t => {
-        if (t.routes) routes.push(...t.routes.split(',').map((r:string) => r.trim()));
-      });
-      if (routes.length === 0) routes = ['TSM Route'];
-      
-      setOrder(prev => ({
-        ...prev,
-        town: String(value),
-        route: routes[0] || ''
-      }));
-      return;
-    }
-
     if (field === 'obContact') {
       const assignment = filteredOBs.find(a => a.contact === value);
       if (assignment) {
         if (String(value).startsWith('TSM-')) {
-          const tsmName = assignment.tsm;
-          const tsmAssigns = tsmAssignments.filter(t => (t.tsm_name || '').trim().toLowerCase() === (tsmName || '').trim().toLowerCase());
-          
-          let initialTown = assignment.town || '';
-          let initialRoutes = assignment.routes || ['TSM Route'];
-          
-          if (tsmAssigns.length > 0) {
-            initialTown = tsmAssigns[0].town;
-            initialRoutes = tsmAssigns[0].routes ? tsmAssigns[0].routes.split(',').map((r:string) => r.trim()) : ['TSM Route'];
-          }
-
           setOrder(prev => ({
             ...prev,
             obContact: String(value),
             orderBooker: assignment.name,
-            town: initialTown,
+            town: assignment.town || '',
             distributor: assignment.distributor || '',
             tsm: assignment.tsm || '',
             zone: assignment.zone || '',
@@ -6605,7 +6578,7 @@ export default function App() {
             rsm: assignment.rsm || '',
             sc: assignment.sc || '',
             director: assignment.director || '',
-            route: initialRoutes[0] || '',
+            route: assignment.routes?.[0] || '',
             totalShops: 50,
             targets: {},
             items: {},
@@ -10976,40 +10949,13 @@ export default function App() {
               ))}
             </select>
           </div>
-          {order.obContact?.startsWith('TSM-') && (
-            <div className="space-y-1">
-              <label className="text-[9px] font-bold text-slate-400 uppercase">Town</label>
-              <select 
-                value={order.town} 
-                onChange={(e) => handleMetaChange('town', e.target.value)}
-                className="input-clean w-full text-[10px] py-1"
-              >
-                <option value="">Select Town</option>
-                {Array.from(new Set(tsmAssignments.filter(t => (t.tsm_name || '').trim().toLowerCase() === (order.tsm || '').trim().toLowerCase()).map(t => t.town))).map(town => (
-                  <option key={town} value={town}>{town}</option>
-                ))}
-              </select>
-            </div>
-          )}
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">Route</label>
             <select value={order.route} onChange={(e) => handleMetaChange('route', e.target.value)} className="input-clean w-full text-[10px] py-1" disabled={!order.obContact}>
               <option value="">Select Route</option>
-              {(() => {
-                let routes: string[] = [];
-                if (order.obContact?.startsWith('TSM-')) {
-                  const tsmAssigns = tsmAssignments.filter(t => (t.tsm_name || '').trim().toLowerCase() === (order.tsm || '').trim().toLowerCase() && t.town === order.town);
-                  tsmAssigns.forEach(t => {
-                    if (t.routes) routes.push(...t.routes.split(',').map((r:string) => r.trim()));
-                  });
-                  if (routes.length === 0) routes = ['TSM Route'];
-                } else {
-                  routes = obAssignments.find(a => a.contact === order.obContact)?.routes || [];
-                }
-                return Array.from(new Set(routes)).map(r => (
-                  <option key={String(r)} value={String(r)}>{String(r)}</option>
-                ));
-              })()}
+              {Array.from(new Set(obAssignments.find(a => a.contact === order.obContact)?.routes || [])).map(r => (
+                <option key={r} value={r}>{r}</option>
+              ))}
             </select>
           </div>
 
