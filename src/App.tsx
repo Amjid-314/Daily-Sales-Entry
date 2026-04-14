@@ -539,9 +539,6 @@ const NationalDashboard = ({
       let totalWeightKg = 0;
       
       skus.forEach(sku => {
-        // Ignore "New DWB" SKU for now as per user request
-        if (sku.id === 'dwb-new') return;
-
         const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
         const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton || 0)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen || 0)) + Number(item.pks || 0);
         const ctns = Number(sku.unitsPerCarton || 0) > 0 ? packs / Number(sku.unitsPerCarton) : 0;
@@ -3019,7 +3016,7 @@ const NationalDashboard = ({
       <div className="bg-amber-50 border border-amber-100 p-2 rounded-lg flex items-center gap-2">
         <AlertCircle className="w-3 h-3 text-amber-600" />
         <p className="text-[9px] font-bold text-amber-700 uppercase tracking-tight">
-          Note: "Match" Tonnage and "New DWB" SKU are excluded from all tonnage and cost calculations as per policy.
+          Note: "Match" Tonnage is excluded from all tonnage and cost calculations as per policy.
         </p>
       </div>
 
@@ -6221,11 +6218,17 @@ export default function App() {
 
     const obContact = orderData.ob_contact || orderData.obContact;
     const month = date.slice(0, 7);
-    const obMtdOrders = history.filter(o => o.ob_contact === obContact && o.date.startsWith(month));
     
+    // Include current order in MTD if it's not in history yet
+    let mtdOrders = history.filter(o => o.ob_contact === obContact && o.date.startsWith(month));
+    if (!isFromHistory && !mtdOrders.find(o => o.id === orderData.id)) {
+      mtdOrders = [...mtdOrders, { ...orderData, order_data: JSON.stringify(items) }];
+    }
+    
+    const mtdBrandTotals: Record<string, number> = {};
     const mtdBrandSales = CATEGORIES.map(cat => {
       const catSkus = SKUS.filter(s => s.category === cat);
-      const mtdTotal = obMtdOrders.reduce((sum, o) => {
+      const mtdTotal = mtdOrders.reduce((sum, o) => {
         const oItems = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
         const catSum = catSkus.reduce((s2, sku) => {
           const item = oItems[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
@@ -6234,9 +6237,25 @@ export default function App() {
         }, 0);
         return sum + catSum;
       }, 0);
+      mtdBrandTotals[cat] = mtdTotal;
       const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
       return `${cat}: ${mtdTotal.toFixed(2).replace(/\.00$/, '')} ${label}`;
-    }).join('\n');
+    });
+
+    const washingPowderTotal = (mtdBrandTotals['Kite Glow'] || 0) + (mtdBrandTotals['Burq Action'] || 0) + (mtdBrandTotals['Vero'] || 0);
+    const washingPowderLine = `Total Washing Powder=${mtdBrandTotals['Kite Glow']?.toFixed(0) || 0}+${mtdBrandTotals['Burq Action']?.toFixed(0) || 0}+${mtdBrandTotals['Vero']?.toFixed(0) || 0}=${washingPowderTotal.toFixed(0)}`;
+
+    // Stock Report Check for TSM
+    let stockStatus = '';
+    if (userRole === 'TSM' || userRole === 'Admin' || userRole === 'Super Admin') {
+      const today = new Date().toISOString().split('T')[0];
+      const hasStockReport = stockHistory.some(s => s.date === today);
+      if (!hasStockReport) {
+        stockStatus = `\n⚠️ *Stock Reports Not Entered* ⚠️\n`;
+      } else {
+        stockStatus = `\n✅ *Stock Reports Entered*\n`;
+      }
+    }
 
     const summary = `*Sales Summary*\n` +
       `*${date}*\n\n` +
@@ -6251,7 +6270,14 @@ export default function App() {
       `*Brand Sales:*\n${brandSales}\n\n` +
       `------------------\n\n` +
       `*Today Execution:* ${totalBags.toFixed(2).replace(/\.00$/, '')} Bags, ${totalCtns.toFixed(2).replace(/\.00$/, '')} Ctns\n\n` +
-      `*MTD Brand Sales:*\n${mtdBrandSales}`;
+      `*MTD Brand Sales:*\n` +
+      `${mtdBrandSales[0]}\n` +
+      `${mtdBrandSales[1]}\n` +
+      `${mtdBrandSales[2]}\n` +
+      `${washingPowderLine}\n` +
+      `${mtdBrandSales[3]}\n` +
+      `${mtdBrandSales[4]}` +
+      `${stockStatus}`;
 
     return summary;
   };

@@ -73,7 +73,6 @@ const SKUS = [
   { id: "dwb-large", name: "Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 100, unit: 'Ctns' },
   { id: "dwb-long", name: "Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 210, unit: 'Ctns' },
   { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 240, unit: 'Ctns' },
-  { id: "dwb-new", name: "New DWB", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
   // Match
   { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
   { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
@@ -1793,6 +1792,44 @@ async function startServer() {
       await refreshSummarySheets(sheets, spreadsheetId);
     } catch (err) {
       console.error("Global Sync Error:", err);
+    }
+  }
+
+  async function repushSalesData() {
+    try {
+      const client = await getGoogleSheetsClient();
+      if (!client) return;
+      const { sheets, spreadsheetId } = client;
+
+      console.log("Starting full Sales_Data recalculation and repush...");
+      const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC, id ASC").all() as any[];
+      const obAssignments = db.prepare("SELECT * FROM ob_assignments").all() as any[];
+      const obMap = obAssignments.reduce((acc, ob) => {
+        acc[ob.contact] = ob;
+        return acc;
+      }, {} as Record<string, any>);
+
+      const headers = getSalesDataHeaders();
+      const rows = orders.map(order => getSalesDataRow(order, obMap));
+
+      // Overwrite Sales_Data
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: 'Sales_Data!A1',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [headers, ...rows]
+        }
+      });
+      console.log(`Sales_Data repushed with ${rows.length} rows and recalculated tonnage.`);
+      
+      // Also refresh summary sheets
+      await refreshSummarySheets(sheets, spreadsheetId);
+      
+      return rows.length;
+    } catch (err) {
+      console.error("Repush Sales Data Error:", err);
+      throw err;
     }
   }
 
@@ -4313,6 +4350,16 @@ async function startServer() {
       }
     } catch (err: any) {
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // Recalculate Tonnage Trigger
+  app.post('/api/admin/recalculate-tonnage', authenticateToken, authorizeRoles('Super Admin', 'Admin'), async (req, res) => {
+    try {
+      const rowCount = await repushSalesData();
+      res.json({ message: `Successfully recalculated and repushed ${rowCount} orders to Google Sheets.` });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to recalculate tonnage" });
     }
   });
 
