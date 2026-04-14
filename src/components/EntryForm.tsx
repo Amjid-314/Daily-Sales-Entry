@@ -112,15 +112,15 @@ export const EntryForm: React.FC<EntryFormProps> = ({
                         return (
                           <tr key={sku.id} className="hover:bg-slate-50/50">
                             <td className="px-2 py-1.5">
-                              <div className="text-[10px] font-bold text-slate-700 leading-tight">{sku.name}</div>
-                              <div className="text-[8px] text-slate-400 font-mono">{sku.unitsPerCarton}u</div>
+                              <div className="text-xs font-bold text-slate-700 leading-tight">{sku.name}</div>
+                              <div className="text-[9px] text-slate-400 font-mono">{sku.unitsPerCarton}u</div>
                             </td>
-                            <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-ctn`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.ctn || ''} onChange={(e) => handleInputChange(sku.id, 'ctn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-ctn`)} className="input-clean w-full py-1 text-center text-[10px]" /></td>
+                            <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-ctn`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.ctn || ''} onChange={(e) => handleInputChange(sku.id, 'ctn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-ctn`)} className="input-clean w-full py-3 text-center text-base" /></td>
                             {category !== "Match" && (
-                              <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-dzn`] = el} type="number" inputMode="numeric" autoComplete="off" disabled={sku.unitsPerDozen === 0} value={item.dzn || ''} onChange={(e) => handleInputChange(sku.id, 'dzn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-dzn`)} className="input-clean w-full py-1 text-center text-[10px] disabled:opacity-30" /></td>
+                              <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-dzn`] = el} type="number" inputMode="numeric" autoComplete="off" disabled={sku.unitsPerDozen === 0} value={item.dzn || ''} onChange={(e) => handleInputChange(sku.id, 'dzn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-dzn`)} className="input-clean w-full py-3 text-center text-base disabled:opacity-30" /></td>
                             )}
-                            <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-pks`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.pks || ''} onChange={(e) => handleInputChange(sku.id, 'pks', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-pks`)} className="input-clean w-full py-1 text-center text-[10px]" /></td>
-                            <td className="px-2 py-1.5 text-right font-mono text-[9px] font-bold text-seablue">{calculateTotalCartons(sku.id).toFixed(3)}</td>
+                            <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-pks`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.pks || ''} onChange={(e) => handleInputChange(sku.id, 'pks', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-pks`)} className="input-clean w-full py-3 text-center text-base" /></td>
+                            <td className="px-2 py-1.5 text-right font-mono text-sm font-bold text-seablue">{calculateTotalCartons(sku.id).toFixed(3)}</td>
                           </tr>
                         );
                       })}

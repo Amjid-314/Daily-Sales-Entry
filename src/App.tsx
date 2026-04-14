@@ -1479,7 +1479,7 @@ const NationalDashboard = ({
                 className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col justify-between text-left hover:bg-slate-100 transition-all group"
               >
                 <div className="flex justify-between items-start mb-2">
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest group-hover:text-seablue transition-colors">{stat.designation}</span>
+                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-seablue transition-colors">{stat.designation}</span>
                   <div className={`w-1.5 h-1.5 rounded-full ${stat.active > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
                 </div>
                 <div className="flex items-end justify-between">
@@ -3637,7 +3637,9 @@ const StatsView = ({
   const avgEfficiency = filteredOBs.length > 0 ? filteredOBs.reduce((sum, ob) => {
     const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
     const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
-    return sum + (workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0);
+    const now = new Date(today);
+    const obWorkingDaysTillDate = getWorkingDays(now.getFullYear(), now.getMonth(), appConfig.holidays || '', dayOfMonth, ob.off_day || 'Sunday');
+    return sum + (obWorkingDaysTillDate > 0 ? (uniqueEntryDays / obWorkingDaysTillDate) * 100 : 0);
   }, 0) / filteredOBs.length : 0;
 
   const dateWiseSummary = useMemo(() => {
@@ -4175,9 +4177,13 @@ const StatsView = ({
                 const tsmEntries = obStats.filter((h: any) => isTSMEntry(h.order_booker, h.tsm));
                 
                 const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
-                const missing = Math.max(0, workingDaysTillDate - uniqueEntryDays);
+                const uniqueEntryDaysTillYesterday = new Set(obStats.filter((h: any) => h.date < today).map((h: any) => h.date)).size;
+                const now = new Date(today);
+                const obWorkingDaysTillDate = getWorkingDays(now.getFullYear(), now.getMonth(), appConfig.holidays || '', dayOfMonth, ob.off_day || 'Sunday');
+                const obWorkingDaysTillYesterday = getWorkingDays(now.getFullYear(), now.getMonth(), appConfig.holidays || '', Math.max(0, dayOfMonth - 1), ob.off_day || 'Sunday');
+                const missing = Math.max(0, obWorkingDaysTillYesterday - uniqueEntryDaysTillYesterday);
                 const lastEntry = obStats.sort((a: any, b: any) => b.date.localeCompare(a.date))[0];
-                const efficiency = workingDaysTillDate > 0 ? (uniqueEntryDays / workingDaysTillDate) * 100 : 0;
+                const efficiency = obWorkingDaysTillDate > 0 ? (uniqueEntryDays / obWorkingDaysTillDate) * 100 : 0;
                 
                 // Identify improperly uploaded data (e.g., missing targets, 0 sales but productive shops, etc.)
                 const improperEntries = obStats.filter((h: any) => {
@@ -5884,13 +5890,13 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
             </div>
           </div>
           <div className="relative z-10">
-            <h2 className="text-[10px] font-black text-seablue uppercase tracking-[0.2em] mb-1">Welcome Back</h2>
+            <h2 className="text-xs font-black text-seablue uppercase tracking-[0.2em] mb-1">Welcome Back</h2>
             <h1 className="text-2xl font-black text-slate-800 tracking-tight">{user?.name}</h1>
             <div className="flex items-center justify-center gap-2 mt-3">
-              <span className="text-[9px] font-black bg-slate-50 text-slate-600 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-100 flex items-center gap-1">
+              <span className="text-[10px] font-black bg-slate-50 text-slate-600 px-2 py-1.5 rounded-lg uppercase tracking-widest border border-slate-100 flex items-center gap-1">
                 <ShieldCheck className="w-3 h-3" /> {user?.role}
               </span>
-              <span className="text-[9px] font-black bg-slate-50 text-slate-600 px-2 py-1 rounded-lg uppercase tracking-widest border border-slate-100 flex items-center gap-1">
+              <span className="text-[10px] font-black bg-slate-50 text-slate-600 px-2 py-1.5 rounded-lg uppercase tracking-widest border border-slate-100 flex items-center gap-1">
                 <Store className="w-3 h-3" /> {user?.region || 'National'}
               </span>
             </div>
@@ -5919,10 +5925,10 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
         {livePulseData && (
           <div className="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center">
             <div>
-              <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Today's Field Pulse</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Today's Field Pulse</p>
               <div className="flex items-center gap-3 mt-1">
-                <span className="text-sm font-black text-seablue">{livePulseData.totalVisited} <span className="text-[8px] text-slate-400">VISITED</span></span>
-                <span className="text-sm font-black text-emerald-600">{livePulseData.totalProductive} <span className="text-[8px] text-slate-400">PROD</span></span>
+                <span className="text-base font-black text-seablue">{livePulseData.totalVisited} <span className="text-[9px] text-slate-400">VISITED</span></span>
+                <span className="text-base font-black text-emerald-600">{livePulseData.totalProductive} <span className="text-[9px] text-slate-400">PROD</span></span>
               </div>
             </div>
             <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center">
@@ -5935,18 +5941,18 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
         {kpiGroups ? (
           <div className="bg-white rounded-3xl p-5 shadow-sm border border-slate-100">
             <div className="flex items-center justify-between mb-4">
-              <h3 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">MTD Performance</h3>
-              <span className="text-[9px] font-bold text-slate-400">{timeGone?.passed}/{timeGone?.total} Days</span>
+              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">MTD Performance</h3>
+              <span className="text-[10px] font-bold text-slate-400">{timeGone?.passed}/{timeGone?.total} Days</span>
             </div>
             <div className="grid grid-cols-2 gap-3">
               {kpiGroups.map(group => (
                 <div key={group.name} className="bg-slate-50 rounded-xl p-3 border border-slate-100">
-                  <p className="text-[8px] font-black text-slate-500 uppercase truncate mb-1">{group.name}</p>
+                  <p className="text-[9px] font-black text-slate-500 uppercase truncate mb-1">{group.name}</p>
                   <div className="flex items-end justify-between">
-                    <span className={`text-sm font-black ${group.percentage < 85 ? 'text-amber-500' : 'text-emerald-600'}`}>
+                    <span className={`text-base font-black ${group.percentage < 85 ? 'text-amber-500' : 'text-emerald-600'}`}>
                       {group.percentage.toFixed(0)}%
                     </span>
-                    <span className="text-[8px] font-bold text-slate-400 mb-0.5">
+                    <span className="text-[9px] font-bold text-slate-400 mb-0.5">
                       {Math.round(group.achievement)}/{Math.round(group.target)}
                     </span>
                   </div>
@@ -6177,6 +6183,8 @@ export default function App() {
     const totalShops = orderData.total_shops || orderData.totalShops || 50;
     const visitedShops = orderData.visited_shops || orderData.visitedShops || 0;
     const productiveShops = orderData.productive_shops || orderData.productiveShops || 0;
+    const visitType = orderData.visit_type || orderData.visitType;
+    const isAbsent = visitType === 'Absent';
     
     const catProdData = isFromHistory 
       ? (typeof orderData.category_productive_data === 'string' ? JSON.parse(orderData.category_productive_data) : (orderData.category_productive_data || {}))
@@ -6221,7 +6229,7 @@ export default function App() {
     
     // Include current order in MTD if it's not in history yet
     let mtdOrders = history.filter(o => o.ob_contact === obContact && o.date.startsWith(month));
-    if (!isFromHistory && !mtdOrders.find(o => o.id === orderData.id)) {
+    if (!isFromHistory && !mtdOrders.find(o => o.date === orderData.date)) {
       mtdOrders = [...mtdOrders, { ...orderData, order_data: JSON.stringify(items) }];
     }
     
@@ -6242,19 +6250,37 @@ export default function App() {
       return `${cat}: ${mtdTotal.toFixed(2).replace(/\.00$/, '')} ${label}`;
     });
 
-    const washingPowderTotal = (mtdBrandTotals['Kite Glow'] || 0) + (mtdBrandTotals['Burq Action'] || 0) + (mtdBrandTotals['Vero'] || 0);
-    const washingPowderLine = `Total Washing Powder=${mtdBrandTotals['Kite Glow']?.toFixed(0) || 0}+${mtdBrandTotals['Burq Action']?.toFixed(0) || 0}+${mtdBrandTotals['Vero']?.toFixed(0) || 0}=${washingPowderTotal.toFixed(0)}`;
+    const mtdTotalBags = (mtdBrandTotals['Kite Glow'] || 0) + (mtdBrandTotals['Burq Action'] || 0) + (mtdBrandTotals['Vero'] || 0);
+    const mtdTotalCtns = (mtdBrandTotals['DWB'] || 0) + (mtdBrandTotals['Match'] || 0);
+    const washingPowderLine = `Total Washing Powder=${mtdBrandTotals['Kite Glow']?.toFixed(0) || 0}+${mtdBrandTotals['Burq Action']?.toFixed(0) || 0}+${mtdBrandTotals['Vero']?.toFixed(0) || 0}=${mtdTotalBags.toFixed(0)}`;
+    const totalMtdExecutionLine = `Total MTD Execution: ${mtdTotalBags.toFixed(2).replace(/\.00$/, '')} Bags, ${mtdTotalCtns.toFixed(2).replace(/\.00$/, '')} Ctns`;
 
     // Stock Report Check for TSM
     let stockStatus = '';
-    if (userRole === 'TSM' || userRole === 'Admin' || userRole === 'Super Admin') {
+    const tsmName = orderData.tsm || userName || '';
+    const isTsmMsg = isTSMEntry(obName, tsmName);
+    if (isTsmMsg) {
       const today = new Date().toISOString().split('T')[0];
       const hasStockReport = stockHistory.some(s => s.date === today);
-      if (!hasStockReport) {
-        stockStatus = `\n⚠️ *Stock Reports Not Entered* ⚠️\n`;
-      } else {
-        stockStatus = `\n✅ *Stock Reports Entered*\n`;
-      }
+      stockStatus = `\n*Stock Report Status:*\n${hasStockReport ? '✅ Stock Reports Entered' : '⚠️ Stock Reports Not Entered'}\n`;
+    }
+
+    if (isAbsent) {
+      return `*Sales Summary*\n` +
+        `*${date}*\n\n` +
+        `OB: ${obName}\n` +
+        `Town: ${town}\n` +
+        `Route: ${route}\n\n` +
+        `*Status: Absent*\n\n` +
+        `*MTD Brand Sales:*\n` +
+        `${mtdBrandSales[0]}\n` +
+        `${mtdBrandSales[1]}\n` +
+        `${mtdBrandSales[2]}\n` +
+        `${washingPowderLine}\n` +
+        `${mtdBrandSales[3]}\n` +
+        `${mtdBrandSales[4]}\n` +
+        `${totalMtdExecutionLine}` +
+        `${stockStatus}`;
     }
 
     const summary = `*Sales Summary*\n` +
@@ -6276,7 +6302,8 @@ export default function App() {
       `${mtdBrandSales[2]}\n` +
       `${washingPowderLine}\n` +
       `${mtdBrandSales[3]}\n` +
-      `${mtdBrandSales[4]}` +
+      `${mtdBrandSales[4]}\n` +
+      `${totalMtdExecutionLine}` +
       `${stockStatus}`;
 
     return summary;
@@ -7168,6 +7195,25 @@ export default function App() {
       fetchNationalData(); // Refresh national data after sync
     } catch (err: any) {
       setMessage({ text: 'Sync Error: ' + err.message, type: 'error' });
+    } finally {
+      setIsSyncingGlobal(false);
+      setTimeout(() => setMessage(null), 5000);
+    }
+  };
+
+  const recalculateTonnage = async () => {
+    if (!window.confirm('Are you sure you want to recalculate ALL tonnage data and repush to Google Sheets? This will overwrite the Sales_Data sheet.')) return;
+    
+    setIsSyncingGlobal(true);
+    try {
+      const res = await apiFetch('/api/admin/recalculate-tonnage', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Recalculation failed');
+      
+      setMessage({ text: data.message, type: 'success' });
+      fetchHistory(true);
+    } catch (err: any) {
+      setMessage({ text: 'Recalculation Error: ' + err.message, type: 'error' });
     } finally {
       setIsSyncingGlobal(false);
       setTimeout(() => setMessage(null), 5000);
@@ -9453,6 +9499,13 @@ export default function App() {
                 >
                   <Download className="w-3 h-3" /> Local Backup
                 </button>
+                <button 
+                  onClick={recalculateTonnage}
+                  disabled={isSyncingGlobal}
+                  className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1 bg-rose-600 hover:bg-rose-700"
+                >
+                  <RefreshCw className={`w-3 h-3 ${isSyncingGlobal ? 'animate-spin' : ''}`} /> Recalculate Tonnage
+                </button>
               </div>
               <div className="bg-blue-50 border border-blue-100 p-3 rounded-xl mt-2 flex items-start gap-2">
                 <RefreshCw className="w-4 h-4 text-blue-600 mt-0.5 shrink-0" />
@@ -11168,12 +11221,12 @@ export default function App() {
                             <div className="text-[10px] font-bold text-slate-700 leading-tight">{sku.name}</div>
                             <div className="text-[8px] text-slate-400 font-mono">{sku.unitsPerCarton}u</div>
                           </td>
-                          <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-ctn`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.ctn || ''} onChange={(e) => handleInputChange(sku.id, 'ctn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-ctn`)} className="input-clean w-full py-1 text-center text-[10px]" /></td>
+                          <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-ctn`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.ctn || ''} onChange={(e) => handleInputChange(sku.id, 'ctn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-ctn`)} className="input-clean w-full py-3 text-center text-base" /></td>
                           {category !== "Match" && (
-                            <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-dzn`] = el} type="number" inputMode="numeric" autoComplete="off" disabled={sku.unitsPerDozen === 0} value={item.dzn || ''} onChange={(e) => handleInputChange(sku.id, 'dzn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-dzn`)} className="input-clean w-full py-1 text-center text-[10px] disabled:opacity-30" /></td>
+                            <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-dzn`] = el} type="number" inputMode="numeric" autoComplete="off" disabled={sku.unitsPerDozen === 0} value={item.dzn || ''} onChange={(e) => handleInputChange(sku.id, 'dzn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-dzn`)} className="input-clean w-full py-3 text-center text-base disabled:opacity-30" /></td>
                           )}
-                          <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-pks`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.pks || ''} onChange={(e) => handleInputChange(sku.id, 'pks', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-pks`)} className="input-clean w-full py-1 text-center text-[10px]" /></td>
-                          <td className="px-2 py-1.5 text-right font-mono text-[9px] font-bold text-seablue">{calculateTotalCartons(sku.id).toFixed(3)}</td>
+                          <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-pks`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.pks || ''} onChange={(e) => handleInputChange(sku.id, 'pks', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-pks`)} className="input-clean w-full py-3 text-center text-base" /></td>
+                          <td className="px-2 py-1.5 text-right font-mono text-sm font-bold text-seablue">{calculateTotalCartons(sku.id).toFixed(3)}</td>
                         </tr>
                       );
                     })}

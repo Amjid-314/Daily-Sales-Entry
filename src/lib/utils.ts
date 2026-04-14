@@ -13,11 +13,14 @@ export const getPSTTimestamp = () => {
   return new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
 };
 
-export const getWorkingDays = (year: number, month: number, holidaysStr: string, dayLimit?: number) => {
+export const getWorkingDays = (year: number, month: number, holidaysStr: string, dayLimit?: number, offDayStr: string = 'Sunday') => {
   const totalDays = new Date(year, month + 1, 0).getDate();
   const limit = dayLimit || totalDays;
   const holidays = (holidaysStr || '').split(',').map(h => h.trim()).filter(h => h);
   
+  const offDayNum = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(offDayStr);
+  const actualOffDay = offDayNum !== -1 ? offDayNum : 0; // Default to Sunday
+
   let workingDays = 0;
   for (let d = 1; d <= limit; d++) {
     const date = new Date(year, month, d);
@@ -26,9 +29,9 @@ export const getWorkingDays = (year: number, month: number, holidaysStr: string,
       String(date.getMonth() + 1).padStart(2, '0'),
       String(date.getDate()).padStart(2, '0')
     ].join('-');
-    const isSunday = date.getDay() === 0;
+    const isOffDay = date.getDay() === actualOffDay;
     const isHoliday = holidays.includes(dateStr);
-    if (!isSunday && !isHoliday) workingDays++;
+    if (!isOffDay && !isHoliday) workingDays++;
   }
   return workingDays;
 };

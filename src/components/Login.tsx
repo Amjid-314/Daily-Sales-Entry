@@ -88,7 +88,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
                 type="text"
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all text-sm font-bold"
+                className="w-full pl-12 pr-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all text-base font-bold"
                 placeholder="Enter your username or ID"
                 required
               />
@@ -101,7 +101,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin, logo }) => {
               <select
                 value={requestedRole}
                 onChange={(e) => setRequestedRole(e.target.value)}
-                className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all text-sm font-bold"
+                className="w-full px-4 py-4 bg-slate-50 border border-slate-100 rounded-2xl focus:bg-white focus:ring-2 focus:ring-seablue/20 focus:border-seablue outline-none transition-all text-base font-bold"
               >
                 <option value="Super Admin">Super Admin</option>
                 <option value="Admin">Admin</option>

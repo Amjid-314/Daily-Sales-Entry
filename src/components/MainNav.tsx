@@ -102,9 +102,9 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
 
       <div className="flex items-center gap-2">
         {activeTab && (
-          <div className="flex items-center gap-2 px-4 py-1.5 bg-seablue/5 border border-seablue/10 rounded-xl">
+          <div className="flex items-center gap-2 px-4 py-2 bg-seablue/5 border border-seablue/10 rounded-xl">
             <activeTab.icon className="w-4 h-4 text-seablue" />
-            <span className="text-[10px] font-black text-seablue uppercase tracking-widest">{activeTab.label}</span>
+            <span className="text-xs font-black text-seablue uppercase tracking-widest">{activeTab.label}</span>
           </div>
         )}
 

@@ -566,6 +566,7 @@ try { db.exec("ALTER TABLE distributors ADD COLUMN zone TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE distributors ADD COLUMN region TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE ob_assignments ADD COLUMN zone TEXT"); } catch (e) {}
 try { db.exec("ALTER TABLE ob_assignments ADD COLUMN region TEXT"); } catch (e) {}
+try { db.exec("ALTER TABLE ob_assignments ADD COLUMN off_day TEXT DEFAULT 'Sunday'"); } catch (e) {}
 
 async function startServer() {
   const app = express();
@@ -3481,6 +3482,7 @@ async function startServer() {
           director: getVal(['Director', 'director', 'director sales'])?.toString().trim() || '',
           email: getVal(['Email', 'email', 'email address'])?.toString().trim() || '',
           role: getVal(['Role', 'role', 'designation'])?.toString().trim() || '',
+          off_day: getVal(['Off Day', 'off day', 'off_day'])?.toString().trim() || 'Sunday',
           total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
           target_ctn: parseFloat(getVal(['Target Ctn', 'target_ctn', 'target'])) || 0,
           routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
@@ -3516,8 +3518,8 @@ async function startServer() {
           if (!item.contact) continue; // Skip OB assignments if no OB ID
 
           db.prepare(`
-            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes, off_day)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(contact) DO UPDATE SET
               name = COALESCE(NULLIF(excluded.name, ''), name),
               town = COALESCE(NULLIF(excluded.town, ''), town),
@@ -3530,8 +3532,9 @@ async function startServer() {
               sc = COALESCE(NULLIF(excluded.sc, ''), sc),
               director = COALESCE(NULLIF(excluded.director, ''), director),
               total_shops = COALESCE(NULLIF(excluded.total_shops, 0), total_shops),
-              routes = COALESCE(NULLIF(excluded.routes, '[]'), routes)
-          `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.zone, item.region, item.nsm, item.rsm, item.sc || '', item.director, item.total_shops, JSON.stringify(item.routes));
+              routes = COALESCE(NULLIF(excluded.routes, '[]'), routes),
+              off_day = COALESCE(NULLIF(excluded.off_day, ''), off_day)
+          `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.zone, item.region, item.nsm, item.rsm, item.sc || '', item.director, item.total_shops, JSON.stringify(item.routes), item.off_day);
 
           for (const [brand, target] of Object.entries(item.targets)) {
             db.prepare(`
@@ -4411,35 +4414,37 @@ async function startServer() {
       const config = configRows.reduce((acc, row) => ({ ...acc, [row.key]: row.value }), {} as any);
       const holidays = (config.holidays || '').split(',').map((d: string) => d.trim());
       
-      // Calculate working days for the month
       const [year, monthNum] = month.split('-').map(Number);
       const daysInMonth = new Date(year, monthNum, 0).getDate();
-      const workingDays: string[] = [];
       const today = getPSTDate();
-      
-      for (let d = 1; d <= daysInMonth; d++) {
-        const dateStr = `${year}-${monthNum.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
-        const dateObj = new Date(year, monthNum - 1, d);
-        const dayOfWeek = dateObj.getDay(); // 0 = Sunday
-        
-        if (dayOfWeek !== 0 && !holidays.includes(dateStr)) {
-          workingDays.push(dateStr);
-        }
-      }
-
-      const workingDaysUntilToday = workingDays.filter(d => d <= today);
 
       const report = filteredObs.map(ob => {
+        const offDayStr = ob.off_day || 'Sunday';
+        const offDayNum = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'].indexOf(offDayStr);
+        const actualOffDay = offDayNum !== -1 ? offDayNum : 0; // Default to Sunday
+        
+        const workingDays: string[] = [];
+        for (let d = 1; d <= daysInMonth; d++) {
+          const dateStr = `${year}-${monthNum.toString().padStart(2, '0')}-${d.toString().padStart(2, '0')}`;
+          const dateObj = new Date(year, monthNum - 1, d);
+          const dayOfWeek = dateObj.getDay();
+          
+          if (dayOfWeek !== actualOffDay && !holidays.includes(dateStr)) {
+            workingDays.push(dateStr);
+          }
+        }
+        
+        const workingDaysUntilYesterday = workingDays.filter(d => d < today);
         const obSubmissions = submissions.filter(s => s.ob_contact === ob.contact).map(s => s.date);
-        const missingDays = workingDaysUntilToday.filter(d => !obSubmissions.includes(d));
+        const missingDays = workingDaysUntilYesterday.filter(d => !obSubmissions.includes(d));
         
         return {
           ob_name: ob.name,
           ob_contact: ob.contact,
           tsm: ob.tsm,
           asm: ob.asm || ob.tsm, 
-          total_working_days: workingDaysUntilToday.length,
-          entries_count: obSubmissions.filter(d => d <= today).length,
+          total_working_days: workingDaysUntilYesterday.length,
+          entries_count: obSubmissions.filter(d => d < today).length,
           missing_days_count: missingDays.length,
           missing_dates: missingDays
         };
