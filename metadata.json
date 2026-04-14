@@ -1,5 +1,5 @@
 {
-  "name": "SalesPulse",
-  "description": "Sales Performance, Field Intelligence & Reporting",
+  "name": "SalesPulse Pro",
+  "description": "Enterprise Sales Performance & Field Intelligence System",
   "requestFramePermissions": ["geolocation"]
 }

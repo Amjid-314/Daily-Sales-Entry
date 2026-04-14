@@ -85,7 +85,7 @@ import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry } from './lib/u
 const STORAGE_KEY = 'ob_order_draft';
 const LOGO_STORAGE_KEY = 'app_logo_base64';
 
-const ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
+const SUPER_ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
 
 // Error Boundary Component
 interface ErrorBoundaryProps {
@@ -113,6 +113,9 @@ class ErrorBoundary extends React.Component<any, any> {
 
   render() {
     const state = (this as any).state;
+    const userEmail = localStorage.getItem('user_data') ? JSON.parse(localStorage.getItem('user_data')!).email : '';
+    const isSuperAdmin = SUPER_ADMIN_EMAILS.map(e => e.toLowerCase()).includes((userEmail || '').toLowerCase());
+
     if (state.hasError) {
       return (
         <div className="min-h-screen bg-slate-50 flex items-center justify-center p-4">
@@ -121,12 +124,12 @@ class ErrorBoundary extends React.Component<any, any> {
               <AlertTriangle className="w-8 h-8" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">Something went wrong</h2>
+              <h2 className="text-xl font-black text-slate-800 uppercase tracking-tight">System Notice</h2>
               <p className="text-xs font-bold text-slate-400 uppercase tracking-widest leading-relaxed">
-                The application encountered an unexpected error. Please try refreshing the page.
+                The application is currently being updated or encountered a temporary issue. Please refresh to continue.
               </p>
             </div>
-            {state.error && (
+            {state.error && isSuperAdmin && (
               <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 text-left">
                 <p className="text-[10px] font-mono text-rose-500 break-all">{state.error.message}</p>
               </div>
@@ -146,13 +149,25 @@ class ErrorBoundary extends React.Component<any, any> {
   }
 }
 
-const HomeHub = ({ setView, userRole, userName, logo, tabs }: any) => {
+const HomeHub = ({ setView, userRole, userName, logo, tabs, userEmail }: any) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   const menuItems = tabs.filter((tab: any) => {
+    const email = (userEmail || '').toLowerCase();
+    const isSuperAdmin = SUPER_ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email);
+    
+    if (['admin', 'settings'].includes(tab.id)) {
+      return isSuperAdmin;
+    }
+
     if (!userRole) return false;
     const normalizedRole = userRole.toUpperCase();
-    if (!tab.roles.map((r: string) => r.toUpperCase()).includes(normalizedRole)) return false;
+
+    if (!isSuperAdmin) {
+      if (['admin', 'settings'].includes(tab.id)) return false;
+      return tab.roles.map((r: string) => r.toUpperCase()).includes(normalizedRole);
+    }
+
     return true;
   });
 
@@ -7202,22 +7217,27 @@ export default function App() {
   };
 
   const recalculateTonnage = async () => {
-    if (!window.confirm('Are you sure you want to recalculate ALL tonnage data and repush to Google Sheets? This will overwrite the Sales_Data sheet.')) return;
-    
-    setIsSyncingGlobal(true);
-    try {
-      const res = await apiFetch('/api/admin/recalculate-tonnage', { method: 'POST' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Recalculation failed');
-      
-      setMessage({ text: data.message, type: 'success' });
-      fetchHistory(true);
-    } catch (err: any) {
-      setMessage({ text: 'Recalculation Error: ' + err.message, type: 'error' });
-    } finally {
-      setIsSyncingGlobal(false);
-      setTimeout(() => setMessage(null), 5000);
-    }
+    setConfirmModal({
+      message: 'Are you sure you want to recalculate ALL tonnage data and repush to Google Sheets? This will overwrite the Sales_Data sheet.',
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsSyncingGlobal(true);
+        try {
+          const res = await apiFetch('/api/admin/recalculate-tonnage', { method: 'POST' });
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || 'Recalculation failed');
+          
+          setMessage({ text: data.message, type: 'success' });
+          fetchHistory(true);
+        } catch (err: any) {
+          setMessage({ text: 'Recalculation Error: ' + err.message, type: 'error' });
+        } finally {
+          setIsSyncingGlobal(false);
+          setTimeout(() => setMessage(null), 5000);
+        }
+      },
+      onCancel: () => setConfirmModal(null)
+    });
   };
 
   useEffect(() => {
@@ -7323,66 +7343,77 @@ export default function App() {
   };
 
   const handleDeleteUser = async (id: number) => {
-    if (!window.confirm("Are you sure you want to delete this user?")) return;
-    try {
-      const res = await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        setMessage({ text: "User deleted", type: 'success' });
-        fetchUsers();
-      }
-    } catch (err) { console.error(err); }
-    finally { setTimeout(() => setMessage(null), 3000); }
+    setConfirmModal({
+      message: "Are you sure you want to delete this user?",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const res = await apiFetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+          if (res.ok) {
+            setMessage({ text: "User deleted", type: 'success' });
+            fetchUsers();
+          }
+        } catch (err) { console.error(err); }
+        finally { setTimeout(() => setMessage(null), 3000); }
+      },
+      onCancel: () => setConfirmModal(null)
+    });
   };
 
   const autoGenerateUsersFromTeam = async () => {
-    if (!window.confirm("This will create login accounts for all OBs and TSMs who don't have one. Default password will be '123456'. Continue?")) return;
-    
-    setIsLoadingAdmin(true);
-    let count = 0;
-    try {
-      // 1. Get all unique TSMs
-      const tsms = Array.from(new Set(obAssignments.map(ob => ob.tsm).filter(Boolean))) as string[];
-      
-      // 2. Combine with OBs
-      const teamToRegister = [
-        ...tsms.map(name => ({ name, contact: `TSM-${name.replace(/\s+/g, '-')}`, role: 'TSM', town: '', region: '' })),
-        ...obAssignments.map(ob => ({ name: ob.name, contact: ob.contact, role: 'OB', town: ob.town, region: ob.region }))
-      ];
+    setConfirmModal({
+      message: "This will create login accounts for all OBs and TSMs who don't have one. Default password will be '123456'. Continue?",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        setIsLoadingAdmin(true);
+        let count = 0;
+        try {
+          // 1. Get all unique TSMs
+          const tsms = Array.from(new Set(obAssignments.map(ob => ob.tsm).filter(Boolean))) as string[];
+          
+          // 2. Combine with OBs
+          const teamToRegister = [
+            ...tsms.map(name => ({ name, contact: `TSM-${name.replace(/\s+/g, '-')}`, role: 'TSM', town: '', region: '' })),
+            ...obAssignments.map(ob => ({ name: ob.name, contact: ob.contact, role: 'OB', town: ob.town, region: ob.region }))
+          ];
 
-      for (const member of teamToRegister) {
-        // Check if user already exists (by contact or username)
-        const exists = users.some(u => u.contact === member.contact || u.username === member.contact);
-        if (!exists) {
-          await apiFetch('/api/auth/register', {
-            method: 'POST',
-            body: JSON.stringify({
-              username: member.contact, // Use contact ID as username
-              password: 'abc123', // Default password
-              role: member.role,
-              name: member.name,
-              contact: member.contact,
-              region: member.region || '',
-              town: member.town || ''
-            })
-          });
-          count++;
+          for (const member of teamToRegister) {
+            // Check if user already exists (by contact or username)
+            const exists = users.some(u => u.contact === member.contact || u.username === member.contact);
+            if (!exists) {
+              await apiFetch('/api/auth/register', {
+                method: 'POST',
+                body: JSON.stringify({
+                  username: member.contact, // Use contact ID as username
+                  password: 'abc123', // Default password
+                  role: member.role,
+                  name: member.name,
+                  contact: member.contact,
+                  region: member.region || '',
+                  town: member.town || ''
+                })
+              });
+              count++;
+            }
+          }
+          setMessage({ text: `Successfully created ${count} user accounts!`, type: 'success' });
+          fetchUsers();
+        } catch (err) {
+          setMessage({ text: "Failed to auto-generate users", type: 'error' });
+        } finally {
+          setIsLoadingAdmin(false);
+          setTimeout(() => setMessage(null), 5000);
         }
-      }
-      setMessage({ text: `Successfully created ${count} user accounts!`, type: 'success' });
-      fetchUsers();
-    } catch (err) {
-      setMessage({ text: "Failed to auto-generate users", type: 'error' });
-    } finally {
-      setIsLoadingAdmin(false);
-      setTimeout(() => setMessage(null), 5000);
-    }
+      },
+      onCancel: () => setConfirmModal(null)
+    });
   };
 
   const fetchAdminData = async () => {
     setIsLoadingAdmin(true);
     try {
       const normalizedRole = (userRole || '').toUpperCase();
-      const isAdmin = (normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN') && ADMIN_EMAILS.includes(userEmail || '');
+      const isSuperAdmin = (normalizedRole === 'ADMIN' || normalizedRole === 'SUPER ADMIN') && SUPER_ADMIN_EMAILS.includes(userEmail || '');
       const isStaff = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
       
       const requests = [
@@ -7396,7 +7427,7 @@ export default function App() {
         requests.push(apiFetch(`/api/admin/hierarchy?month=${selectedMonth}`));
       }
       
-      if (isAdmin) {
+      if (isSuperAdmin) {
         requests.push(apiFetch('/api/google/status'));
       }
 
@@ -7418,7 +7449,7 @@ export default function App() {
         nextIdx++;
       }
       
-      if (isAdmin) {
+      if (isSuperAdmin) {
         if (results[nextIdx]?.ok) setGoogleStatus(await results[nextIdx].json());
         nextIdx++;
       }
@@ -7656,28 +7687,53 @@ export default function App() {
           return;
         }
 
-        const clearExisting = window.confirm("Do you want to REPLACE the entire distributor list with this new file? (Click Cancel to just ADD/UPDATE without deleting others)");
-
-        setMessage({ text: `Uploading ${dists.length} records...`, type: 'info' });
-
-        try {
-          const res = await apiFetch('/api/admin/distributors/bulk-upload', {
-            method: 'POST',
-            body: JSON.stringify({ distributors: dists, clearExisting })
-          });
-          const data = await res.json();
-          if (res.ok) {
-            setMessage({ text: `Successfully uploaded ${dists.length} distributors!`, type: 'success' });
-            fetchAdminData();
-          } else {
-            throw new Error(data.error || 'Upload failed');
+        setConfirmModal({
+          message: "Do you want to REPLACE the entire distributor list with this new file? (Click Cancel to just ADD/UPDATE without deleting others)",
+          onConfirm: async () => {
+            setConfirmModal(null);
+            setMessage({ text: `Uploading ${dists.length} records...`, type: 'info' });
+            try {
+              const res = await apiFetch('/api/admin/distributors/bulk-upload', {
+                method: 'POST',
+                body: JSON.stringify({ distributors: dists, clearExisting: true })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                setMessage({ text: `Successfully uploaded ${dists.length} distributors!`, type: 'success' });
+                fetchAdminData();
+              } else {
+                throw new Error(data.error || 'Upload failed');
+              }
+            } catch (err: any) {
+              setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+            } finally {
+              setTimeout(() => setMessage(null), 3000);
+              if (e.target) e.target.value = '';
+            }
+          },
+          onCancel: async () => {
+            setConfirmModal(null);
+            setMessage({ text: `Uploading ${dists.length} records...`, type: 'info' });
+            try {
+              const res = await apiFetch('/api/admin/distributors/bulk-upload', {
+                method: 'POST',
+                body: JSON.stringify({ distributors: dists, clearExisting: false })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                setMessage({ text: `Successfully uploaded ${dists.length} distributors!`, type: 'success' });
+                fetchAdminData();
+              } else {
+                throw new Error(data.error || 'Upload failed');
+              }
+            } catch (err: any) {
+              setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+            } finally {
+              setTimeout(() => setMessage(null), 3000);
+              if (e.target) e.target.value = '';
+            }
           }
-        } catch (err: any) {
-          setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
-        } finally {
-          setTimeout(() => setMessage(null), 3000);
-          if (e.target) e.target.value = '';
-        }
+        });
       }
     });
   };
@@ -7739,28 +7795,53 @@ export default function App() {
           return;
         }
 
-        const clearExisting = window.confirm("Do you want to REPLACE the entire hierarchy with this new file?");
-
-        setMessage({ text: `Uploading ${hierarchyData.length} hierarchy records...`, type: 'info' });
-
-        try {
-          const res = await apiFetch('/api/admin/hierarchy/bulk-upload', {
-            method: 'POST',
-            body: JSON.stringify({ hierarchy: hierarchyData, clearExisting })
-          });
-          const data = await res.json();
-          if (res.ok) {
-            setMessage({ text: `Successfully uploaded ${hierarchyData.length} records!`, type: 'success' });
-            fetchAdminData();
-          } else {
-            throw new Error(data.error || 'Upload failed');
+        setConfirmModal({
+          message: "Do you want to REPLACE the entire hierarchy with this new file?",
+          onConfirm: async () => {
+            setConfirmModal(null);
+            setMessage({ text: `Uploading ${hierarchyData.length} hierarchy records...`, type: 'info' });
+            try {
+              const res = await apiFetch('/api/admin/hierarchy/bulk-upload', {
+                method: 'POST',
+                body: JSON.stringify({ hierarchy: hierarchyData, clearExisting: true })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                setMessage({ text: `Successfully uploaded ${hierarchyData.length} records!`, type: 'success' });
+                fetchAdminData();
+              } else {
+                throw new Error(data.error || 'Upload failed');
+              }
+            } catch (err: any) {
+              setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+            } finally {
+              if (e.target) e.target.value = '';
+              setTimeout(() => setMessage(null), 3000);
+            }
+          },
+          onCancel: async () => {
+            setConfirmModal(null);
+            setMessage({ text: `Uploading ${hierarchyData.length} hierarchy records...`, type: 'info' });
+            try {
+              const res = await apiFetch('/api/admin/hierarchy/bulk-upload', {
+                method: 'POST',
+                body: JSON.stringify({ hierarchy: hierarchyData, clearExisting: false })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                setMessage({ text: `Successfully uploaded ${hierarchyData.length} records!`, type: 'success' });
+                fetchAdminData();
+              } else {
+                throw new Error(data.error || 'Upload failed');
+              }
+            } catch (err: any) {
+              setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+            } finally {
+              if (e.target) e.target.value = '';
+              setTimeout(() => setMessage(null), 3000);
+            }
           }
-        } catch (err: any) {
-          setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
-        } finally {
-          if (e.target) e.target.value = '';
-          setTimeout(() => setMessage(null), 3000);
-        }
+        });
       }
     });
   };
@@ -7843,35 +7924,48 @@ export default function App() {
       return;
     }
 
-    if (!manualName && !window.confirm(`Register ${tsmToRegister.length} new TSMs as Order Bookers so they can enter their own reports?`)) return;
-
-    setIsLoadingAdmin(true);
-    try {
-      for (const tsm of tsmToRegister) {
-        const contact = `TSM-${(tsm as string).replace(/\s+/g, '-')}`;
-        // Find a sample assignment for this TSM to get town/distributor
-        const sample = obAssignments.find(ob => ob.tsm === tsm);
-        await apiFetch('/api/admin/obs', {
-          method: 'POST',
-          body: JSON.stringify({
-            name: `${tsm} (TSM)`,
-            contact: contact,
-            town: sample?.town || 'General',
-            distributor: sample?.distributor || 'General',
-            tsm: tsm,
-            total_shops: 50,
-            routes: ["TSM Route"]
-          })
-        });
+    const performRegistration = async () => {
+      setIsLoadingAdmin(true);
+      try {
+        for (const tsm of tsmToRegister) {
+          const contact = `TSM-${(tsm as string).replace(/\s+/g, '-')}`;
+          // Find a sample assignment for this TSM to get town/distributor
+          const sample = obAssignments.find(ob => ob.tsm === tsm);
+          await apiFetch('/api/admin/obs', {
+            method: 'POST',
+            body: JSON.stringify({
+              name: `${tsm} (TSM)`,
+              contact: contact,
+              town: sample?.town || 'General',
+              distributor: sample?.distributor || 'General',
+              tsm: tsm,
+              total_shops: 50,
+              routes: ["TSM Route"]
+            })
+          });
+        }
+        setMessage({ text: manualName ? `${manualName} registered successfully` : "TSMs registered as OBs successfully", type: 'success' });
+        setManualTSMName('');
+        fetchAdminData();
+      } catch (err) {
+        setMessage({ text: "Failed to register TSMs", type: 'error' });
+      } finally {
+        setIsLoadingAdmin(false);
+        setTimeout(() => setMessage(null), 3000);
       }
-      setMessage({ text: manualName ? `${manualName} registered successfully` : "TSMs registered as OBs successfully", type: 'success' });
-      setManualTSMName('');
-      fetchAdminData();
-    } catch (err) {
-      setMessage({ text: "Failed to register TSMs", type: 'error' });
-    } finally {
-      setIsLoadingAdmin(false);
-      setTimeout(() => setMessage(null), 3000);
+    };
+
+    if (manualName) {
+      performRegistration();
+    } else {
+      setConfirmModal({
+        message: `Register ${tsmToRegister.length} new TSMs as Order Bookers so they can enter their own reports?`,
+        onConfirm: () => {
+          setConfirmModal(null);
+          performRegistration();
+        },
+        onCancel: () => setConfirmModal(null)
+      });
     }
   };
 
@@ -7941,29 +8035,53 @@ export default function App() {
           return;
         }
 
-        const clearExisting = window.confirm("Do you want to REPLACE the entire team list with this new file? (Click Cancel to just ADD/UPDATE without deleting others)");
-
-        setMessage({ text: `Uploading ${team.length} records...`, type: 'info' });
-
-        try {
-          const res = await apiFetch('/api/admin/bulk-upload', {
-            method: 'POST',
-            body: JSON.stringify({ team, clearExisting, month: selectedMonth })
-          });
-          const data = await res.json();
-          if (res.ok) {
-            setMessage({ text: `Successfully uploaded ${team.length} team members!`, type: 'success' });
-            fetchAdminData();
-          } else {
-            throw new Error(data.error || 'Upload failed');
+        setConfirmModal({
+          message: "Do you want to REPLACE the entire team list with this new file? (Click Cancel to just ADD/UPDATE without deleting others)",
+          onConfirm: async () => {
+            setConfirmModal(null);
+            setMessage({ text: `Uploading ${team.length} records...`, type: 'info' });
+            try {
+              const res = await apiFetch('/api/admin/bulk-upload', {
+                method: 'POST',
+                body: JSON.stringify({ team, clearExisting: true, month: selectedMonth })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                setMessage({ text: `Successfully uploaded ${team.length} team members!`, type: 'success' });
+                fetchAdminData();
+              } else {
+                throw new Error(data.error || 'Upload failed');
+              }
+            } catch (err: any) {
+              setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+            } finally {
+              setTimeout(() => setMessage(null), 3000);
+              e.target.value = '';
+            }
+          },
+          onCancel: async () => {
+            setConfirmModal(null);
+            setMessage({ text: `Uploading ${team.length} records...`, type: 'info' });
+            try {
+              const res = await apiFetch('/api/admin/bulk-upload', {
+                method: 'POST',
+                body: JSON.stringify({ team, clearExisting: false, month: selectedMonth })
+              });
+              const data = await res.json();
+              if (res.ok) {
+                setMessage({ text: `Successfully uploaded ${team.length} team members!`, type: 'success' });
+                fetchAdminData();
+              } else {
+                throw new Error(data.error || 'Upload failed');
+              }
+            } catch (err: any) {
+              setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
+            } finally {
+              setTimeout(() => setMessage(null), 3000);
+              e.target.value = '';
+            }
           }
-        } catch (err: any) {
-          setMessage({ text: 'Upload failed: ' + err.message, type: 'error' });
-        } finally {
-          setTimeout(() => setMessage(null), 3000);
-          // Reset file input
-          e.target.value = '';
-        }
+        });
       }
     });
   };
@@ -8090,29 +8208,39 @@ export default function App() {
   }, [history]);
 
   const resetDatabase = async () => {
-    if (window.confirm("WARNING: This will delete ALL history (submitted orders and drafts). Continue?")) {
-      try {
-        const res = await apiFetch('/api/admin/reset', { method: 'POST' });
-        if (res.ok) {
-          setMessage({ text: 'History Cleared', type: 'success' });
-          fetchHistory();
-        }
-      } catch (e) { setMessage({ text: 'Reset Failed', type: 'error' }); }
-      finally { setTimeout(() => setMessage(null), 3000); }
-    }
+    setConfirmModal({
+      message: "WARNING: This will delete ALL history (submitted orders and drafts). Continue?",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const res = await apiFetch('/api/admin/reset', { method: 'POST' });
+          if (res.ok) {
+            setMessage({ text: 'History Cleared', type: 'success' });
+            fetchHistory();
+          }
+        } catch (e) { setMessage({ text: 'Reset Failed', type: 'error' }); }
+        finally { setTimeout(() => setMessage(null), 3000); }
+      },
+      onCancel: () => setConfirmModal(null)
+    });
   };
 
   const reseedTeam = async () => {
-    if (window.confirm("This will replace all current OB assignments with the new team structure. Continue?")) {
-      try {
-        const res = await apiFetch('/api/admin/reseed', { method: 'POST' });
-        if (res.ok) {
-          setMessage({ text: 'Team Re-seeded!', type: 'success' });
-          fetchAdminData();
-        }
-      } catch (e) { setMessage({ text: 'Reseed Failed', type: 'error' }); }
-      finally { setTimeout(() => setMessage(null), 3000); }
-    }
+    setConfirmModal({
+      message: "This will replace all current OB assignments with the new team structure. Continue?",
+      onConfirm: async () => {
+        setConfirmModal(null);
+        try {
+          const res = await apiFetch('/api/admin/reseed', { method: 'POST' });
+          if (res.ok) {
+            setMessage({ text: 'Team Re-seeded!', type: 'success' });
+            fetchAdminData();
+          }
+        } catch (e) { setMessage({ text: 'Reseed Failed', type: 'error' }); }
+        finally { setTimeout(() => setMessage(null), 3000); }
+      },
+      onCancel: () => setConfirmModal(null)
+    });
   };
 
   const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -8167,6 +8295,7 @@ export default function App() {
         userName={userName}
         logo={appLogo}
         tabs={APP_TABS}
+        userEmail={userEmail}
       />
     );
   }
@@ -9032,7 +9161,7 @@ export default function App() {
           )}
 
           {/* Admin Quick Actions */}
-          {((userRole === 'Admin' || userRole === 'Super Admin') && ADMIN_EMAILS.includes(userEmail || '')) && (
+          {((userRole === 'Admin' || userRole === 'Super Admin') && SUPER_ADMIN_EMAILS.includes(userEmail || '')) && (
             <div className="mt-12 p-6 bg-slate-900 rounded-3xl text-white shadow-2xl shadow-slate-200">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
                 <div>
@@ -9236,10 +9365,11 @@ export default function App() {
               <form onSubmit={(e) => {
                 e.preventDefault();
                 const fd = new FormData(e.currentTarget);
-                if (fd.get('password') === 'Admin@1234' && ADMIN_EMAILS.includes(userEmail || '')) {
+                if (fd.get('password') === 'Admin@1234' && SUPER_ADMIN_EMAILS.includes(userEmail || '')) {
                   setIsAdminAuthenticated(true);
                 } else {
-                  alert('Incorrect password or unauthorized email');
+                  setMessage({ text: 'Incorrect password or unauthorized email', type: 'error' });
+                  setTimeout(() => setMessage(null), 3000);
                 }
               }} className="space-y-4">
                 <div>
@@ -9355,24 +9485,34 @@ export default function App() {
                       onClick={async () => {
                         const month = (document.getElementById('restoreMonth') as HTMLInputElement).value;
                         const sheetName = (document.getElementById('restoreSheetName') as HTMLInputElement).value;
-                        if (!month) return alert('Please select a month');
-                        if (window.confirm(`Restore targets for ${month} ${sheetName ? `from sheet '${sheetName}'` : ''}?`)) {
-                          setIsSyncing(true);
-                          try {
-                            const res = await apiFetch('/api/admin/pull-historical-targets', { 
-                              method: 'POST',
-                              body: JSON.stringify({ month, sheetName })
-                            });
-                            const data = await res.json();
-                            if (res.ok) alert(data.message);
-                            else alert('Failed: ' + data.error);
-                          } catch (err: any) {
-                            alert('Error: ' + err.message);
-                          } finally {
-                            setIsSyncing(false);
-                            fetchAdminData();
-                          }
+                        if (!month) {
+                          setMessage({ text: 'Please select a month', type: 'error' });
+                          setTimeout(() => setMessage(null), 3000);
+                          return;
                         }
+                        setConfirmModal({
+                          message: `Restore targets for ${month} ${sheetName ? `from sheet '${sheetName}'` : ''}?`,
+                          onConfirm: async () => {
+                            setConfirmModal(null);
+                            setIsSyncing(true);
+                            try {
+                              const res = await apiFetch('/api/admin/pull-historical-targets', { 
+                                method: 'POST',
+                                body: JSON.stringify({ month, sheetName })
+                              });
+                              const data = await res.json();
+                              if (res.ok) setMessage({ text: data.message, type: 'success' });
+                              else setMessage({ text: 'Failed: ' + data.error, type: 'error' });
+                            } catch (err: any) {
+                              setMessage({ text: 'Error: ' + err.message, type: 'error' });
+                            } finally {
+                              setIsSyncing(false);
+                              fetchAdminData();
+                              setTimeout(() => setMessage(null), 5000);
+                            }
+                          },
+                          onCancel: () => setConfirmModal(null)
+                        });
                       }}
                       disabled={isSyncing}
                       className="bg-amber-500 hover:bg-amber-600 text-white px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
@@ -9389,23 +9529,29 @@ export default function App() {
                   </div>
                   <p className="text-[9px] text-emerald-700 font-medium">Pull ALL sales data from Google Sheets, ignoring the safety month locks. Use this to verify complete data from day 1.</p>
                   <button 
-                    onClick={async () => {
-                      if (window.confirm('Pull ALL historical sales data? This will ignore month locks and might take a while.')) {
-                        setIsSyncingGlobal(true);
-                        try {
-                          const res = await apiFetch('/api/admin/pull-historical-sales', { method: 'POST' });
-                          const data = await res.json();
-                          if (res.ok) {
-                            alert(data.message);
-                            fetchHistory(true);
-                            fetchNationalData();
-                          } else alert('Failed: ' + data.error);
-                        } catch (err: any) {
-                          alert('Error: ' + err.message);
-                        } finally {
-                          setIsSyncingGlobal(false);
-                        }
-                      }
+                    onClick={() => {
+                      setConfirmModal({
+                        message: 'Pull ALL historical sales data? This will ignore month locks and might take a while.',
+                        onConfirm: async () => {
+                          setConfirmModal(null);
+                          setIsSyncingGlobal(true);
+                          try {
+                            const res = await apiFetch('/api/admin/pull-historical-sales', { method: 'POST' });
+                            const data = await res.json();
+                            if (res.ok) {
+                              setMessage({ text: data.message, type: 'success' });
+                              fetchHistory(true);
+                              fetchNationalData();
+                            } else setMessage({ text: 'Failed: ' + data.error, type: 'error' });
+                          } catch (err: any) {
+                            setMessage({ text: 'Error: ' + err.message, type: 'error' });
+                          } finally {
+                            setIsSyncingGlobal(false);
+                            setTimeout(() => setMessage(null), 5000);
+                          }
+                        },
+                        onCancel: () => setConfirmModal(null)
+                      });
                     }}
                     disabled={isSyncingGlobal}
                     className="bg-emerald-500 hover:bg-emerald-600 text-white px-3 py-1 rounded text-[9px] font-black uppercase tracking-widest transition-all disabled:opacity-50"
@@ -9420,23 +9566,29 @@ export default function App() {
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Admin Actions</h3>
               <div className="grid grid-cols-2 gap-2">
                 <button 
-                  onClick={async () => {
-                    if (window.confirm('Restore March 2026 Targets to Google Sheets? This will create a separate sheet for March.')) {
-                      setIsSyncing(true);
-                      try {
-                        const res = await apiFetch('/api/admin/push-historical-targets', { 
-                          method: 'POST',
-                          body: JSON.stringify({ month: '2026-03' })
-                        });
-                        const data = await res.json();
-                        if (res.ok) alert(data.message);
-                        else alert('Failed: ' + data.error);
-                      } catch (err: any) {
-                        alert('Error: ' + err.message);
-                      } finally {
-                        setIsSyncing(false);
-                      }
-                    }
+                  onClick={() => {
+                    setConfirmModal({
+                      message: 'Restore March 2026 Targets to Google Sheets? This will create a separate sheet for March.',
+                      onConfirm: async () => {
+                        setConfirmModal(null);
+                        setIsSyncing(true);
+                        try {
+                          const res = await apiFetch('/api/admin/push-historical-targets', { 
+                            method: 'POST',
+                            body: JSON.stringify({ month: '2026-03' })
+                          });
+                          const data = await res.json();
+                          if (res.ok) setMessage({ text: data.message, type: 'success' });
+                          else setMessage({ text: 'Failed: ' + data.error, type: 'error' });
+                        } catch (err: any) {
+                          setMessage({ text: 'Error: ' + err.message, type: 'error' });
+                        } finally {
+                          setIsSyncing(false);
+                          setTimeout(() => setMessage(null), 5000);
+                        }
+                      },
+                      onCancel: () => setConfirmModal(null)
+                    });
                   }}
                   disabled={isSyncing}
                   className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
@@ -9444,22 +9596,27 @@ export default function App() {
                   <History className="w-3 h-3" /> Restore Mar-26 Targets
                 </button>
                 <button 
-                  onClick={async () => {
-                    const confirm = window.confirm('Are you sure you want to clean duplicates? This will keep the latest record for each OB/Date/Month combination.');
-                    if (confirm) {
-                      setIsSyncing(true);
-                      try {
-                        const res = await apiFetch('/api/admin/clean-duplicates', { method: 'POST' });
-                        const data = await res.json();
-                        if (res.ok) alert(data.message);
-                        else alert('Failed to clean duplicates: ' + data.error);
-                      } catch (err: any) {
-                        alert('Error: ' + err.message);
-                      } finally {
-                        setIsSyncing(false);
-                        fetchAdminData();
-                      }
-                    }
+                  onClick={() => {
+                    setConfirmModal({
+                      message: 'Are you sure you want to clean duplicates? This will keep the latest record for each OB/Date/Month combination.',
+                      onConfirm: async () => {
+                        setConfirmModal(null);
+                        setIsSyncing(true);
+                        try {
+                          const res = await apiFetch('/api/admin/clean-duplicates', { method: 'POST' });
+                          const data = await res.json();
+                          if (res.ok) setMessage({ text: data.message, type: 'success' });
+                          else setMessage({ text: 'Failed to clean duplicates: ' + data.error, type: 'error' });
+                        } catch (err: any) {
+                          setMessage({ text: 'Error: ' + err.message, type: 'error' });
+                        } finally {
+                          setIsSyncing(false);
+                          fetchAdminData();
+                          setTimeout(() => setMessage(null), 5000);
+                        }
+                      },
+                      onCancel: () => setConfirmModal(null)
+                    });
                   }}
                   disabled={isSyncing}
                   className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
@@ -9467,21 +9624,27 @@ export default function App() {
                   <Trash2 className="w-3 h-3" /> Clean Duplicates
                 </button>
                 <button 
-                  onClick={async () => {
-                    if (window.confirm('Trigger a full backup to Google Drive?')) {
-                      setIsSyncing(true);
-                      try {
-                        const res = await apiFetch('/api/admin/trigger-drive-backup', { method: 'POST' });
-                        const data = await res.json();
-                        if (res.ok) alert(data.message);
-                        else alert('Drive Backup Failed: ' + data.error);
-                      } catch (err: any) {
-                        alert('Error: ' + err.message);
-                      } finally {
-                        setIsSyncing(false);
-                        fetchAdminData();
-                      }
-                    }
+                  onClick={() => {
+                    setConfirmModal({
+                      message: 'Trigger a full backup to Google Drive?',
+                      onConfirm: async () => {
+                        setConfirmModal(null);
+                        setIsSyncing(true);
+                        try {
+                          const res = await apiFetch('/api/admin/trigger-drive-backup', { method: 'POST' });
+                          const data = await res.json();
+                          if (res.ok) setMessage({ text: data.message, type: 'success' });
+                          else setMessage({ text: 'Drive Backup Failed: ' + data.error, type: 'error' });
+                        } catch (err: any) {
+                          setMessage({ text: 'Error: ' + err.message, type: 'error' });
+                        } finally {
+                          setIsSyncing(false);
+                          fetchAdminData();
+                          setTimeout(() => setMessage(null), 5000);
+                        }
+                      },
+                      onCancel: () => setConfirmModal(null)
+                    });
                   }}
                   disabled={isSyncing}
                   className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
@@ -9490,10 +9653,14 @@ export default function App() {
                 </button>
                 <button 
                   onClick={() => {
-                    const confirm = window.confirm('Are you sure you want to backup the database?');
-                    if (confirm) {
-                      window.open('/api/admin/backup', '_blank');
-                    }
+                    setConfirmModal({
+                      message: 'Are you sure you want to backup the database?',
+                      onConfirm: () => {
+                        setConfirmModal(null);
+                        window.open('/api/admin/backup', '_blank');
+                      },
+                      onCancel: () => setConfirmModal(null)
+                    });
                   }}
                   className="btn-seablue py-2 text-[10px] flex items-center justify-center gap-1"
                 >

@@ -19,7 +19,7 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || "salespulse-secret-key-2026";
-const ADMIN_EMAIL = "amjid.bisconni@gmail.com";
+const SUPER_ADMIN_EMAILS = ["amjid.bisconni@gmail.com", "Amjid.psh@gmail.com"];
 
 // Extend Express Request type
 declare global {
@@ -1974,12 +1974,15 @@ async function startServer() {
       
       if (!user) {
         // Fallback for first time admin login
-        if (username === ADMIN_EMAIL || username.toLowerCase() === 'admin') {
+        const lowerUsername = username.toLowerCase();
+        const isSuperAdminEmail = SUPER_ADMIN_EMAILS.some(e => e.toLowerCase() === lowerUsername);
+        
+        if (isSuperAdminEmail || lowerUsername === 'admin') {
           const role = 'Super Admin';
           const name = 'Admin';
           const hashedPassword = await bcrypt.hash(password || 'Admin@123', 10);
           const info = db.prepare("INSERT INTO users (username, email, role, name, password) VALUES (?, ?, ?, ?, ?)")
-            .run(username, username === ADMIN_EMAIL ? username : 'admin@salespulse.local', role, name, hashedPassword);
+            .run(username, isSuperAdminEmail ? username : 'admin@salespulse.local', role, name, hashedPassword);
           user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid) as any;
         } else {
           // Try to sync users from Google Sheets on the fly
@@ -2486,7 +2489,7 @@ async function startServer() {
     }
   });
 
-  app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC', 'OB', 'TSM Entry'), async (req, res) => {
+  app.get("/api/admin/test-google", authenticateToken, authorizeRoles('Super Admin'), async (req, res) => {
     let spreadsheetId = '';
     try {
       const client = await getGoogleSheetsClient();
