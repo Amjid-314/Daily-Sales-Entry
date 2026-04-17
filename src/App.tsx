@@ -81,7 +81,8 @@ import {
   Activity,
   FileText,
   Truck,
-  Edit2
+  Edit2,
+  Maximize2
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
 import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry, calculateOrderAge, calculateTonnage, calculateGross } from './lib/utils';
@@ -6671,8 +6672,11 @@ export default function App() {
   const [primaryRemarks, setPrimaryRemarks] = useState<Record<string, string>>({});
   const [primarySearchQuery, setPrimarySearchQuery] = useState('');
   const [primaryOrderHistory, setPrimaryOrderHistory] = useState<any[]>([]);
+  const [tsmAssignments, setTsmAssignments] = useState<any[]>([]);
   const [isLoadingPrimary, setIsLoadingPrimary] = useState(false);
   const [isSubmittingPrimary, setIsSubmittingPrimary] = useState(false);
+  const [primarySubView, setPrimarySubView] = useState<'matrix' | 'history'>('matrix');
+  const [editingPrimaryOrder, setEditingPrimaryOrder] = useState<any | null>(null);
   const [selectedPrimaryRegion, setSelectedPrimaryRegion] = useState('');
   const [selectedPrimaryTSM, setSelectedPrimaryTSM] = useState('');
   const [selectedPrimaryTown, setSelectedPrimaryTown] = useState('');
@@ -6713,12 +6717,35 @@ export default function App() {
 
   // Move Stocks hooks to top level
   const allDistributors = useMemo(() => {
-    const combined = [
+    const rawData = [
       ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm, region: d.region, ob_id: d.ob_id })),
-      ...obAssignments.filter(ob => ob.name).map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm, region: ob.region, ob_id: ob.contact }))
-    ];
-    return combined.filter((v, i, a) => a.findIndex(t => t.distributor === v.distributor) === i);
-  }, [distributors, obAssignments]);
+      ...obAssignments.filter(ob => ob.name).map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm, region: ob.region, ob_id: ob.contact })),
+      ...tsmAssignments.map(ta => ({ town: ta.town, distributor: ta.town, tsm: ta.tsm_name, region: '', ob_id: '' })),
+      ...hierarchy.map(h => ({ town: h.town_name, distributor: h.distributor_name, tsm: h.asm_tsm_name, region: h.territory_region, ob_id: h.ob_id }))
+    ].filter(d => d.town && d.distributor);
+
+    // Group by town to find specific distributors
+    const townSpecificDistributors = new Set();
+    rawData.forEach(d => {
+      // If distributor name is different from town name, it's a specific distributor entry
+      if (d.distributor.toLowerCase() !== d.town.toLowerCase()) {
+        townSpecificDistributors.add(d.town.toLowerCase());
+      }
+    });
+
+    return rawData
+      .filter(d => {
+        // If this town has specific distributors AND this entry is just "Town > Town", filter it out
+        if (townSpecificDistributors.has(d.town.toLowerCase()) && d.distributor.toLowerCase() === d.town.toLowerCase()) {
+          return false;
+        }
+        return true;
+      })
+      .filter((v, i, a) => a.findIndex(t => 
+        t.distributor.toLowerCase() === v.distributor.toLowerCase() && 
+        t.town.toLowerCase() === v.town.toLowerCase()
+      ) === i);
+  }, [distributors, obAssignments, tsmAssignments, hierarchy]);
 
   const filteredDistributors = useMemo(() => {
     return allDistributors.filter(d => {
@@ -7542,8 +7569,6 @@ export default function App() {
   const [isLoadingUsers, setIsLoadingUsers] = useState(false);
   const [isRegisteringUser, setIsRegisteringUser] = useState(false);
   const [newUser, setNewUser] = useState({ username: '', password: '', role: 'OB', name: '', contact: '', region: '', town: '', email: '', tsm: '', ob: '' });
-
-  const [tsmAssignments, setTsmAssignments] = useState<any[]>([]);
 
   const fetchTsmAssignments = async () => {
     try {
@@ -8680,7 +8705,9 @@ export default function App() {
               .reduce((s, sku) => {
                 const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                 const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                const ctns = sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0;
+                if (cat === 'Match') return s + (ctns * (sku.grossPerCarton || 0));
+                return s + ctns;
               }, 0);
             return sum + catAch;
           }, 0);
@@ -8735,7 +8762,9 @@ export default function App() {
               .reduce((s, sku) => {
                 const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                 const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                const ctns = sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0;
+                if (cat === 'Match') return s + (ctns * (sku.grossPerCarton || 0));
+                return s + ctns;
               }, 0);
             return sum + catAch;
           }, 0);
@@ -8769,7 +8798,9 @@ export default function App() {
               .reduce((s, sku) => {
                 const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                 const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                const ctns = sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0;
+                if (cat === 'Match') return s + (ctns * (sku.grossPerCarton || 0));
+                return s + ctns;
               }, 0);
             return sum + catAch;
           }, 0);
@@ -10968,8 +10999,6 @@ export default function App() {
   }
 
   if (view === 'primary_orders') {
-    const [primarySubView, setPrimarySubView] = useState<'matrix' | 'history'>('matrix');
-
     const handlePrimaryChange = (distributor: string, skuId: string, val: number) => {
       setPrimaryOrdersEntry(prev => ({
         ...prev,
@@ -11053,8 +11082,42 @@ export default function App() {
     });
 
     const primaryRegions = [...new Set(allDistributors.map(d => d.region))].filter(Boolean).sort();
-    const primaryTsms = [...new Set(allDistributors.map(d => d.tsm))].filter(Boolean).sort();
-    const primaryTowns = [...new Set(allDistributors.map(d => d.town))].filter(Boolean).sort();
+    
+    const primaryTsms = (() => {
+      let list = allDistributors;
+      if (selectedPrimaryRegion) list = list.filter(d => d.region === selectedPrimaryRegion);
+      return [...new Set(list.map(d => d.tsm))].filter(Boolean).sort();
+    })();
+
+    const primaryTowns = (() => {
+      let list = allDistributors;
+      if (selectedPrimaryRegion) list = list.filter(d => d.region === selectedPrimaryRegion);
+      if (selectedPrimaryTSM) list = list.filter(d => d.tsm === selectedPrimaryTSM);
+      return [...new Set(list.map(d => d.town))].filter(Boolean).sort();
+    })();
+
+    const categorySummaries = CATEGORIES.map(cat => {
+      let totalQty = 0;
+      let totalVal = 0;
+      let totalTons = 0;
+      let totalGross = 0;
+      const catSkus = SKUS.filter(s => s.category === cat);
+      primaryFilteredDists.forEach(d => {
+        const items = primaryOrdersEntry[d.distributor] || {};
+        catSkus.forEach(s => {
+          const qty = items[s.id] || 0;
+          totalQty += qty;
+          totalVal += qty * (s.pricePerCarton || 0);
+          if (cat === 'DWB' || ['Kite Glow', 'Burq Action', 'Vero'].includes(cat)) {
+            totalTons += (qty * (s.weight_gm_per_pack * (s.unitsPerCarton || 0))) / 1000000;
+          }
+          if (cat === 'Match') {
+            totalGross += qty * (s.grossPerCarton || 0);
+          }
+        });
+      });
+      return { category: cat, qty: totalQty, val: totalVal, tons: totalTons, gross: totalGross };
+    });
 
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
@@ -11130,6 +11193,22 @@ export default function App() {
               )}
             </div>
           </motion.div>
+          
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+             {categorySummaries.map(summary => (
+               <div key={summary.category} className="card-clean p-4 bg-white border border-slate-100 shadow-sm flex flex-col justify-between">
+                 <div className="flex items-center gap-2 mb-2">
+                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[summary.category] }}></div>
+                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">{summary.category}</h3>
+                 </div>
+                 <div className="space-y-1">
+                   <p className="text-sm font-black text-slate-800">{summary.qty.toLocaleString()} <span className="text-[9px] text-slate-400">Ctns</span></p>
+                   {summary.tons > 0 && <p className="text-[10px] font-bold text-emerald-600 leading-none">{summary.tons.toFixed(3)} TO</p>}
+                   {summary.gross > 0 && <p className="text-[10px] font-bold text-indigo-600 leading-none">{summary.gross} GR</p>}
+                 </div>
+               </div>
+             ))}
+          </div>
 
           {primarySubView === 'matrix' ? (
             <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
@@ -11158,7 +11237,11 @@ export default function App() {
                 <div className="flex flex-wrap gap-2">
                   <select 
                     value={selectedPrimaryRegion} 
-                    onChange={e => setSelectedPrimaryRegion(e.target.value)}
+                    onChange={e => {
+                      setSelectedPrimaryRegion(e.target.value);
+                      setSelectedPrimaryTSM('');
+                      setSelectedPrimaryTown('');
+                    }}
                     className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl border-slate-100"
                   >
                     <option value="">All Regions</option>
@@ -11166,7 +11249,10 @@ export default function App() {
                   </select>
                   <select 
                     value={selectedPrimaryTSM} 
-                    onChange={e => setSelectedPrimaryTSM(e.target.value)}
+                    onChange={e => {
+                      setSelectedPrimaryTSM(e.target.value);
+                      setSelectedPrimaryTown('');
+                    }}
                     className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl border-slate-100"
                   >
                     <option value="">All TSMs</option>
@@ -11238,13 +11324,10 @@ export default function App() {
                               placeholder="Any special reason..."
                             />
                           </td>
-                          <td className="px-6 py-4 bg-slate-50/30 whitespace-nowrap">
-                             <div className="text-right space-y-0.5">
-                               <p className="text-[10px] font-black text-slate-700">Rs {subVal.toLocaleString()}</p>
-                               <div className="flex items-center justify-end gap-2">
-                                 {subTons > 0 && <span className="text-[8px] font-bold text-emerald-600 uppercase tracking-tighter">{subTons.toFixed(3)} TO</span>}
-                                 {subGross > 0 && <span className="text-[8px] font-bold text-indigo-600 uppercase tracking-tighter">{subGross} GR</span>}
-                               </div>
+                          <td className="px-6 py-4 bg-slate-50/30 whitespace-nowrap min-w-[120px]">
+                             <div className="text-right space-y-1">
+                               {subTons > 0 && <p className="text-[10px] font-black text-emerald-600 leading-none">{subTons.toFixed(3)} TO</p>}
+                               {subGross > 0 && <p className="text-[10px] font-black text-indigo-600 leading-none">{subGross} GR</p>}
                              </div>
                           </td>
                         </tr>
@@ -11262,37 +11345,19 @@ export default function App() {
                           </td>
                         );
                       })}
-                      <td colSpan={2} className="px-6 py-4 text-right">
-                         {(() => {
-                           let gVal = 0, gTons = 0, gGross = 0;
-                           primaryFilteredDists.forEach(d => {
-                             const items = primaryOrdersEntry[d.distributor] || {};
-                             SKUS.forEach(sku => {
-                               const qty = items[sku.id] || 0;
-                               gVal += qty * (sku.pricePerCarton || 0);
-                               if (sku.category === 'DWB' || ['Kite Glow', 'Burq Action', 'Vero'].includes(sku.category)) {
-                                  gTons += (qty * (sku.weight_gm_per_pack * (sku.unitsPerCarton || 0))) / 1000000;
-                               }
-                               if (sku.category === 'Match') gGross += qty * (sku.grossPerCarton || 0);
-                             });
-                           });
-                           return (
-                             <div className="flex items-baseline justify-end gap-6 h-full">
-                               <div className="text-right">
-                                 <p className="text-[8px] text-slate-400 uppercase tracking-widest mb-1">Total Value</p>
-                                 <p className="text-sm font-black text-seablue">Rs {gVal.toLocaleString()}</p>
-                               </div>
-                               <div className="text-right">
-                                 <p className="text-[8px] text-slate-400 uppercase tracking-widest mb-1">Total Tonnage</p>
-                                 <p className="text-sm font-black text-emerald-600">{gTons.toFixed(3)} <span className="text-[10px]">TO</span></p>
-                               </div>
-                               <div className="text-right">
-                                 <p className="text-[8px] text-slate-400 uppercase tracking-widest mb-1">Match Gross</p>
-                                 <p className="text-sm font-black text-indigo-600">{gGross} <span className="text-[10px]">GR</span></p>
+                      <td colSpan={2} className="px-6 py-4">
+                         <div className="flex flex-wrap justify-end gap-x-8 gap-y-4">
+                           {categorySummaries.map(s => (
+                             <div key={s.category} className="text-right flex flex-col min-w-[100px] border-r border-slate-200 pr-8 last:border-none last:pr-0">
+                               <p className="text-[8px] text-slate-400 font-bold uppercase tracking-[0.2em] mb-1">{s.category}</p>
+                               <div className="space-y-0.5">
+                                 <p className="text-[11px] font-black text-slate-800 leading-none">{s.qty.toLocaleString()} <span className="text-[8px] text-slate-400">Ctns</span></p>
+                                 {s.tons > 0 && <p className="text-[10px] font-black text-emerald-600 leading-none">{s.tons.toFixed(3)} TO</p>}
+                                 {s.gross > 0 && <p className="text-[10px] font-black text-indigo-600 leading-none">{s.gross} GR</p>}
                                </div>
                              </div>
-                           )
-                         })()}
+                           ))}
+                         </div>
                       </td>
                     </tr>
                   </tfoot>
@@ -11414,15 +11479,7 @@ export default function App() {
                                 <td className="px-4 py-5">
                                   <div className="flex justify-center gap-2">
                                     <button 
-                                      onClick={() => {
-                                        const newStatus = window.prompt('Update Status (Pending, In Clearance, Dispatched, Cancelled):', item.status);
-                                        const newRemarks = window.prompt('Update Remarks:', item.remarks || '');
-                                        let dDate = item.dispatched_date;
-                                        if (newStatus === 'Dispatched') {
-                                          dDate = window.prompt('Enter Dispatch Date (YYYY-MM-DD):', getPSTDate()) || item.dispatched_date;
-                                        }
-                                        if (newStatus) handleUpdateStatus(item.id, newStatus, newRemarks || undefined, dDate);
-                                      }}
+                                      onClick={() => setEditingPrimaryOrder(item)}
                                       className="p-2 hover:bg-slate-100 rounded-lg text-seablue transition-colors border border-slate-100 flex items-center gap-2"
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
@@ -11442,6 +11499,80 @@ export default function App() {
             </section>
           )}
         </div>
+
+        {editingPrimaryOrder && (
+          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-[100] flex items-center justify-center p-4">
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100"
+            >
+              <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
+                <h3 className="text-sm font-black text-seablue uppercase tracking-widest">Update Order Logistics</h3>
+                <button onClick={() => setEditingPrimaryOrder(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
+                  <Maximize2 className="w-4 h-4 text-slate-400 rotate-45" />
+                </button>
+              </div>
+              <div className="p-6 space-y-4">
+                <div>
+                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Status</label>
+                   <select 
+                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all"
+                     value={editingPrimaryOrder.status}
+                     onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, status: e.target.value})}
+                   >
+                     <option value="Pending">Pending</option>
+                     <option value="In Clearance">In Clearance</option>
+                     <option value="Dispatched">Dispatched</option>
+                     <option value="Cancelled">Cancelled</option>
+                   </select>
+                </div>
+                {editingPrimaryOrder.status === 'Dispatched' && (
+                  <div>
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Dispatch Date</label>
+                    <input 
+                      type="date"
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all"
+                      value={editingPrimaryOrder.dispatched_date || getPSTDate()}
+                      onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, dispatched_date: e.target.value})}
+                    />
+                  </div>
+                )}
+                <div>
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Remarks</label>
+                  <textarea 
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all h-24"
+                    placeholder="Enter any logistics remarks..."
+                    value={editingPrimaryOrder.remarks || ''}
+                    onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, remarks: e.target.value})}
+                  />
+                </div>
+                <div className="pt-2 flex gap-3">
+                  <button 
+                    onClick={() => setEditingPrimaryOrder(null)}
+                    className="flex-1 py-3 border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all"
+                  >
+                    Cancel
+                  </button>
+                  <button 
+                    onClick={async () => {
+                      await handleUpdateStatus(
+                        editingPrimaryOrder.id, 
+                        editingPrimaryOrder.status, 
+                        editingPrimaryOrder.remarks, 
+                        editingPrimaryOrder.dispatched_date
+                      );
+                      setEditingPrimaryOrder(null);
+                    }}
+                    className="flex-2 py-3 bg-seablue text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-seablue/20 hover:scale-[1.02] transition-all"
+                  >
+                    Save Changes
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
       </div>
     );
   }

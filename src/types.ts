@@ -158,10 +158,25 @@ export const SKUS: SKU[] = [
   { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400, weight_gm_per_pack: 240, unit: 'Ctns' },
 
   // Match
-  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
-  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
-  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
-  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-ki-l", name: "Kite (L)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-ki-c", name: "Kite (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-ki-r", name: "Kite (R)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-ki-s", name: "Kite (S)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  
+  { id: "m-ol-l", name: "Olympia (L)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-ol-c", name: "Olympia (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-ol-r", name: "Olympia (R)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-ol-s", name: "Olympia (S)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+
+  { id: "m-pa-l", name: "Party (L)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-pa-c", name: "Party (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-pa-r", name: "Party (R)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+
+  { id: "m-bi-l", name: "Bird (L)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-bi-c", name: "Bird (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+
+  { id: "m-ta-l", name: "Tanga (L)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-ta-c", name: "Tanga (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
 ];
 
 export interface PrimaryOrder {
