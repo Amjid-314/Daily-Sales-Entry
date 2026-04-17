@@ -7,6 +7,7 @@ export interface SKU {
   pricePerCarton?: number;
   weight_gm_per_pack: number; // Weight per single pack in grams
   unit: 'Bags' | 'Ctns';
+  grossPerCarton?: number; // Only for Match if applicable
 }
 
 export interface OrderItem {
@@ -121,7 +122,7 @@ export const BRAND_GROUPS: Record<string, string[]> = {
 export const BRAND_GROUP_NAMES = Object.keys(BRAND_GROUPS);
 
 export const CATEGORY_COLORS: Record<string, string> = {
-  "Kite Glow": "#38bdf8", // Light Blue
+  "Kite Glow": "#3b82f6", // Blue
   "Burq Action": "#f97316", // Orange
   "Vero": "#eab308", // Yellow
   "DWB": "#22c55e", // Green
@@ -157,8 +158,23 @@ export const SKUS: SKU[] = [
   { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400, weight_gm_per_pack: 240, unit: 'Ctns' },
 
   // Match
-  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns' },
-  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns' },
-  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns' },
-  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns' },
+  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
 ];
+
+export interface PrimaryOrder {
+  id?: string;
+  date: string;
+  distributor: string;
+  town: string;
+  tsm: string;
+  region: string;
+  items: Record<string, number>; // SKU ID -> Quantity in Cartons/Bags
+  totalAmount?: number;
+  status: 'Pending' | 'In Clearance' | 'Dispatched' | 'Partial Dispatched' | 'Cancelled';
+  dispatchedDate?: string;
+  remarks?: string;
+  invoiceNumber?: string;
+}

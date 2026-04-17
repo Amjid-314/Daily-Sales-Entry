@@ -1,24 +1,42 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 interface DailyStatusViewProps {
   dailyStatus: any[];
 }
 
 export const DailyStatusView: React.FC<DailyStatusViewProps> = ({ dailyStatus }) => {
+  const [offDayFilter, setOffDayFilter] = useState('All');
+
+  const filteredStatus = dailyStatus.filter(ob => {
+    if (offDayFilter === 'All') return true;
+    return (ob.off_day || 'Sunday') === offDayFilter;
+  });
+
   return (
     <div className="space-y-4">
+      <div className="flex justify-end mb-2">
+        <select 
+          value={offDayFilter} 
+          onChange={(e) => setOffDayFilter(e.target.value)}
+          className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-seablue"
+        >
+          <option value="All">All Off Days</option>
+          <option value="Sunday">Sunday</option>
+          <option value="Friday">Friday</option>
+        </select>
+      </div>
       <div className="grid grid-cols-3 gap-2">
         <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-100">
           <div className="text-[10px] font-black text-emerald-400 uppercase tracking-widest">Submitted</div>
-          <div className="text-2xl font-black text-emerald-600">{dailyStatus.filter(s => s.submitted).length}</div>
+          <div className="text-2xl font-black text-emerald-600">{filteredStatus.filter(s => s.submitted).length}</div>
         </div>
         <div className="p-3 bg-red-50 rounded-xl border border-red-100">
           <div className="text-[10px] font-black text-red-400 uppercase tracking-widest">Absent</div>
-          <div className="text-2xl font-black text-red-600">{dailyStatus.filter(s => s.visit_type === 'Absent').length}</div>
+          <div className="text-2xl font-black text-red-600">{filteredStatus.filter(s => s.visit_type === 'Absent').length}</div>
         </div>
         <div className="p-3 bg-amber-50 rounded-xl border border-amber-100">
           <div className="text-[10px] font-black text-amber-400 uppercase tracking-widest">Pending</div>
-          <div className="text-2xl font-black text-amber-600">{dailyStatus.filter(s => !s.submitted).length}</div>
+          <div className="text-2xl font-black text-amber-600">{filteredStatus.filter(s => !s.submitted).length}</div>
         </div>
       </div>
       
@@ -27,6 +45,7 @@ export const DailyStatusView: React.FC<DailyStatusViewProps> = ({ dailyStatus })
           <thead>
             <tr className="border-b border-slate-100 text-slate-400 uppercase">
               <th className="py-2">OB Name</th>
+              <th className="py-2 text-center">Off Day</th>
               <th className="py-2">TSM</th>
               <th className="py-2 text-center">Status</th>
               <th className="py-2 text-center">Visit Type</th>
@@ -34,11 +53,18 @@ export const DailyStatusView: React.FC<DailyStatusViewProps> = ({ dailyStatus })
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-50">
-            {dailyStatus.map(ob => (
+            {filteredStatus.map(ob => (
               <tr key={ob.contact} className="hover:bg-slate-50">
                 <td className="py-2">
                   <div className="font-bold text-slate-700 text-[11px]">{ob.name}</div>
                   <div className="text-[9px] text-slate-400">{ob.contact}</div>
+                </td>
+                <td className="py-2 text-center">
+                  <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest ${
+                    (ob.off_day || 'Sunday') === 'Sunday' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'
+                  }`}>
+                    {ob.off_day || 'Sunday'}
+                  </span>
                 </td>
                 <td className="py-2 text-slate-500 text-[10px]">{ob.tsm}</td>
                 <td className="py-2 text-center">

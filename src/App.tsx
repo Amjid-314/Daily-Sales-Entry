@@ -19,7 +19,7 @@ import {
   Pie,
   Legend
 } from 'recharts';
-import { MapContainer, TileLayer, CircleMarker, Popup } from 'react-leaflet';
+import { MapContainer, TileLayer, CircleMarker, Popup, Tooltip as MapTooltip } from 'react-leaflet';
 import { MainNav, APP_TABS } from './components/MainNav';
 import { Logo } from './components/Logo';
 import { TOWN_COORDINATES } from './townCoordinates';
@@ -59,6 +59,7 @@ import {
   Upload,
   Link2,
   ExternalLink,
+  ShoppingCart,
   Cloud,
   CloudDownload,
   Share2,
@@ -77,10 +78,13 @@ import {
   Key,
   User,
   HelpCircle,
-  Activity
+  Activity,
+  FileText,
+  Truck,
+  Edit2
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
-import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry } from './lib/utils';
+import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry, calculateOrderAge, calculateTonnage, calculateGross } from './lib/utils';
 
 const STORAGE_KEY = 'ob_order_draft';
 const LOGO_STORAGE_KEY = 'app_logo_base64';
@@ -148,6 +152,55 @@ class ErrorBoundary extends React.Component<any, any> {
     return (this as any).props.children;
   }
 }
+
+const PWAInstallPrompt = () => {
+  const [showPrompt, setShowPrompt] = useState(false);
+
+  useEffect(() => {
+    const isStandalone = window.matchMedia('(display-mode: standalone)').matches || (window.navigator as any).standalone;
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+    if (!isStandalone && isMobile) {
+      const dismissed = localStorage.getItem('pwa_prompt_dismissed');
+      if (!dismissed) {
+        setShowPrompt(true);
+      }
+    }
+  }, []);
+
+  if (!showPrompt) return null;
+
+  const isIOS = /iPhone|iPad|iPod/.test(navigator.userAgent);
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 50 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="fixed bottom-24 left-4 right-4 z-[9999] bg-white rounded-2xl shadow-2xl p-4 border border-slate-100 flex items-center gap-4"
+    >
+      <div className="w-12 h-12 bg-seablue rounded-xl flex items-center justify-center text-white shrink-0">
+        <Download className="w-6 h-6" />
+      </div>
+      <div className="flex-1">
+        <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Install App</p>
+        <p className="text-[11px] font-bold text-slate-700 leading-tight">
+          {isIOS 
+            ? 'Tap the Share icon and select "Add to Home Screen" to use as a full app.'
+            : 'Select "Install App" from your browser menu for the best experience.'}
+        </p>
+      </div>
+      <button 
+        onClick={() => {
+          setShowPrompt(false);
+          localStorage.setItem('pwa_prompt_dismissed', 'true');
+        }}
+        className="p-2 text-slate-400"
+      >
+        <Plus className="w-5 h-5 rotate-45" />
+      </button>
+    </motion.div>
+  );
+};
 
 const HomeHub = ({ setView, userRole, userName, logo, tabs, userEmail }: any) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -307,6 +360,7 @@ const NationalDashboard = ({
   users = [], obAssignments = [],
   selectedHeadCountDetail, setSelectedHeadCountDetail
 }: NationalDashboardProps) => {
+  const [offDayFilter, setOffDayFilter] = useState('All');
   const [expandedOB, setExpandedOB] = useState<string | null>(null);
   const [headCountDrillDown, setHeadCountDrillDown] = useState<{ level: string, value: string }[]>([]);
 
@@ -317,17 +371,36 @@ const NationalDashboard = ({
     const currentMonthHistory = stats.filter((s: any) => s.date.startsWith(currentMonth));
 
     // Base data: all users for this role
-    let data = users.filter((u: any) => u.role === role).map(u => {
-      const h = hierarchy.find(h => h.ob_id === u.contact || h.asm_tsm_name === u.name || h.rsm_name === u.name);
-      const entries = currentMonthHistory.filter(s => {
-        if (role === 'RSM') return (s.rsm || '').toLowerCase() === (u.name || '').toLowerCase();
-        if (role === 'SC') return (s.sc || '').toLowerCase() === (u.name || '').toLowerCase();
-        if (role === 'TSM' || role === 'ASM') return (s.tsm || '').toLowerCase() === (u.name || '').toLowerCase();
-        if (role === 'OB') return (s.ob_contact || '').toLowerCase() === (u.contact || '').toLowerCase();
-        return false;
+    let data: any[] = [];
+    if (role === 'OB') {
+      const obMap = new Map();
+      obAssignments.forEach((ob: any) => {
+        const name = ob.name || ob.ob_name || '';
+        const id = ob.contact || ob.ob_id || '';
+        const tsm = ob.tsm || ob.asm_tsm_name || '';
+        if (name.trim() !== '' && !isTSMEntry(name, tsm)) {
+          if (!obMap.has(id)) {
+            obMap.set(id, { name, contact: id, role: 'OB', region: ob.region, town: ob.town, tsm: ob.tsm });
+          }
+        }
       });
-      return { ...u, h, entries, isActive: entries.length > 0 };
-    });
+      data = Array.from(obMap.values()).map(u => {
+        const h = hierarchy.find(h => h.ob_id === u.contact);
+        const entries = currentMonthHistory.filter(s => (s.ob_contact || '').toLowerCase() === (u.contact || '').toLowerCase());
+        return { ...u, h: h || { territory_region: u.region, town_name: u.town, asm_tsm_name: u.tsm }, entries, isActive: entries.length > 0 };
+      });
+    } else {
+      data = users.filter((u: any) => u.role === role).map(u => {
+        const h = hierarchy.find(h => h.ob_id === u.contact || h.asm_tsm_name === u.name || h.rsm_name === u.name);
+        const entries = currentMonthHistory.filter(s => {
+          if (role === 'RSM') return (s.rsm || '').trim().toLowerCase() === (u.name || '').trim().toLowerCase();
+          if (role === 'SC') return (s.sc || '').trim().toLowerCase() === (u.name || '').trim().toLowerCase();
+          if (role === 'TSM' || role === 'ASM') return (s.tsm || '').trim().toLowerCase() === (u.name || '').trim().toLowerCase();
+          return false;
+        });
+        return { ...u, h, entries, isActive: entries.length > 0 };
+      });
+    }
 
     // Apply drill-down filters
     headCountDrillDown.forEach(filter => {
@@ -471,9 +544,9 @@ const NationalDashboard = ({
       let active = 0;
       roleUsers.forEach((u: any) => {
         const hasEntry = currentMonthHistory.some((s: any) => {
-          if (roleName === 'RSM') return (s.rsm || '').toLowerCase() === (u.name || '').toLowerCase();
-          if (roleName === 'SC') return (s.sc || '').toLowerCase() === (u.name || '').toLowerCase();
-          if (roleName === 'TSM' || roleName === 'ASM') return (s.tsm || '').toLowerCase() === (u.name || '').toLowerCase();
+          if (roleName === 'RSM') return (s.rsm || '').trim().toLowerCase() === (u.name || '').trim().toLowerCase();
+          if (roleName === 'SC') return (s.sc || '').trim().toLowerCase() === (u.name || '').trim().toLowerCase();
+          if (roleName === 'TSM' || roleName === 'ASM') return (s.tsm || '').trim().toLowerCase() === (u.name || '').trim().toLowerCase();
           return false;
         });
         if (hasEntry) active++;
@@ -1112,7 +1185,10 @@ const NationalDashboard = ({
     }
     
     data = [...data].sort((a, b) => b.date.localeCompare(a.date));
-    return data.slice(0, 16).reverse(); // Chronological for charts
+    return data.slice(0, 16).reverse().map(d => ({
+      ...d,
+      ...d.brandSales // Spread brandSales to top level for Recharts
+    })); // Chronological for charts
   }, [filteredStats, filterLevel, routeAnalysisCategoryFilter, routeAnalysisBrandFilter]);
 
   const worstOBs = useMemo(() => {
@@ -1411,7 +1487,7 @@ const NationalDashboard = ({
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
+      <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
           <div className="flex items-center gap-4">
             <div className="w-12 h-12 bg-seablue rounded-2xl flex items-center justify-center text-white shadow-lg shadow-blue-200">
@@ -1483,37 +1559,51 @@ const NationalDashboard = ({
 
         {/* Head Count System (MTD) - Dynamic Block */}
         {view === 'dashboard' && (
-          <section className="grid grid-cols-2 md:grid-cols-5 gap-4 pt-4 border-t border-slate-50">
-            {headCountStats.map((stat, idx) => (
-              <motion.button 
-                key={idx}
-                onClick={() => setSelectedHeadCountDetail(stat)}
-                initial={{ opacity: 0, scale: 0.95 }}
-                animate={{ opacity: 1, scale: 1 }}
-                transition={{ delay: idx * 0.05 }}
-                className="bg-slate-50/50 p-4 rounded-2xl border border-slate-100 flex flex-col justify-between text-left hover:bg-slate-100 transition-all group"
-              >
-                <div className="flex justify-between items-start mb-2">
-                  <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-seablue transition-colors">{stat.designation}</span>
-                  <div className={`w-1.5 h-1.5 rounded-full ${stat.active > 0 ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`}></div>
-                </div>
-                <div className="flex items-end justify-between">
+          <section className="pt-4 border-t border-slate-50">
+            <div className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
+              <div className="flex items-center justify-between mb-6">
+                <div className="flex items-center gap-2">
+                  <Users className="w-5 h-5 text-seablue" />
                   <div>
-                    <p className="text-xl font-black text-slate-800 leading-none">{stat.active}<span className="text-[10px] text-slate-400 font-bold ml-1">/ {stat.total}</span></p>
-                    <p className="text-[8px] font-bold text-slate-400 uppercase mt-1">Active Staff</p>
-                  </div>
-                  <div className="text-right">
-                    <p className="text-[10px] font-black text-emerald-600">{stat.total > 0 ? Math.round((stat.active / stat.total) * 100) : 0}%</p>
-                    <div className="w-10 h-1 bg-slate-100 rounded-full mt-1 overflow-hidden">
-                      <div 
-                        className="h-full bg-emerald-500 transition-all duration-1000" 
-                        style={{ width: `${stat.total > 0 ? (stat.active / stat.total) * 100 : 0}%` }}
-                      ></div>
-                    </div>
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Head Count (MTD)</h3>
+                    <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Designation wise Total vs Active</p>
                   </div>
                 </div>
-              </motion.button>
-            ))}
+                <span className="text-[9px] font-black text-seablue uppercase tracking-widest bg-blue-50 px-2 py-1 rounded-lg">Click to Drill Down</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                {headCountStats.map((stat, idx) => (
+                  <motion.button 
+                    key={idx}
+                    onClick={() => setSelectedHeadCountDetail(stat)}
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    transition={{ delay: idx * 0.05 }}
+                    className="bg-slate-50/80 p-4 rounded-2xl border border-slate-100 flex flex-col justify-between text-left hover:bg-slate-100 hover:border-seablue/30 hover:shadow-md transition-all group"
+                  >
+                    <div className="flex justify-between items-start mb-3">
+                      <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest group-hover:text-seablue transition-colors">{stat.designation}</span>
+                      <div className={`w-2 h-2 rounded-full ${stat.active > 0 ? 'bg-emerald-500 animate-pulse shadow-[0_0_8px_rgba(16,185,129,0.5)]' : 'bg-slate-300'}`}></div>
+                    </div>
+                    <div className="flex items-end justify-between">
+                      <div>
+                        <p className="text-2xl font-black text-slate-800 leading-none">{stat.active}<span className="text-xs text-slate-400 font-bold ml-1">/ {stat.total}</span></p>
+                        <p className="text-[9px] font-bold text-slate-400 uppercase mt-1.5">Active Staff</p>
+                      </div>
+                      <div className="text-right w-1/2">
+                        <p className="text-[11px] font-black text-emerald-600 mb-1">{stat.total > 0 ? Math.round((stat.active / stat.total) * 100) : 0}%</p>
+                        <div className="w-full h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                          <div 
+                            className="h-full bg-emerald-500 transition-all duration-1000" 
+                            style={{ width: `${stat.total > 0 ? (stat.active / stat.total) * 100 : 0}%` }}
+                          ></div>
+                        </div>
+                      </div>
+                    </div>
+                  </motion.button>
+                ))}
+              </div>
+            </div>
           </section>
         )}
 
@@ -1810,7 +1900,7 @@ const NationalDashboard = ({
                     return null;
                   }}
                 />
-                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase' }} />
+                <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', color: '#1e3a8a' }} />
               </PieChart>
             </ResponsiveContainer>
           </div>
@@ -1915,7 +2005,7 @@ const NationalDashboard = ({
                     return null;
                   }}
                 />
-                <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', paddingBottom: '10px' }} />
+                <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', paddingTop: '10px', color: '#1e3a8a' }} />
                 <Bar dataKey="achievement" radius={[0, 4, 4, 0]} barSize={12} name="Ach">
                   {(achievementView === 'Category'
                     ? BRAND_GROUP_NAMES.map(g => ({ name: g }))
@@ -2492,11 +2582,9 @@ const NationalDashboard = ({
                 return true;
               });
 
-              const getSalesForBrand = (s: any) => {
-                if (mapFilterBrand === 'All') return s.totalBags + s.totalCtns;
-                
+              const getSalesForSpecificBrand = (s: any, brand: string) => {
                 const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : (s.order_data || {});
-                const brandSkus = SKUS.filter((sku: any) => sku.category === mapFilterBrand);
+                const brandSkus = SKUS.filter((sku: any) => sku.category === brand);
                 return brandSkus.reduce((sum: number, sku: any) => {
                   const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
                   const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
@@ -2504,98 +2592,201 @@ const NationalDashboard = ({
                 }, 0);
               };
 
+              const brandsToShow = mapFilterBrand === 'All' ? CATEGORIES : [mapFilterBrand];
+
               if (mapLevel === 'region') {
-                const regions: Record<string, any> = {};
+                const regionData: Record<string, any> = {};
+                
                 filteredMapStats.forEach(s => {
                   const coords = TOWN_COORDINATES[s.town] || (s.latitude && s.longitude ? [s.latitude, s.longitude] : null);
                   if (!coords) return;
+
+                  if (!regionData[s.region]) {
+                    regionData[s.region] = { region: s.region, totalSales: 0, brandSales: {}, lats: [], lngs: [], towns: new Set() };
+                  }
+
+                  let addedAny = false;
+                  brandsToShow.forEach(brand => {
+                    const sales = getSalesForSpecificBrand(s, brand);
+                    if (sales > 0) {
+                      regionData[s.region].brandSales[brand] = (regionData[s.region].brandSales[brand] || 0) + sales;
+                      regionData[s.region].totalSales += sales;
+                      addedAny = true;
+                    }
+                  });
+
+                  if (addedAny) {
+                    regionData[s.region].lats.push(coords[0]);
+                    regionData[s.region].lngs.push(coords[1]);
+                    regionData[s.region].towns.add(s.town);
+                  }
+                });
+
+                return Object.values(regionData).filter(r => r.totalSales > 0).map((r: any, i) => {
+                  const avgLat = r.lats.reduce((a:any,b:any)=>a+b,0)/r.lats.length;
+                  const avgLng = r.lngs.reduce((a:any,b:any)=>a+b,0)/r.lngs.length;
                   
-                  const salesToAdd = getSalesForBrand(s);
-                  if (salesToAdd <= 0 && mapFilterBrand !== 'All') return; // Skip if filtering by brand and no sales
+                  const color = mapFilterBrand !== 'All' ? (CATEGORY_COLORS[mapFilterBrand] || '#0ea5e9') : '#0ea5e9';
 
-                  if (!regions[s.region]) {
-                    regions[s.region] = { name: s.region, sales: 0, lats: [], lngs: [], towns: new Set() };
-                  }
-                  regions[s.region].sales += salesToAdd;
-                  regions[s.region].lats.push(coords[0]);
-                  regions[s.region].lngs.push(coords[1]);
-                  regions[s.region].towns.add(s.town);
-                });
-                return Object.values(regions).map((r: any, i) => (
-                  <CircleMarker 
-                    key={`region-${i}`} 
-                    center={[r.lats.reduce((a:any,b:any)=>a+b,0)/r.lats.length, r.lngs.reduce((a:any,b:any)=>a+b,0)/r.lngs.length]} 
-                    radius={Math.max(8, Math.min(30, r.sales / 50))}
-                    pathOptions={{ color: '#0ea5e9', fillColor: '#0ea5e9', fillOpacity: 0.6, weight: 2 }}
-                  >
-                    <Popup>
-                      <div className="p-2 min-w-[150px]">
-                        <h4 className="text-sm font-black text-slate-800 uppercase mb-1">{r.name} Region</h4>
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-slate-400 font-bold uppercase">Sales {mapFilterBrand !== 'All' ? `(${mapFilterBrand})` : ''}:</span>
-                            <span className="font-black text-seablue">{Math.round(r.sales)}</span>
+                  return (
+                    <CircleMarker 
+                      key={`region-${r.region}-${i}`} 
+                      center={[avgLat, avgLng]} 
+                      radius={Math.max(8, Math.min(30, r.totalSales / 50))}
+                      pathOptions={{ color: color, fillColor: color, fillOpacity: 0.6, weight: 2 }}
+                    >
+                      <MapTooltip direction="top" offset={[0, -10]} className="bg-white/95 backdrop-blur-sm border-none shadow-xl rounded-xl p-2 min-w-[120px]">
+                        <div className="text-[10px] font-black text-slate-800 uppercase text-center mb-1 border-b border-slate-100 pb-1">{r.region}</div>
+                        <div className="space-y-1 mt-1">
+                          {Object.entries(r.brandSales).sort(([,a]:any, [,b]:any) => b - a).slice(0, 4).map(([brand, sales]: any) => (
+                            <div key={brand} className="flex justify-between items-center text-[9px]">
+                              <div className="flex items-center gap-1">
+                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
+                                <span className="font-bold text-slate-600 truncate max-w-[60px]">{brand}</span>
+                              </div>
+                              <span className="font-black text-slate-800">{Math.round(sales)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </MapTooltip>
+                      <Popup>
+                        <div className="p-2 min-w-[150px]">
+                          <h4 className="text-sm font-black text-slate-800 uppercase mb-2">{r.region} Region</h4>
+                          <div className="space-y-1 mb-3">
+                            <div className="flex justify-between text-[10px] border-b border-slate-100 pb-1">
+                              <span className="text-slate-400 font-bold uppercase">Total Sales:</span>
+                              <span className="font-black text-seablue">{Math.round(r.totalSales)}</span>
+                            </div>
+                            <div className="flex justify-between text-[10px]">
+                              <span className="text-slate-400 font-bold uppercase">Active Towns:</span>
+                              <span className="font-black text-slate-700">{r.towns.size}</span>
+                            </div>
                           </div>
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-slate-400 font-bold uppercase">Active Towns:</span>
-                            <span className="font-black text-slate-700">{r.towns.size}</span>
+                          
+                          <div className="space-y-1">
+                            <h5 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Brand Breakdown</h5>
+                            {Object.entries(r.brandSales).sort(([,a]:any, [,b]:any) => b - a).map(([brand, sales]: any) => (
+                              <div key={brand} className="flex justify-between items-center text-[10px]">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
+                                  <span className="font-bold text-slate-600">{brand}</span>
+                                </div>
+                                <span className="font-black text-slate-800">{Math.round(sales)}</span>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      </div>
-                    </Popup>
-                  </CircleMarker>
-                ));
+                      </Popup>
+                    </CircleMarker>
+                  );
+                });
               } else {
-                const towns: Record<string, any> = {};
+                const townData: Record<string, any> = {};
+                
                 filteredMapStats.forEach(s => {
                   const coords = TOWN_COORDINATES[s.town] || (s.latitude && s.longitude ? [s.latitude, s.longitude] : null);
                   if (!coords) return;
 
-                  const salesToAdd = getSalesForBrand(s);
-                  if (salesToAdd <= 0 && mapFilterBrand !== 'All') return; // Skip if filtering by brand and no sales
+                  if (!townData[s.town]) {
+                    townData[s.town] = { town: s.town, region: s.region, totalSales: 0, brandSales: {}, lats: [], lngs: [], obs: new Set() };
+                  }
 
-                  if (!towns[s.town]) {
-                    towns[s.town] = { name: s.town, region: s.region, sales: 0, lats: [], lngs: [], obs: new Set() };
+                  let addedAny = false;
+                  brandsToShow.forEach(brand => {
+                    const sales = getSalesForSpecificBrand(s, brand);
+                    if (sales > 0) {
+                      townData[s.town].brandSales[brand] = (townData[s.town].brandSales[brand] || 0) + sales;
+                      townData[s.town].totalSales += sales;
+                      addedAny = true;
+                    }
+                  });
+
+                  if (addedAny) {
+                    if (TOWN_COORDINATES[s.town]) {
+                      townData[s.town].lats = [TOWN_COORDINATES[s.town][0]];
+                      townData[s.town].lngs = [TOWN_COORDINATES[s.town][1]];
+                    } else {
+                      townData[s.town].lats.push(coords[0]);
+                      townData[s.town].lngs.push(coords[1]);
+                    }
+                    townData[s.town].obs.add(s.ob_name);
                   }
-                  towns[s.town].sales += salesToAdd;
-                  // Use predefined coordinates if available, otherwise fallback to entry coordinates
-                  if (TOWN_COORDINATES[s.town]) {
-                    towns[s.town].lats = [TOWN_COORDINATES[s.town][0]];
-                    towns[s.town].lngs = [TOWN_COORDINATES[s.town][1]];
-                  } else {
-                    towns[s.town].lats.push(coords[0]);
-                    towns[s.town].lngs.push(coords[1]);
-                  }
-                  towns[s.town].obs.add(s.ob_name);
                 });
-                return Object.values(towns).map((t: any, i) => (
-                  <CircleMarker 
-                    key={`town-${i}`} 
-                    center={[t.lats.reduce((a:any,b:any)=>a+b,0)/t.lats.length, t.lngs.reduce((a:any,b:any)=>a+b,0)/t.lngs.length]} 
-                    radius={Math.max(5, Math.min(20, t.sales / 20))}
-                    pathOptions={{ color: '#006994', fillColor: '#006994', fillOpacity: 0.6, weight: 1 }}
-                  >
-                    <Popup>
-                      <div className="p-2 min-w-[150px]">
-                        <h4 className="text-sm font-black text-slate-800 uppercase mb-1">{t.name}</h4>
-                        <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">{t.region} Region</p>
-                        <div className="space-y-1">
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-slate-400 font-bold uppercase">Sales {mapFilterBrand !== 'All' ? `(${mapFilterBrand})` : ''}:</span>
-                            <span className="font-black text-seablue">{Math.round(t.sales)}</span>
+
+                return Object.values(townData).filter(t => t.totalSales > 0).map((t: any, i) => {
+                  const avgLat = t.lats.reduce((a:any,b:any)=>a+b,0)/t.lats.length;
+                  const avgLng = t.lngs.reduce((a:any,b:any)=>a+b,0)/t.lngs.length;
+                  
+                  const color = mapFilterBrand !== 'All' ? (CATEGORY_COLORS[mapFilterBrand] || '#006994') : '#006994';
+
+                  return (
+                    <CircleMarker 
+                      key={`town-${t.town}-${i}`} 
+                      center={[avgLat, avgLng]} 
+                      radius={Math.max(5, Math.min(20, t.totalSales / 20))}
+                      pathOptions={{ color: color, fillColor: color, fillOpacity: 0.6, weight: 1 }}
+                    >
+                      <MapTooltip direction="top" offset={[0, -10]} className="bg-white/95 backdrop-blur-sm border-none shadow-xl rounded-xl p-2 min-w-[120px]">
+                        <div className="text-[10px] font-black text-slate-800 uppercase text-center mb-1 border-b border-slate-100 pb-1">{t.town}</div>
+                        <div className="space-y-1 mt-1">
+                          {Object.entries(t.brandSales).sort(([,a]:any, [,b]:any) => b - a).slice(0, 4).map(([brand, sales]: any) => (
+                            <div key={brand} className="flex justify-between items-center text-[9px]">
+                              <div className="flex items-center gap-1">
+                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
+                                <span className="font-bold text-slate-600 truncate max-w-[60px]">{brand}</span>
+                              </div>
+                              <span className="font-black text-slate-800">{Math.round(sales)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      </MapTooltip>
+                      <Popup>
+                        <div className="p-2 min-w-[150px]">
+                          <h4 className="text-sm font-black text-slate-800 uppercase mb-1">{t.town}</h4>
+                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">{t.region} Region</p>
+                          
+                          <div className="space-y-1 mb-3">
+                            <div className="flex justify-between text-[10px] border-b border-slate-100 pb-1">
+                              <span className="text-slate-400 font-bold uppercase">Total Sales:</span>
+                              <span className="font-black text-seablue">{Math.round(t.totalSales)}</span>
+                            </div>
+                            <div className="flex justify-between text-[10px]">
+                              <span className="text-slate-400 font-bold uppercase">Active OBs:</span>
+                              <span className="font-black text-slate-700">{t.obs.size}</span>
+                            </div>
                           </div>
-                          <div className="flex justify-between text-[10px]">
-                            <span className="text-slate-400 font-bold uppercase">Active OBs:</span>
-                            <span className="font-black text-slate-700">{t.obs.size}</span>
+
+                          <div className="space-y-1">
+                            <h5 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Brand Breakdown</h5>
+                            {Object.entries(t.brandSales).sort(([,a]:any, [,b]:any) => b - a).map(([brand, sales]: any) => (
+                              <div key={brand} className="flex justify-between items-center text-[10px]">
+                                <div className="flex items-center gap-1.5">
+                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
+                                  <span className="font-bold text-slate-600">{brand}</span>
+                                </div>
+                                <span className="font-black text-slate-800">{Math.round(sales)}</span>
+                              </div>
+                            ))}
                           </div>
                         </div>
-                      </div>
-                    </Popup>
-                  </CircleMarker>
-                ));
+                      </Popup>
+                    </CircleMarker>
+                  );
+                });
               }
             })()}
           </MapContainer>
+          
+          {/* Map Legend */}
+          <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm p-3 rounded-xl border border-slate-200 shadow-lg z-[1000] space-y-2">
+            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Brands</h4>
+            {Object.entries(CATEGORY_COLORS).map(([brand, color]) => (
+              <div key={brand} className="flex items-center gap-2">
+                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }}></div>
+                <span className="text-[9px] font-bold text-slate-600 uppercase tracking-wider">{brand}</span>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -2605,6 +2796,15 @@ const NationalDashboard = ({
             OB Performance Report (Target vs Achievement)
           </h3>
           <div className="flex items-center gap-2">
+            <select 
+              value={offDayFilter} 
+              onChange={(e) => setOffDayFilter(e.target.value)}
+              className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1 focus:outline-none focus:ring-1 focus:ring-slate-400"
+            >
+              <option value="All">All Off Days</option>
+              <option value="Sunday">Sunday</option>
+              <option value="Friday">Friday</option>
+            </select>
             <select 
               value={obReportCategoryFilter} 
               onChange={(e) => setObReportCategoryFilter(e.target.value)}
@@ -2787,8 +2987,8 @@ const NationalDashboard = ({
                 labelStyle={{ fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}
                 itemStyle={{ fontSize: '12px', fontWeight: 700, padding: '2px 0' }}
               />
-              <Legend wrapperStyle={{ fontSize: '10px', fontWeight: 700, color: '#64748b', paddingTop: '20px' }} />
-              <Bar yAxisId="left" dataKey="sales" name="Total Sales (Bags)" fill="#006994" radius={[4, 4, 0, 0]} barSize={30} />
+              <Legend verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '10px', fontWeight: 700, color: '#1e3a8a', paddingTop: '20px' }} />
+              <Bar yAxisId="left" dataKey="sales" name="Total Sales (Bags)" fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={30} />
               <Line yAxisId="right" type="monotone" dataKey="dropSize" name="Drop Size" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} />
             </BarChart>
           </ResponsiveContainer>
@@ -2966,9 +3166,21 @@ const NationalDashboard = ({
                       <Tooltip 
                         contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                       />
-                      <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', paddingBottom: '20px' }} />
-                      <Line type="monotone" dataKey="sales" stroke="#0ea5e9" strokeWidth={3} dot={{ r: 4, fill: '#0ea5e9' }} activeDot={{ r: 6 }} name="Sales (Bags)" />
-                      <Line type="monotone" dataKey="tonnage" stroke="#10b981" strokeWidth={3} dot={{ r: 4, fill: '#10b981' }} activeDot={{ r: 6 }} name="Tonnage (T)" />
+                      <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', paddingTop: '20px', color: '#1e3a8a' }} />
+                      {CATEGORIES.map((cat, idx) => {
+                        return (
+                          <Line 
+                            key={cat}
+                            type="monotone" 
+                            dataKey={cat} 
+                            stroke={CATEGORY_COLORS[cat]} 
+                            strokeWidth={2} 
+                            dot={{ r: 3, fill: CATEGORY_COLORS[cat] }} 
+                            activeDot={{ r: 5 }} 
+                            name={`${cat} (Bags)`} 
+                          />
+                        );
+                      })}
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -3080,91 +3292,6 @@ const NationalDashboard = ({
               )}
             </tbody>
           </table>
-        </div>
-      </div>
-
-      {/* Route Analysis Section (Visible when OB or Route is selected) */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card-clean p-6 bg-white space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">Monthly Sales Trend</h3>
-          <div className="h-[300px] min-h-[300px]">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={trendData}>
-                <defs>
-                  <linearGradient id="colorSales" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#0ea5e9" stopOpacity={0.1}/>
-                    <stop offset="95%" stopColor="#0ea5e9" stopOpacity={0}/>
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                <XAxis dataKey="month" fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
-                <YAxis fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
-                <Tooltip />
-                <Area type="monotone" dataKey="totalSales" stroke="#0ea5e9" fillOpacity={1} fill="url(#colorSales)" strokeWidth={3} />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
-        </div>
-
-        <div className="card-clean p-6 bg-white space-y-4">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest border-b pb-2">OB Categories</h3>
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="h-[250px] min-h-[250px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={categoryStats}
-                    cx="50%"
-                    cy="50%"
-                    innerRadius={60}
-                    outerRadius={80}
-                    paddingAngle={5}
-                    dataKey="count"
-                    nameKey="category"
-                  >
-                    {categoryStats.map((entry, index) => (
-                      <Cell key={`cell-${index}`} fill={['#10b981', '#0ea5e9', '#f59e0b', '#ef4444'][index % 4]} />
-                    ))}
-                  </Pie>
-                  <Tooltip 
-                    content={({ active, payload }) => {
-                      if (active && payload && payload.length) {
-                        const data = payload[0].payload;
-                        const total = categoryStats.reduce((a, b) => a + b.count, 0);
-                        const percentage = ((data.count / total) * 100).toFixed(1);
-                        return (
-                          <div className="bg-white p-3 rounded-xl shadow-xl border border-slate-100">
-                            <p className="text-[10px] font-black text-slate-400 uppercase mb-1">Category {data.category}</p>
-                            <p className="text-sm font-black text-slate-700">{data.count} OBs</p>
-                            <p className="text-[10px] font-bold text-emerald-600">{percentage}% of Force</p>
-                          </div>
-                        );
-                      }
-                      return null;
-                    }}
-                  />
-                  <Legend iconType="circle" wrapperStyle={{ fontSize: '10px', fontWeight: 'bold' }} />
-                </PieChart>
-              </ResponsiveContainer>
-            </div>
-            <div className="max-h-[250px] overflow-y-auto space-y-2 pr-2">
-              {categoryStats.map(cat => (
-                <div key={cat.category} className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-                  <div className="flex justify-between items-center mb-2">
-                    <span className="text-xs font-black text-slate-700">Category {cat.category}</span>
-                    <span className="text-[10px] font-bold text-slate-400">{cat.count} OBs</span>
-                  </div>
-                  <div className="flex flex-wrap gap-1">
-                    {obPerformance.filter(ob => ob.category === cat.category).map(ob => (
-                      <span key={ob.ob_contact} className="text-[8px] font-bold bg-white px-1.5 py-0.5 rounded border border-slate-200 text-slate-600">
-                        {ob.name}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
         </div>
       </div>
 
@@ -3365,9 +3492,9 @@ const NationalDashboard = ({
               <XAxis dataKey="month" fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
               <YAxis fontSize={10} tick={{ fill: '#64748b', fontWeight: 700 }} />
               <Tooltip />
-              <Legend />
+              <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', paddingTop: '10px', color: '#1e3a8a' }} />
               {brands.map((brand, idx) => (
-                <Line key={brand} type="monotone" dataKey={brand} stroke={['#0ea5e9', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899'][idx % 5]} strokeWidth={2} />
+                <Line key={brand} type="monotone" dataKey={brand} stroke={CATEGORY_COLORS[brand] || '#0ea5e9'} strokeWidth={2} />
               ))}
               <Line type="monotone" dataKey="totalSales" stroke="#0f172a" strokeWidth={3} strokeDasharray="5 5" />
             </LineChart>
@@ -3589,6 +3716,7 @@ const StatsView = ({
   dailyStatus, fetchDailyStatus, isLoadingDailyStatus,
   missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries
 }: any) => {
+  const [offDayFilter, setOffDayFilter] = useState('All');
   const currentMonth = selectedMonth || getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
@@ -3610,13 +3738,16 @@ const StatsView = ({
     }
     
     // Exclude TSM entries and Test OBs from OB reports
-    return obs.filter((ob: any) => {
+    const baseObs = obs.filter((ob: any) => {
       if (!ob) return false;
       const name = ob.name || ob.ob_name || '';
       const tsm = ob.tsm || ob.asm_tsm_name || '';
       return !isTSMEntry(name, tsm) && !name.toLowerCase().includes('test');
     });
-  }, [obAssignments, userRole, userRegion, userName, userContact]);
+
+    if (offDayFilter === 'All') return baseObs;
+    return baseObs.filter((ob: any) => (ob.off_day || 'Sunday') === offDayFilter);
+  }, [obAssignments, userRole, userRegion, userName, userContact, offDayFilter]);
 
   const filteredTSMList = useMemo(() => {
     if (userRole === 'Admin' || userRole === 'Super Admin') {
@@ -3702,9 +3833,9 @@ const StatsView = ({
       roleUsers.forEach((u: any) => {
         // Check if their team submitted data
         const hasEntry = currentMonthHistory.some((s: any) => {
-          if (roleName === 'RSM') return (s.rsm || '').toLowerCase() === (u.name || '').toLowerCase();
-          if (roleName === 'SC') return (s.sc || '').toLowerCase() === (u.name || '').toLowerCase();
-          if (roleName === 'TSM' || roleName === 'ASM') return (s.tsm || '').toLowerCase() === (u.name || '').toLowerCase();
+          if (roleName === 'RSM') return (s.rsm || '').trim().toLowerCase() === (u.name || '').trim().toLowerCase();
+          if (roleName === 'SC') return (s.sc || '').trim().toLowerCase() === (u.name || '').trim().toLowerCase();
+          if (roleName === 'TSM' || roleName === 'ASM') return (s.tsm || '').trim().toLowerCase() === (u.name || '').trim().toLowerCase();
           return false;
         });
         if (hasEntry) active++;
@@ -4148,7 +4279,19 @@ const StatsView = ({
               <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Report based on your assigned hierarchy</p>
             </div>
           </div>
-          <div className="flex gap-4">
+          <div className="flex gap-4 items-center">
+            <div className="flex flex-col items-end">
+              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Filter Off Day</span>
+              <select 
+                value={offDayFilter} 
+                onChange={(e) => setOffDayFilter(e.target.value)}
+                className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-seablue"
+              >
+                <option value="All">All Days</option>
+                <option value="Sunday">Sunday</option>
+                <option value="Friday">Friday</option>
+              </select>
+            </div>
             <div className="flex flex-col items-end bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
               <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Working Days</span>
               <span className="text-xs font-black text-seablue">{workingDaysTillDate}</span>
@@ -4165,6 +4308,7 @@ const StatsView = ({
               <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
                 <th className="px-6 py-4 whitespace-nowrap">Hierarchy</th>
                 <th className="px-6 py-4 whitespace-nowrap">OB Name</th>
+                <th className="px-6 py-4 whitespace-nowrap text-center">Off Day</th>
                 <th className="px-6 py-4 whitespace-nowrap">TSM</th>
                 <th className="px-6 py-4 text-center whitespace-nowrap">
                   OB Entries
@@ -4221,6 +4365,13 @@ const StatsView = ({
                       <td className="px-6 py-4 whitespace-nowrap">
                         <p className="text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{ob.name}</p>
                         <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{ob.contact}</p>
+                      </td>
+                      <td className="px-6 py-4 text-center whitespace-nowrap">
+                        <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest ${
+                          (ob.off_day || 'Sunday') === 'Sunday' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'
+                        }`}>
+                          {ob.off_day || 'Sunday'}
+                        </span>
                       </td>
                       <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.tsm}</td>
                       <td className="px-6 py-4 text-center">
@@ -4420,6 +4571,7 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
           town: h.town || 'Unassigned',
           obName: h.ob_name || 'Unassigned',
           obContact: obContact,
+          offDay: h.off_day || 'Sunday',
           brands: {}
         };
         CATEGORIES.forEach((cat: string) => {
@@ -4461,9 +4613,9 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
     const isCurrentMonth = selectedMonth === today.toISOString().slice(0, 7);
     const dayOfMonth = isCurrentMonth ? today.getDate() : new Date(parseInt(selectedMonth.slice(0, 4)), parseInt(selectedMonth.slice(5, 7)), 0).getDate();
     const daysInMonth = new Date(parseInt(selectedMonth.slice(0, 4)), parseInt(selectedMonth.slice(5, 7)), 0).getDate();
-    const remainingDays = Math.max(0, daysInMonth - dayOfMonth);
 
     const result: any[] = [];
+    // Define getWorkingDays manually here if config isn't available, or just ignore working day exact stats since this is just a quick table.
 
     Object.values(obs).forEach((ob: any) => {
       let obTotalTarget = 0;
@@ -4479,7 +4631,7 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
         if (brandData.target > 0 || brandData.achievement > 0) {
           const achievementPerc = brandData.target > 0 ? (brandData.achievement / brandData.target) * 100 : 0;
           const avg = dayOfMonth > 0 ? brandData.achievement / dayOfMonth : 0;
-          const rpd = remainingDays > 0 ? Math.max(0, (brandData.target - brandData.achievement) / remainingDays) : 0;
+          const rpd = (daysInMonth - dayOfMonth) > 0 ? Math.max(0, (brandData.target - brandData.achievement) / (daysInMonth - dayOfMonth)) : 0;
           const brandName = cat + (cat === 'DWB' || cat === 'Match' ? ' (Ctns)' : ' (Bags)');
 
           result.push({
@@ -4906,7 +5058,8 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
               productive: h.productive_shops,
               totalSales,
               brandSales,
-              visit_type: h.visit_type
+              visit_type: h.visit_type,
+              ...brandSales // Spread brandSales for Recharts Line dataKey
             };
           });
           setRouteAnalysisData(processed);
@@ -5199,35 +5352,23 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
                     <Tooltip 
                       contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', fontSize: '10px', fontWeight: 'bold' }}
                     />
-                    <Line 
-                      type="monotone" 
-                      dataKey="totalSales" 
-                      stroke="#1e3a8a" 
-                      strokeWidth={3} 
-                      dot={{ r: 4, fill: '#1e3a8a', strokeWidth: 2, stroke: '#fff' }}
-                      activeDot={{ r: 6, strokeWidth: 0 }}
-                      name="Total Sales"
-                    />
-                    <Line 
-                      type="monotone" 
-                      dataKey="productive" 
-                      stroke="#10b981" 
-                      strokeWidth={2} 
-                      dot={{ r: 3, fill: '#10b981', strokeWidth: 2, stroke: '#fff' }}
-                      name="Productive Shops"
-                    />
+                    <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ fontSize: '9px', fontWeight: 'bold', textTransform: 'uppercase', paddingTop: '20px', color: '#1e3a8a' }} />
+                    {CATEGORIES.map((cat, idx) => {
+                      return (
+                        <Line 
+                          key={cat}
+                          type="monotone" 
+                          dataKey={cat} 
+                          stroke={CATEGORY_COLORS[cat]} 
+                          strokeWidth={2} 
+                          dot={{ r: 3, fill: CATEGORY_COLORS[cat], strokeWidth: 1, stroke: '#fff' }} 
+                          activeDot={{ r: 5, strokeWidth: 0 }} 
+                          name={`${cat} (Bags)`} 
+                        />
+                      );
+                    })}
                   </LineChart>
                 </ResponsiveContainer>
-              </div>
-              <div className="flex justify-center gap-6 mt-2">
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-seablue"></div>
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Total Sales Trend</span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <div className="w-3 h-3 rounded-full bg-emerald-500"></div>
-                  <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Productivity Trend</span>
-                </div>
               </div>
             </div>
             <div className="overflow-x-auto">
@@ -6270,6 +6411,40 @@ export default function App() {
     const washingPowderLine = `Total Washing Powder=${mtdBrandTotals['Kite Glow']?.toFixed(0) || 0}+${mtdBrandTotals['Burq Action']?.toFixed(0) || 0}+${mtdBrandTotals['Vero']?.toFixed(0) || 0}=${mtdTotalBags.toFixed(0)}`;
     const totalMtdExecutionLine = `Total MTD Execution: ${mtdTotalBags.toFixed(2).replace(/\.00$/, '')} Bags, ${mtdTotalCtns.toFixed(2).replace(/\.00$/, '')} Ctns`;
 
+    const targets = isFromHistory 
+      ? (typeof orderData.targets === 'string' ? JSON.parse(orderData.targets) : (orderData.targets || {}))
+      : (orderData.targets || {});
+
+    const obTarget = Object.keys(targets).length > 0 ? targets : (obAssignments.find(ob => ob.contact === obContact)?.targets || {});
+    
+    const [year, monthNum, dayStr] = date.split('-');
+    const daysInMonth = new Date(parseInt(year), parseInt(monthNum), 0).getDate();
+    const currentDay = parseInt(dayStr);
+    
+    const obAssignment = obAssignments.find(ob => ob.contact === obContact);
+    const offDay = obAssignment?.off_day || 'Sunday';
+    const totalWorkingDays = getWorkingDays(parseInt(year), parseInt(monthNum) - 1, appConfig.holidays || '', daysInMonth, offDay);
+    const workingDaysTillYesterday = getWorkingDays(parseInt(year), parseInt(monthNum) - 1, appConfig.holidays || '', Math.max(0, currentDay - 1), offDay);
+    const remainingWorkingDays = Math.max(1, totalWorkingDays - workingDaysTillYesterday);
+    
+    const rpdVsAchievement = CATEGORIES.map(cat => {
+      const target = obTarget[cat] || 0;
+      const mtdTotal = mtdBrandTotals[cat] || 0;
+      
+      const catSkus = SKUS.filter(s => s.category === cat);
+      const todayAchieved = catSkus.reduce((sum, sku) => {
+        const item = items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+        const packs = (Number(item.ctn || 0) * Number(sku.unitsPerCarton)) + (Number(item.dzn || 0) * Number(sku.unitsPerDozen)) + Number(item.pks || 0);
+        return sum + (Number(sku.unitsPerCarton) > 0 ? packs / Number(sku.unitsPerCarton) : 0);
+      }, 0);
+
+      const mtdBeforeToday = mtdTotal - todayAchieved;
+      const rpdForToday = Math.max(0, (target - mtdBeforeToday) / remainingWorkingDays);
+      
+      const label = cat === 'Kite Glow' || cat === 'Burq Action' || cat === 'Vero' ? 'Bags' : 'Ctns';
+      return `${cat}: RPD ${rpdForToday.toFixed(1)} vs Achieved ${todayAchieved.toFixed(1)} ${label}`;
+    }).join('\n');
+
     // Stock Report Check for TSM
     let stockStatus = '';
     const tsmName = orderData.tsm || userName || '';
@@ -6285,8 +6460,10 @@ export default function App() {
         `*${date}*\n\n` +
         `OB: ${obName}\n` +
         `Town: ${town}\n` +
-        `Route: ${route}\n\n` +
-        `*Status: Absent*\n\n` +
+        `Route: ${route}\n` +
+        `*Status: Absent/Leave*\n\n` +
+        `*RPD vs Today Achievement:*\n${rpdVsAchievement}\n\n` +
+        `------------------\n\n` +
         `*MTD Brand Sales:*\n` +
         `${mtdBrandSales[0]}\n` +
         `${mtdBrandSales[1]}\n` +
@@ -6305,6 +6482,7 @@ export default function App() {
       `Route: ${route}\n\n` +
       `Shops T/V/P: ${totalShops}/${visitedShops}/${productiveShops}\n\n` +
       `*Brand Wise Productive:*\n${brandWiseProductive}\n\n` +
+      `*RPD vs Today Achievement:*\n${rpdVsAchievement}\n\n` +
       `------------------\n\n` +
       `*SKU Details:*\n${skuDetails || 'No SKUs sold'}\n\n` +
       `------------------\n\n` +
@@ -6489,6 +6667,15 @@ export default function App() {
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' | 'info' } | null>(null);
   const [confirmModal, setConfirmModal] = useState<{ message: string; onConfirm: () => void; onCancel: () => void } | null>(null);
   const [stockOrders, setStockOrders] = useState<Record<string, Record<string, { ctn: number }>>>({});
+  const [primaryOrdersEntry, setPrimaryOrdersEntry] = useState<Record<string, Record<string, number>>>({});
+  const [primaryRemarks, setPrimaryRemarks] = useState<Record<string, string>>({});
+  const [primarySearchQuery, setPrimarySearchQuery] = useState('');
+  const [primaryOrderHistory, setPrimaryOrderHistory] = useState<any[]>([]);
+  const [isLoadingPrimary, setIsLoadingPrimary] = useState(false);
+  const [isSubmittingPrimary, setIsSubmittingPrimary] = useState(false);
+  const [selectedPrimaryRegion, setSelectedPrimaryRegion] = useState('');
+  const [selectedPrimaryTSM, setSelectedPrimaryTSM] = useState('');
+  const [selectedPrimaryTown, setSelectedPrimaryTown] = useState('');
   const [selectedStockTSM, setSelectedStockTSM] = useState<string>(() => {
     try {
       const savedUser = localStorage.getItem('user_data');
@@ -6744,6 +6931,40 @@ export default function App() {
     }
   }, [order.obContact, order.date, token]);
 
+  // Pre-fill form if an entry already exists for the selected date, OB, and route
+  useEffect(() => {
+    if (!order.obContact || !order.date || !order.route) return;
+    
+    const fetchExisting = async () => {
+      if (order.items && Object.keys(order.items).length > 0) return; // Don't overwrite if user already started typing
+      
+      try {
+        const res = await apiFetch(`/api/orders/existing?obContact=${encodeURIComponent(order.obContact)}&date=${encodeURIComponent(order.date)}&route=${encodeURIComponent(order.route)}`);
+        if (res.ok) {
+          const existing = await res.json();
+          const parsedItems = typeof existing.order_data === 'string' ? JSON.parse(existing.order_data) : existing.order_data;
+          const parsedCategory = typeof existing.category_productive_data === 'string' ? JSON.parse(existing.category_productive_data) : existing.category_productive_data;
+          
+          setOrder(prev => ({
+            ...prev,
+            items: parsedItems || {},
+            categoryProductiveShops: parsedCategory || {},
+            visitedShops: existing.visited_shops || 0,
+            productiveShops: existing.productive_shops || 0,
+            totalShops: existing.total_shops || 50,
+            visitType: existing.visit_type || 'A'
+          }));
+          setMessage({ text: "Loaded existing entry for editing.", type: 'success' });
+          setTimeout(() => setMessage(null), 3000);
+        }
+      } catch (e) {
+        console.error("Failed to fetch existing order data", e);
+      }
+    };
+    
+    fetchExisting();
+  }, [order.obContact, order.date, order.route]);
+
   const handleTargetChange = async (category: string, value: number) => {
     setOrder(prev => ({
       ...prev,
@@ -6946,8 +7167,24 @@ export default function App() {
     
     // Duplicate check: Prevent same OB + same date + same route duplicate locally first
     const isDuplicate = nationalStats.some(s => s.ob_contact === order.obContact && s.date === order.date && s.route === order.route);
-    if (isDuplicate) {
-      setMessage({ text: `Error: Entry for OB ${order.orderBooker} on ${order.date} for route ${order.route} already exists!`, type: 'error' });
+    const isAdmin = userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director';
+    let isPastEditAllowed = isAdmin;
+    
+    if (!isAdmin && appConfig?.allow_past_editing) {
+      if (appConfig.allow_past_editing === 'true') {
+        isPastEditAllowed = true;
+      } else if (appConfig.allow_past_editing !== 'false') {
+        try {
+          const allowedUsers = JSON.parse(appConfig.allow_past_editing);
+          if (Array.isArray(allowedUsers) && allowedUsers.includes(userEmail)) {
+            isPastEditAllowed = true;
+          }
+        } catch(e) {}
+      }
+    }
+    
+    if (isDuplicate && !isPastEditAllowed) {
+      setMessage({ text: `Error: Entry for OB ${order.orderBooker} on ${order.date} for route ${order.route} already exists! Editing existing entries is disabled.`, type: 'error' });
       setTimeout(() => setMessage(null), 5000);
       return;
     }
@@ -7038,6 +7275,22 @@ export default function App() {
     } finally {
       setIsSubmitting(false);
       setTimeout(() => setMessage(null), 3000);
+    }
+  };
+
+  const fetchPrimaryOrders = async (month?: string) => {
+    setIsLoadingPrimary(true);
+    try {
+      const m = month || selectedMonth;
+      const res = await apiFetch(`/api/primary-orders?month=${m}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPrimaryOrderHistory(data);
+      }
+    } catch (err) {
+      console.error("Failed to fetch primary orders:", err);
+    } finally {
+      setIsLoadingPrimary(false);
     }
   };
 
@@ -7425,6 +7678,7 @@ export default function App() {
         requests.push(apiFetch('/api/admin/distributors'));
         requests.push(apiFetch('/api/admin/config'));
         requests.push(apiFetch(`/api/admin/hierarchy?month=${selectedMonth}`));
+        requests.push(apiFetch('/api/admin/tsm_assignments'));
       }
       
       if (isSuperAdmin) {
@@ -7446,6 +7700,8 @@ export default function App() {
         if (results[nextIdx]?.ok) setAppConfig(await results[nextIdx].json());
         nextIdx++;
         if (results[nextIdx]?.ok) setHierarchy(await results[nextIdx].json());
+        nextIdx++;
+        if (results[nextIdx]?.ok) setTsmAssignments(await results[nextIdx].json());
         nextIdx++;
       }
       
@@ -7578,6 +7834,7 @@ export default function App() {
     }
     fetchHistory();
     fetchNationalData();
+    fetchPrimaryOrders();
   }, [view, userRole, token, selectedMonth]);
 
   useEffect(() => {
@@ -8289,14 +8546,17 @@ export default function App() {
 
   if (view === 'home') {
     return (
-      <HomeHub 
-        setView={setView}
-        userRole={userRole}
-        userName={userName}
-        logo={appLogo}
-        tabs={APP_TABS}
-        userEmail={userEmail}
-      />
+      <>
+        <PWAInstallPrompt />
+        <HomeHub 
+          setView={setView}
+          userRole={userRole}
+          userName={userName}
+          logo={appLogo}
+          tabs={APP_TABS}
+          userEmail={userEmail}
+        />
+      </>
     );
   }
 
@@ -8880,7 +9140,7 @@ export default function App() {
                       contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
                       cursor={{ fill: '#f8fafc' }}
                     />
-                    <Legend verticalAlign="top" align="right" iconType="circle" wrapperStyle={{ paddingBottom: '20px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase' }} />
+                    <Legend verticalAlign="bottom" align="center" iconType="circle" wrapperStyle={{ paddingTop: '20px', fontSize: '10px', fontWeight: 'bold', textTransform: 'uppercase', color: '#1e3a8a' }} />
                     <Bar dataKey="Target" name="Brand Target" fill="#cbd5e1" radius={[4, 4, 0, 0]} />
                     <Bar dataKey="MTD" name="MTD Ach" fill="#10b981" radius={[4, 4, 0, 0]} />
                   </BarChart>
@@ -9279,6 +9539,7 @@ export default function App() {
     }
     return (
       <ErrorBoundary>
+        <PWAInstallPrompt />
         <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
         {isLoadingNational ? (
@@ -9812,6 +10073,62 @@ export default function App() {
             </div>
 
 
+
+            <div className="card-clean p-4 space-y-4">
+              <div className="flex items-center justify-between">
+                <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Data Entry Rules</h3>
+              </div>
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="text-[10px] font-bold text-slate-700">Allow Past Entries Editing</div>
+                    <div className="text-[8px] text-slate-400 mt-0.5">Select who can edit their past entries</div>
+                  </div>
+                  <select
+                    value={appConfig.allow_past_editing === 'true' ? 'ALL' : (appConfig.allow_past_editing === 'false' || !appConfig.allow_past_editing ? 'NONE' : 'SELECTED')}
+                    onChange={(e) => {
+                      if (e.target.value === 'ALL') updateConfig('allow_past_editing', 'true');
+                      else if (e.target.value === 'NONE') updateConfig('allow_past_editing', 'false');
+                      else updateConfig('allow_past_editing', '[]'); // Initialize empty array for selected
+                    }}
+                    className="text-[10px] font-bold text-slate-600 bg-white border border-slate-200 rounded px-2 py-1"
+                  >
+                    <option value="NONE">No One (Admins Only)</option>
+                    <option value="ALL">All Users</option>
+                    <option value="SELECTED">Selected Users</option>
+                  </select>
+                </div>
+                
+                {appConfig.allow_past_editing !== 'true' && appConfig.allow_past_editing !== 'false' && appConfig.allow_past_editing && (
+                  <div className="pt-2 border-t border-slate-200">
+                    <div className="text-[9px] font-bold text-slate-500 mb-2">Select Users:</div>
+                    <div className="max-h-32 overflow-y-auto space-y-1 bg-white border border-slate-200 rounded p-2">
+                      {users.filter(u => u.role === 'TSM' || u.role === 'ASM' || u.role === 'OB').map(u => {
+                        let selectedUsers: string[] = [];
+                        try { selectedUsers = JSON.parse(appConfig.allow_past_editing); } catch(e) {}
+                        const isSelected = selectedUsers.includes(u.email);
+                        return (
+                          <label key={u.id} className="flex items-center gap-2 cursor-pointer hover:bg-slate-50 p-1 rounded">
+                            <input 
+                              type="checkbox" 
+                              checked={isSelected}
+                              onChange={(e) => {
+                                let newSelected = [...selectedUsers];
+                                if (e.target.checked) newSelected.push(u.email);
+                                else newSelected = newSelected.filter(email => email !== u.email);
+                                updateConfig('allow_past_editing', JSON.stringify(newSelected));
+                              }}
+                              className="rounded border-slate-300 text-seablue focus:ring-seablue w-3 h-3"
+                            />
+                            <span className="text-[10px] font-medium text-slate-700">{u.name} ({u.email})</span>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
 
             <div className="card-clean p-4 space-y-3">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Master Bulk Upload (Single CSV)</h3>
@@ -10650,6 +10967,485 @@ export default function App() {
     );
   }
 
+  if (view === 'primary_orders') {
+    const [primarySubView, setPrimarySubView] = useState<'matrix' | 'history'>('matrix');
+
+    const handlePrimaryChange = (distributor: string, skuId: string, val: number) => {
+      setPrimaryOrdersEntry(prev => ({
+        ...prev,
+        [distributor]: {
+          ...(prev[distributor] || {}),
+          [skuId]: val
+        }
+      }));
+    };
+
+    const handleRemarksChange = (distributor: string, val: string) => {
+      setPrimaryRemarks(prev => ({
+        ...prev,
+        [distributor]: val
+      }));
+    };
+
+    const handleSubmitPrimaryOrders = async () => {
+      if (!selectedPrimaryTSM && userRole !== 'TSM' && userRole !== 'TSM Entry') {
+          // If no TSM selected and not a TSM, use current user name but confirm
+      }
+      setIsSubmittingPrimary(true);
+      try {
+        const promises = Object.entries(primaryOrdersEntry).map(([distributor, items]) => {
+          const distInfo = allDistributors.find(d => d.distributor === distributor);
+          // Calculate tonnage and gross for the submission if needed (optional since server does it too)
+          return apiFetch('/api/primary-orders', {
+            method: 'POST',
+            body: JSON.stringify({
+              date: getPSTDate(),
+              tsm: selectedPrimaryTSM || userName,
+              town: distInfo?.town || '',
+              distributor: distributor,
+              region: distInfo?.region || '',
+              items: items,
+              remarks: primaryRemarks[distributor] || '',
+              status: 'Pending'
+            })
+          });
+        });
+        await Promise.all(promises);
+        setMessage({ text: 'Primary Orders Submitted Successfully!', type: 'success' });
+        setPrimaryOrdersEntry({});
+        setPrimaryRemarks({});
+        fetchPrimaryOrders();
+        syncGoogle();
+      } catch (e) {
+        console.error(e);
+        setMessage({ text: 'Error submitting primary orders', type: 'error' });
+      } finally {
+        setIsSubmittingPrimary(false);
+        setTimeout(() => setMessage(null), 3000);
+      }
+    };
+
+    const handleUpdateStatus = async (orderId: number, status: string, remarks?: string, dispatchedDate?: string) => {
+      try {
+        const res = await apiFetch(`/api/primary-orders/${orderId}`, {
+          method: 'PATCH',
+          body: JSON.stringify({ status, remarks, dispatchedDate })
+        });
+        if (res.ok) {
+          setMessage({ text: 'Order status updated!', type: 'success' });
+          fetchPrimaryOrders();
+          syncGoogle();
+        }
+      } catch (err) {
+        console.error(err);
+        setMessage({ text: 'Failed to update order status', type: 'error' });
+      } finally {
+        setTimeout(() => setMessage(null), 3000);
+      }
+    };
+
+    const primaryFilteredDists = allDistributors.filter(d => {
+      if (selectedPrimaryRegion && d.region !== selectedPrimaryRegion) return false;
+      if (selectedPrimaryTSM && d.tsm !== selectedPrimaryTSM) return false;
+      if (selectedPrimaryTown && d.town !== selectedPrimaryTown) return false;
+      if (primarySearchQuery && !d.distributor.toLowerCase().includes(primarySearchQuery.toLowerCase()) && !d.town.toLowerCase().includes(primarySearchQuery.toLowerCase())) return false;
+      return true;
+    });
+
+    const primaryRegions = [...new Set(allDistributors.map(d => d.region))].filter(Boolean).sort();
+    const primaryTsms = [...new Set(allDistributors.map(d => d.tsm))].filter(Boolean).sort();
+    const primaryTowns = [...new Set(allDistributors.map(d => d.town))].filter(Boolean).sort();
+
+    return (
+      <div className="min-h-screen bg-slate-50 pb-40">
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        
+        <div className="p-4 space-y-6 max-w-[1600px] mx-auto">
+          <motion.div 
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50 flex flex-col md:flex-row md:items-center justify-between gap-4"
+          >
+            <div>
+              <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Primary Logistics</h1>
+              <div className="flex items-center gap-2 mt-2">
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Matrix & Fulfillment Tracking</p>
+                <div className="flex bg-slate-100 p-1 rounded-lg">
+                  <button 
+                    onClick={() => setPrimarySubView('matrix')}
+                    className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primarySubView === 'matrix' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}
+                  >
+                    Entry Matrix
+                  </button>
+                  <button 
+                    onClick={() => setPrimarySubView('history')}
+                    className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primarySubView === 'history' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}
+                  >
+                    Order History
+                  </button>
+                </div>
+              </div>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-2">
+              <button 
+                onClick={() => {
+                  const headers = ['Region', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Total Val', 'Tonnage', 'Gross (Match)'];
+                  const rows = primaryFilteredDists.map(d => {
+                    const items = primaryOrdersEntry[d.distributor] || {};
+                    let totalVal = 0;
+                    const itemsArr = SKUS.map(sku => {
+                        const qty = items[sku.id] || 0;
+                        totalVal += qty * (sku.pricePerCarton || 0);
+                        return qty;
+                    });
+                    const tonnage = calculateTonnage(items, SKUS);
+                    const gross = calculateGross(items, SKUS);
+                    return [ d.region || '', d.tsm, d.town, d.distributor, ...itemsArr, totalVal, tonnage.toFixed(3), gross ];
+                  });
+                  const csv = Papa.unparse({ fields: headers, data: rows });
+                  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                  const url = URL.createObjectURL(blob);
+                  const link = document.createElement('a');
+                  link.href = url;
+                  link.setAttribute('download', `Primary_Matrix_${getPSTDate()}.csv`);
+                  document.body.appendChild(link);
+                  link.click();
+                  document.body.removeChild(link);
+                }}
+                className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200/50 rounded-xl"
+              >
+                <Download className="w-3.5 h-3.5" />
+                Export CSV
+              </button>
+              {primarySubView === 'matrix' && (
+                <button 
+                  onClick={handleSubmitPrimaryOrders}
+                  disabled={isSubmittingPrimary || Object.keys(primaryOrdersEntry).length === 0}
+                  className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 shadow-lg shadow-seablue/20 rounded-xl"
+                >
+                  {isSubmittingPrimary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                  Finalize Submission
+                </button>
+              )}
+            </div>
+          </motion.div>
+
+          {primarySubView === 'matrix' ? (
+            <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
+              <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-wrap items-center gap-4">
+                <div className="flex items-center gap-3 mr-auto">
+                  <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
+                    <LayoutDashboard className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">Order Entry Matrix</h3>
+                    <p className="text-[9px] font-bold text-slate-400 mt-1">Populate replenishment orders for all towns</p>
+                  </div>
+                </div>
+
+                <div className="relative group">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-300 group-focus-within:text-seablue transition-colors" />
+                  <input 
+                    type="text"
+                    placeholder="Search Town or Distributor..."
+                    value={primarySearchQuery}
+                    onChange={e => setPrimarySearchQuery(e.target.value)}
+                    className="input-clean pl-10 pr-4 py-2 text-[10px] w-64 rounded-xl border-slate-100"
+                  />
+                </div>
+                
+                <div className="flex flex-wrap gap-2">
+                  <select 
+                    value={selectedPrimaryRegion} 
+                    onChange={e => setSelectedPrimaryRegion(e.target.value)}
+                    className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl border-slate-100"
+                  >
+                    <option value="">All Regions</option>
+                    {primaryRegions.map(r => <option key={r} value={r}>{r}</option>)}
+                  </select>
+                  <select 
+                    value={selectedPrimaryTSM} 
+                    onChange={e => setSelectedPrimaryTSM(e.target.value)}
+                    className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl border-slate-100"
+                  >
+                    <option value="">All TSMs</option>
+                    {primaryTsms.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                  <select 
+                    value={selectedPrimaryTown} 
+                    onChange={e => setSelectedPrimaryTown(e.target.value)}
+                    className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl border-slate-100"
+                  >
+                    <option value="">All Towns</option>
+                    {primaryTowns.map(t => <option key={t} value={t}>{t}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="overflow-x-auto scrollbar-thin max-h-[65vh]">
+                <table className="w-full text-left border-collapse min-w-[1500px]">
+                  <thead className="sticky top-0 z-20">
+                    <tr className="bg-slate-50/95 backdrop-blur-sm text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                      <th className="px-6 py-4 sticky left-0 bg-slate-50/95 z-10 border-r border-slate-100">Distributor / Town</th>
+                      {SKUS.map(sku => (
+                        <th key={sku.id} className="px-3 py-4 text-center border-r border-slate-100/50">
+                          <div className="flex flex-col items-center gap-1">
+                            <div className="w-1.5 h-1.5 rounded-full mb-1" style={{ backgroundColor: CATEGORY_COLORS[sku.category] }}></div>
+                            <span className="leading-tight whitespace-nowrap">{sku.name}</span>
+                          </div>
+                        </th>
+                      ))}
+                      <th className="px-6 py-4 text-center border-r border-slate-100 shadow-[-2px_0_5px_rgba(0,0,0,0.02)]">Remarks</th>
+                      <th className="px-6 py-4 text-right bg-slate-50">Summary</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-50">
+                    {primaryFilteredDists.map((dist, idx) => {
+                      const items = primaryOrdersEntry[dist.distributor] || {};
+                      let subVal = 0;
+                      SKUS.forEach(s => { subVal += (items[s.id] || 0) * (s.pricePerCarton || 0); });
+                      const subTons = calculateTonnage(items, SKUS);
+                      const subGross = calculateGross(items, SKUS);
+
+                      return (
+                        <tr key={`${dist.distributor}-${idx}`} className="group hover:bg-slate-50/80 transition-all">
+                          <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_10px_rgba(0,0,0,0.03)]">
+                            <p className="text-xs font-black text-slate-700 leading-none truncate max-w-[200px]">{dist.distributor}</p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="text-[9px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md font-bold uppercase tracking-tighter">{dist.town}</span>
+                              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{dist.tsm}</span>
+                            </div>
+                          </td>
+                          {SKUS.map(sku => (
+                            <td key={sku.id} className="px-2 py-3 border-r border-slate-100/30">
+                              <input 
+                                type="number" 
+                                min="0"
+                                value={primaryOrdersEntry[dist.distributor]?.[sku.id] || ''}
+                                onChange={(e) => handlePrimaryChange(dist.distributor, sku.id, parseInt(e.target.value) || 0)}
+                                className="w-full bg-slate-50/50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-black text-seablue text-center focus:bg-white focus:ring-2 focus:ring-seablue/20 outline-none transition-all placeholder:text-slate-300"
+                                placeholder="0"
+                              />
+                            </td>
+                          ))}
+                          <td className="px-4 py-3 border-r border-slate-100/30">
+                            <textarea 
+                              value={primaryRemarks[dist.distributor] || ''}
+                              onChange={(e) => handleRemarksChange(dist.distributor, e.target.value)}
+                              rows={1}
+                              className="w-full bg-slate-50/50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-600 focus:bg-white focus:ring-2 focus:ring-seablue/20 outline-none transition-all min-w-[200px]"
+                              placeholder="Any special reason..."
+                            />
+                          </td>
+                          <td className="px-6 py-4 bg-slate-50/30 whitespace-nowrap">
+                             <div className="text-right space-y-0.5">
+                               <p className="text-[10px] font-black text-slate-700">Rs {subVal.toLocaleString()}</p>
+                               <div className="flex items-center justify-end gap-2">
+                                 {subTons > 0 && <span className="text-[8px] font-bold text-emerald-600 uppercase tracking-tighter">{subTons.toFixed(3)} TO</span>}
+                                 {subGross > 0 && <span className="text-[8px] font-bold text-indigo-600 uppercase tracking-tighter">{subGross} GR</span>}
+                               </div>
+                             </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                  <tfoot className="sticky bottom-0 z-20">
+                    <tr className="bg-slate-100/95 backdrop-blur-md font-black text-seablue border-t-2 border-seablue/20">
+                      <td className="px-6 py-4 sticky left-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[2px_0_10px_rgba(0,0,0,0.05)] text-[10px] uppercase tracking-widest">Grand Totals</td>
+                      {SKUS.map(sku => {
+                        const total = primaryFilteredDists.reduce((sum, dist) => sum + (primaryOrdersEntry[dist.distributor]?.[sku.id] || 0), 0);
+                        return (
+                          <td key={sku.id} className="px-3 py-4 text-center text-xs border-r border-slate-200/30">
+                            {total > 0 ? total.toLocaleString() : '-'}
+                          </td>
+                        );
+                      })}
+                      <td colSpan={2} className="px-6 py-4 text-right">
+                         {(() => {
+                           let gVal = 0, gTons = 0, gGross = 0;
+                           primaryFilteredDists.forEach(d => {
+                             const items = primaryOrdersEntry[d.distributor] || {};
+                             SKUS.forEach(sku => {
+                               const qty = items[sku.id] || 0;
+                               gVal += qty * (sku.pricePerCarton || 0);
+                               if (sku.category === 'DWB' || ['Kite Glow', 'Burq Action', 'Vero'].includes(sku.category)) {
+                                  gTons += (qty * (sku.weight_gm_per_pack * (sku.unitsPerCarton || 0))) / 1000000;
+                               }
+                               if (sku.category === 'Match') gGross += qty * (sku.grossPerCarton || 0);
+                             });
+                           });
+                           return (
+                             <div className="flex items-baseline justify-end gap-6 h-full">
+                               <div className="text-right">
+                                 <p className="text-[8px] text-slate-400 uppercase tracking-widest mb-1">Total Value</p>
+                                 <p className="text-sm font-black text-seablue">Rs {gVal.toLocaleString()}</p>
+                               </div>
+                               <div className="text-right">
+                                 <p className="text-[8px] text-slate-400 uppercase tracking-widest mb-1">Total Tonnage</p>
+                                 <p className="text-sm font-black text-emerald-600">{gTons.toFixed(3)} <span className="text-[10px]">TO</span></p>
+                               </div>
+                               <div className="text-right">
+                                 <p className="text-[8px] text-slate-400 uppercase tracking-widest mb-1">Match Gross</p>
+                                 <p className="text-sm font-black text-indigo-600">{gGross} <span className="text-[10px]">GR</span></p>
+                               </div>
+                             </div>
+                           )
+                         })()}
+                      </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </section>
+          ) : (
+            <section className="space-y-4">
+              <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/40 p-6 border border-slate-100">
+                <div className="flex items-center justify-between mb-6">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-indigo-50 rounded-xl flex items-center justify-center text-indigo-600">
+                      <History className="w-4 h-4" />
+                    </div>
+                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Fulfillment History</h3>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400">Month Filter:</span>
+                    <input 
+                       type="month"
+                       value={selectedMonth}
+                       onChange={e => setSelectedMonth(e.target.value)}
+                       className="input-clean py-1.5 px-3 text-[10px] rounded-xl border-slate-100"
+                    />
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto scrollbar-thin">
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className="border-b border-slate-100 text-[9px] font-black text-slate-400 uppercase tracking-widest">
+                        <th className="px-4 py-4">Status / Age</th>
+                        <th className="px-4 py-4">Order Details</th>
+                        <th className="px-4 py-4">Matrix Summary</th>
+                        <th className="px-4 py-4">Logistics Updates</th>
+                        {(userRole === 'Admin' || userRole === 'Super Admin') && <th className="px-4 py-4 text-center">Actions</th>}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {primaryOrderHistory.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="py-20 text-center">
+                            <div className="flex flex-col items-center">
+                              <Package className="w-10 h-10 text-slate-200 mb-4" />
+                              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No Primary Orders Found</p>
+                            </div>
+                          </td>
+                        </tr>
+                      ) : (
+                        primaryOrderHistory.map((item) => {
+                          const age = calculateOrderAge(item.date);
+                          const isPending = item.status === 'Pending';
+                          const items = JSON.parse(item.items || '{}');
+                          const tonnage = calculateTonnage(items, SKUS);
+                          const gross = calculateGross(items, SKUS);
+
+                          return (
+                            <tr key={item.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="px-4 py-5">
+                                <div className="flex flex-col gap-2">
+                                  <span className={`text-[9px] px-3 py-1 rounded-full font-black uppercase text-center ${
+                                    item.status === 'Pending' ? 'bg-orange-100 text-orange-600' :
+                                    item.status === 'In Clearance' ? 'bg-blue-100 text-blue-600' :
+                                    item.status === 'Dispatched' ? 'bg-emerald-100 text-emerald-600' :
+                                    'bg-slate-100 text-slate-500'
+                                  }`}>
+                                    {item.status}
+                                  </span>
+                                  {isPending && (
+                                    <div className="flex items-center gap-1.5 px-2 py-1 bg-amber-50 rounded-lg border border-amber-100/50">
+                                      <Clock className="w-3 h-3 text-amber-500" />
+                                      <span className="text-[10px] font-black text-amber-600 uppercase tracking-tighter">{age} Days Age</span>
+                                    </div>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="px-4 py-5">
+                                <p className="text-[10px] font-black text-slate-700 uppercase tracking-tight">{item.distributor}</p>
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-[9px] font-bold text-slate-400 text-nowrap">{item.town}</span>
+                                  <span className="w-1 h-1 bg-slate-300 rounded-full"></span>
+                                  <span className="text-[9px] font-bold text-slate-500 uppercase">{item.date}</span>
+                                </div>
+                                <div className="flex items-center gap-1.5 mt-2 opacity-60">
+                                   <User className="w-3 h-3" />
+                                   <span className="text-[8px] font-bold uppercase">{item.tsm}</span>
+                                </div>
+                              </td>
+                              <td className="px-4 py-5">
+                                 <div className="grid grid-cols-2 gap-3 min-w-[150px]">
+                                   <div>
+                                      <p className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-0.5">Value</p>
+                                      <p className="text-[10px] font-black text-slate-800">Rs {Number(item.total_amount || 0).toLocaleString()}</p>
+                                   </div>
+                                   <div>
+                                      <p className="text-[8px] text-slate-400 uppercase font-black tracking-widest mb-0.5">Volume</p>
+                                      <p className="text-[9px] font-bold text-emerald-600 leading-tight">{tonnage.toFixed(2)} TO</p>
+                                      <p className="text-[9px] font-bold text-indigo-600 leading-tight">{gross} GR</p>
+                                   </div>
+                                 </div>
+                              </td>
+                              <td className="px-4 py-5">
+                                 <div className="space-y-2">
+                                   {item.remarks && (
+                                     <div className="flex gap-2">
+                                       <FileText className="w-3 h-3 text-slate-400 shrink-0 mt-0.5" />
+                                       <p className="text-[10px] text-slate-600 italic leading-snug line-clamp-2 max-w-[200px]">{item.remarks}</p>
+                                     </div>
+                                   )}
+                                   {item.dispatched_date && (
+                                      <div className="flex items-center gap-2 text-emerald-600">
+                                        <Truck className="w-3 h-3" />
+                                        <span className="text-[9px] font-black uppercase">Dispatched {item.dispatched_date}</span>
+                                      </div>
+                                   )}
+                                 </div>
+                              </td>
+                              {(userRole === 'Admin' || userRole === 'Super Admin') && (
+                                <td className="px-4 py-5">
+                                  <div className="flex justify-center gap-2">
+                                    <button 
+                                      onClick={() => {
+                                        const newStatus = window.prompt('Update Status (Pending, In Clearance, Dispatched, Cancelled):', item.status);
+                                        const newRemarks = window.prompt('Update Remarks:', item.remarks || '');
+                                        let dDate = item.dispatched_date;
+                                        if (newStatus === 'Dispatched') {
+                                          dDate = window.prompt('Enter Dispatch Date (YYYY-MM-DD):', getPSTDate()) || item.dispatched_date;
+                                        }
+                                        if (newStatus) handleUpdateStatus(item.id, newStatus, newRemarks || undefined, dDate);
+                                      }}
+                                      className="p-2 hover:bg-slate-100 rounded-lg text-seablue transition-colors border border-slate-100 flex items-center gap-2"
+                                    >
+                                      <Edit2 className="w-3.5 h-3.5" />
+                                      <span className="text-[8px] font-black uppercase tracking-widest">Update</span>
+                                    </button>
+                                  </div>
+                                </td>
+                              )}
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </section>
+          )}
+        </div>
+      </div>
+    );
+  }
+
   if (view === 'stocks') {
     const handleStockChange = (distributor: string, skuId: string, val: number) => {
       setStockOrders(prev => ({
@@ -11087,12 +11883,18 @@ export default function App() {
   }
 
   if (!token || token === 'null') {
-    return <Login onLogin={handleLogin} logo={appLogo} />;
+    return (
+      <>
+        <PWAInstallPrompt />
+        <Login onLogin={handleLogin} logo={appLogo} />
+      </>
+    );
   }
 
   if (view === 'entry') {
     return (
       <ErrorBoundary>
+        <PWAInstallPrompt />
         <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">

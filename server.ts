@@ -51,33 +51,33 @@ const BRAND_GROUPS: Record<string, string[]> = {
 };
 const SKUS = [
   // Kite Glow
-  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12, weight_gm_per_pack: 30, unit: 'Bags' },
-  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12, weight_gm_per_pack: 56, unit: 'Bags' },
-  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 165, unit: 'Bags' },
-  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12, weight_gm_per_pack: 350, unit: 'Bags' },
-  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0, weight_gm_per_pack: 500, unit: 'Bags' },
-  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0, weight_gm_per_pack: 1000, unit: 'Bags' },
-  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0, weight_gm_per_pack: 2000, unit: 'Bags' },
+  { id: "kg-10", name: "Kite Rs 10", category: "Kite Glow", unitsPerCarton: 144, unitsPerDozen: 12, pricePerCarton: 1440, weight_gm_per_pack: 30, unit: 'Bags' },
+  { id: "kg-20", name: "Kite Rs 20", category: "Kite Glow", unitsPerCarton: 96, unitsPerDozen: 12, pricePerCarton: 1920, weight_gm_per_pack: 56, unit: 'Bags' },
+  { id: "kg-50", name: "Kite Rs 50", category: "Kite Glow", unitsPerCarton: 48, unitsPerDozen: 12, pricePerCarton: 2400, weight_gm_per_pack: 165, unit: 'Bags' },
+  { id: "kg-99", name: "Kite Rs 99", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 12, pricePerCarton: 2376, weight_gm_per_pack: 350, unit: 'Bags' },
+  { id: "kg-05kg", name: "Kite 0.5kg", category: "Kite Glow", unitsPerCarton: 24, unitsPerDozen: 0, pricePerCarton: 3600, weight_gm_per_pack: 500, unit: 'Bags' },
+  { id: "kg-1kg", name: "Kite 1kg", category: "Kite Glow", unitsPerCarton: 12, unitsPerDozen: 0, pricePerCarton: 3600, weight_gm_per_pack: 1000, unit: 'Bags' },
+  { id: "kg-2kg", name: "Kite 2kg", category: "Kite Glow", unitsPerCarton: 6, unitsPerDozen: 0, pricePerCarton: 3600, weight_gm_per_pack: 2000, unit: 'Bags' },
   // Burq Action
-  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12, weight_gm_per_pack: 40, unit: 'Bags' },
-  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12, weight_gm_per_pack: 75, unit: 'Bags' },
-  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 215, unit: 'Bags' },
-  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12, weight_gm_per_pack: 430, unit: 'Bags' },
-  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0, weight_gm_per_pack: 1000, unit: 'Bags' },
-  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0, weight_gm_per_pack: 2300, unit: 'Bags' },
+  { id: "ba-10", name: "Burq Rs 10", category: "Burq Action", unitsPerCarton: 204, unitsPerDozen: 12, pricePerCarton: 2040, weight_gm_per_pack: 40, unit: 'Bags' },
+  { id: "ba-20", name: "Burq Rs 20", category: "Burq Action", unitsPerCarton: 96, unitsPerDozen: 12, pricePerCarton: 1920, weight_gm_per_pack: 75, unit: 'Bags' },
+  { id: "ba-50", name: "Burq Rs 50", category: "Burq Action", unitsPerCarton: 48, unitsPerDozen: 12, pricePerCarton: 2400, weight_gm_per_pack: 215, unit: 'Bags' },
+  { id: "ba-99", name: "Burq Rs 99", category: "Burq Action", unitsPerCarton: 24, unitsPerDozen: 12, pricePerCarton: 2376, weight_gm_per_pack: 430, unit: 'Bags' },
+  { id: "ba-1kg", name: "Burq 1kg", category: "Burq Action", unitsPerCarton: 12, unitsPerDozen: 0, pricePerCarton: 3600, weight_gm_per_pack: 1000, unit: 'Bags' },
+  { id: "ba-23kg", name: "Burq 2.3kg", category: "Burq Action", unitsPerCarton: 6, unitsPerDozen: 0, pricePerCarton: 3600, weight_gm_per_pack: 2300, unit: 'Bags' },
   // Vero
-  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0, weight_gm_per_pack: 5000, unit: 'Bags' },
-  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0, weight_gm_per_pack: 20000, unit: 'Bags' },
+  { id: "v-5kg", name: "Vero 5kg", category: "Vero", unitsPerCarton: 4, unitsPerDozen: 0, pricePerCarton: 4000, weight_gm_per_pack: 5000, unit: 'Bags' },
+  { id: "v-20kg", name: "Vero 20kg", category: "Vero", unitsPerCarton: 1, unitsPerDozen: 0, pricePerCarton: 16000, weight_gm_per_pack: 20000, unit: 'Bags' },
   // DWB
-  { id: "dwb-reg", name: "Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
-  { id: "dwb-large", name: "Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 100, unit: 'Ctns' },
-  { id: "dwb-long", name: "Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 210, unit: 'Ctns' },
-  { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, weight_gm_per_pack: 240, unit: 'Ctns' },
+  { id: "dwb-reg", name: "Regular", category: "DWB", unitsPerCarton: 48, unitsPerDozen: 12, pricePerCarton: 4800, weight_gm_per_pack: 50, unit: 'Ctns' },
+  { id: "dwb-large", name: "Large", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400, weight_gm_per_pack: 100, unit: 'Ctns' },
+  { id: "dwb-long", name: "Long Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400, weight_gm_per_pack: 210, unit: 'Ctns' },
+  { id: "dwb-super", name: "Super Bar", category: "DWB", unitsPerCarton: 36, unitsPerDozen: 12, pricePerCarton: 5400, weight_gm_per_pack: 240, unit: 'Ctns' },
   // Match
-  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
-  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
-  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
-  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns' },
+  { id: "m-large", name: "Large", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-classic", name: "Classic", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
+  { id: "m-regular", name: "Regular", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-slim", name: "Slim", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
 ];
 
 function calculateAchievement(orderData: any) {
@@ -228,7 +228,33 @@ function initDB(retryCount = 0) {
         key TEXT PRIMARY KEY,
         value TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS primary_orders (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        date TEXT,
+        distributor TEXT,
+        town TEXT,
+        tsm TEXT,
+        region TEXT,
+        items TEXT, -- JSON string
+        total_amount REAL,
+        status TEXT DEFAULT 'Pending',
+        invoice_number TEXT,
+        remarks TEXT,
+        dispatched_date TEXT,
+        submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
     `);
+
+    // Check for missing columns in primary_orders (for migrations)
+    const primaryOrdersCols = db.prepare("PRAGMA table_info(primary_orders)").all();
+    const colNames = primaryOrdersCols.map((c: any) => c.name);
+    if (!colNames.includes('remarks')) {
+      db.exec("ALTER TABLE primary_orders ADD COLUMN remarks TEXT");
+    }
+    if (!colNames.includes('dispatched_date')) {
+      db.exec("ALTER TABLE primary_orders ADD COLUMN dispatched_date TEXT");
+    }
 
     // Ensure all submitted_orders have the correct month based on their date
     try {
@@ -1322,6 +1348,7 @@ async function startServer() {
       "TSM_Performance": ['Month', 'Region', 'RSM', 'TSM Name', 'Total OBs', 'Active OBs', 'Target', 'Achievement', 'Achievement %', 'RPD', 'Avg Sales', 'Projected Sales', 'Productivity %'],
       "Product_Config": ['SKU ID', 'SKU Name', 'Category', 'Units Per Carton', 'Units Per Dozen', 'Weight (Kg)'],
       "Users": ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town'],
+      "Primary_Orders": ['Order ID', 'Order Date', 'Region', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Total Val', 'Tonnage', 'Gross (Match)', 'Status', 'Remarks', 'Dispatched Date', 'Submitted At'],
       "Error_Log": ['Timestamp', 'Error Message', 'Context', 'User', 'Role']
     };
 
@@ -2776,6 +2803,95 @@ async function startServer() {
     }
   });
 
+  app.post("/api/primary-orders", authenticateToken, (req: any, res) => {
+    try {
+      const { date, tsm, town, distributor, region, items, totalAmount, invoiceNumber, status, remarks, dispatchedDate } = req.body;
+      if (!items) return res.status(400).json({ error: "Missing order items" });
+
+      const info = db.prepare(`
+        INSERT INTO primary_orders (date, tsm, town, distributor, region, items, total_amount, invoice_number, status, remarks, dispatched_date, submitted_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        date || getPSTDate(),
+        tsm || '',
+        town || '',
+        distributor || '',
+        region || '',
+        JSON.stringify(items),
+        totalAmount || 0,
+        invoiceNumber || '',
+        status || 'Pending',
+        remarks || '',
+        dispatchedDate || '',
+        getPSTTimestamp()
+      );
+
+      logAction(req.user.id.toString(), req.user.name, req.user.role, "SUBMIT_PRIMARY_ORDER", { distributor, date });
+
+      res.json({ success: true, message: "Primary order submitted successfully", id: info.lastInsertRowid });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to submit primary order" });
+    }
+  });
+
+  app.patch("/api/primary-orders/:id", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req: any, res) => {
+    try {
+      const { id } = req.params;
+      const { status, remarks, dispatchedDate, invoiceNumber } = req.body;
+      
+      const updates: string[] = [];
+      const params: any[] = [];
+
+      if (status !== undefined) { updates.push("status = ?"); params.push(status); }
+      if (remarks !== undefined) { updates.push("remarks = ?"); params.push(remarks); }
+      if (dispatchedDate !== undefined) { updates.push("dispatched_date = ?"); params.push(dispatchedDate); }
+      if (invoiceNumber !== undefined) { updates.push("invoice_number = ?"); params.push(invoiceNumber); }
+
+      if (updates.length === 0) return res.status(400).json({ error: "No fields to update" });
+
+      params.push(id);
+      db.prepare(`UPDATE primary_orders SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+      logAction(req.user.id.toString(), req.user.name, req.user.role, "UPDATE_PRIMARY_ORDER", { id, status });
+
+      res.json({ success: true, message: "Primary order updated successfully" });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to update primary order" });
+    }
+  });
+
+  app.get("/api/primary-orders", authenticateToken, (req: any, res) => {
+    try {
+      const { month } = req.query;
+      const visibleDists = getVisibleDistributors(req.user);
+
+      let query = "SELECT * FROM primary_orders WHERE 1=1";
+      const params: any[] = [];
+
+      if (month) {
+        query += " AND date LIKE ?";
+        params.push(`${month}%`);
+      }
+
+      if (visibleDists.length > 0) {
+        const placeholders = visibleDists.map(() => '?').join(',');
+        query += ` AND distributor IN (${placeholders})`;
+        params.push(...visibleDists);
+      } else if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin' && req.user.role !== 'Director') {
+        return res.json([]);
+      }
+
+      query += " ORDER BY date DESC, submitted_at DESC";
+      const rows = db.prepare(query).all(...params);
+      res.json(rows);
+    } catch (err) {
+      console.error("Fetch Primary Orders Error:", err);
+      res.status(500).json({ error: "Failed to fetch primary orders" });
+    }
+  });
+
   app.get("/api/check-duplicate", authenticateToken, (req, res) => {
     const { date, ob_contact } = req.query;
     try {
@@ -2832,6 +2948,22 @@ async function startServer() {
     }
   });
 
+  app.get('/api/orders/existing', authenticateToken, (req: any, res: any) => {
+    const { obContact, date, route } = req.query;
+    if (!obContact || !date || !route) return res.status(400).json({ error: "Missing parameters" });
+    
+    try {
+      const existing = db.prepare("SELECT * FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(obContact, date, route);
+      if (existing) {
+        res.json(existing);
+      } else {
+        res.status(404).json({ error: "Not found" });
+      }
+    } catch (err) {
+      res.status(500).json({ error: "Server error" });
+    }
+  });
+
   app.post("/api/submit", authenticateToken, async (req: any, res) => {
     try {
       const { data } = req.body;
@@ -2870,53 +3002,96 @@ async function startServer() {
       // Duplicate check: Prevent same OB + same date + same route duplicate
       const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(finalObContact, orderDate, finalRoute) as any;
       
-      if (existing) {
-        return res.status(400).json({ error: `Entry for OB ${orderBooker || finalObContact} on ${orderDate} for route ${finalRoute} already exists!` });
+      const allowPastEditingRow = db.prepare("SELECT value FROM app_config WHERE key = 'allow_past_editing'").get() as any;
+      const isAdmin = role === 'Admin' || role === 'Super Admin' || role === 'Director';
+      let isPastEditAllowed = isAdmin;
+      
+      if (!isAdmin && allowPastEditingRow) {
+        if (allowPastEditingRow.value === 'true') {
+          isPastEditAllowed = true;
+        } else if (allowPastEditingRow.value !== 'false') {
+          try {
+            const allowedUsers = JSON.parse(allowPastEditingRow.value);
+            if (Array.isArray(allowedUsers) && allowedUsers.includes(req.user.email)) {
+              isPastEditAllowed = true;
+            }
+          } catch(e) {}
+        }
+      }
+      
+      if (existing && !isPastEditAllowed) {
+        return res.status(400).json({ error: `Entry for OB ${orderBooker || finalObContact} on ${orderDate} for route ${finalRoute} already exists. Editing existing entries is not permitted.` });
       }
 
       const submittedAt = getPSTTimestamp();
       
-      const info = db.prepare(`
-        INSERT OR REPLACE INTO submitted_orders (
-          date, month, tsm, town, distributor, order_booker, ob_contact, route, 
-          zone, region, nsm, rsm, sc, director,
-          total_shops, visited_shops, productive_shops, 
-          category_productive_data, order_data, targets_data,
-          latitude, longitude, accuracy, visit_type, submitted_at
-        )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        orderDate,
-        orderMonth,
-        tsm || '', 
-        town || '', 
-        distributor || '', 
-        orderBooker || '', 
-        finalObContact, 
-        finalRoute, 
-        zone || '',
-        region || '',
-        nsm || '',
-        rsm || '',
-        sc || '',
-        director || '',
-        totalShops || 0, 
-        visitedShops || 0, 
-        productiveShops || 0, 
-        JSON.stringify(categoryProductiveShops || {}), 
-        JSON.stringify(items || {}), 
-        JSON.stringify(targets || {}),
-        latitude || null, 
-        longitude || null, 
-        accuracy || null,
-        finalVisitType,
-        submittedAt
-      );
+      let info;
+      let insertedId;
 
-      logAction(req.user.id.toString(), req.user.name, req.user.role, "SUBMIT_ORDER", { obContact: finalObContact, date: orderDate, route: finalRoute });
+      if (existing) {
+        info = db.prepare(`
+          UPDATE submitted_orders SET
+            tsm = ?, town = ?, distributor = ?, order_booker = ?, 
+            zone = ?, region = ?, nsm = ?, rsm = ?, sc = ?, director = ?,
+            total_shops = ?, visited_shops = ?, productive_shops = ?, 
+            category_productive_data = ?, order_data = ?, targets_data = ?,
+            latitude = ?, longitude = ?, accuracy = ?, visit_type = ?, submitted_at = ?
+          WHERE id = ?
+        `).run(
+          tsm || '', town || '', distributor || '', orderBooker || '', 
+          zone || '', region || '', nsm || '', rsm || '', sc || '', director || '',
+          totalShops || 0, visitedShops || 0, productiveShops || 0, 
+          JSON.stringify(categoryProductiveShops || {}), 
+          JSON.stringify(items || {}), 
+          JSON.stringify(targets || {}),
+          latitude || null, longitude || null, accuracy || null, finalVisitType, submittedAt,
+          existing.id
+        );
+        insertedId = existing.id;
+      } else {
+        info = db.prepare(`
+          INSERT INTO submitted_orders (
+            date, month, tsm, town, distributor, order_booker, ob_contact, route, 
+            zone, region, nsm, rsm, sc, director,
+            total_shops, visited_shops, productive_shops, 
+            category_productive_data, order_data, targets_data,
+            latitude, longitude, accuracy, visit_type, submitted_at
+          )
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          orderDate,
+          orderMonth,
+          tsm || '', 
+          town || '', 
+          distributor || '', 
+          orderBooker || '', 
+          finalObContact, 
+          finalRoute, 
+          zone || '',
+          region || '',
+          nsm || '',
+          rsm || '',
+          sc || '',
+          director || '',
+          totalShops || 0, 
+          visitedShops || 0, 
+          productiveShops || 0, 
+          JSON.stringify(categoryProductiveShops || {}), 
+          JSON.stringify(items || {}), 
+          JSON.stringify(targets || {}),
+          latitude || null, 
+          longitude || null, 
+          accuracy || null,
+          finalVisitType,
+          submittedAt
+        );
+        insertedId = info.lastInsertRowid;
+      }
+
+      logAction(req.user.id.toString(), req.user.name, req.user.role, existing ? "UPDATE_ORDER" : "SUBMIT_ORDER", { obContact: finalObContact, date: orderDate, route: finalRoute });
 
       // Async sync to Google Sheets
-      const newOrder = db.prepare("SELECT * FROM submitted_orders WHERE id = ?").get(info.lastInsertRowid);
+      const newOrder = db.prepare("SELECT * FROM submitted_orders WHERE id = ?").get(insertedId);
       appendToSheet(newOrder).catch(console.error);
       
       res.json({ success: true, message: "Order submitted successfully" });
@@ -3366,11 +3541,26 @@ async function startServer() {
   async function pullTsmAssignments(sheets: any, spreadsheetId: string) {
     try {
       console.log(`Pulling TSM Assignments from ${spreadsheetId}...`);
-      const response = await sheets.spreadsheets.values.get({
-        spreadsheetId,
-        range: `TSM_Assignments!A1:Z1000`,
-      });
-      const rows = response.data.values;
+      
+      const sheetNamesToTry = ['TSM_Assignments', 'tsm_assignments', 'tsm_assistment', 'TSM_Assistment'];
+      let rows: any[] | undefined = undefined;
+      
+      for (const sheetName of sheetNamesToTry) {
+        try {
+          const response = await sheets.spreadsheets.values.get({
+            spreadsheetId,
+            range: `${sheetName}!A1:Z1000`,
+          });
+          if (response.data.values && response.data.values.length > 0) {
+            rows = response.data.values;
+            console.log(`Successfully pulled from sheet: ${sheetName}`);
+            break;
+          }
+        } catch (e: any) {
+          // Ignore error and try next sheet name
+        }
+      }
+
       if (!rows || rows.length < 2) return { success: false };
 
       const headers = rows[0];
@@ -3720,6 +3910,52 @@ async function startServer() {
     }
   }
 
+  async function pushPrimaryOrders(sheets: any, spreadsheetId: string) {
+    try {
+      const orders = db.prepare("SELECT * FROM primary_orders ORDER BY date DESC, submitted_at DESC").all() as any[];
+      const headers = ['Order ID', 'Order Date', 'Region', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Total Val', 'Tonnage', 'Gross (Match)', 'Status', 'Remarks', 'Dispatched Date', 'Submitted At'];
+      
+      const rows = orders.map(o => {
+        const items = JSON.parse(o.items || '{}');
+        const skuCells = SKUS.map(s => items[s.id] || 0);
+        
+        let totalVal = 0;
+        let totalTonnage = 0;
+        let totalGross = 0;
+        
+        SKUS.forEach(sku => {
+          const qty = items[sku.id] || 0;
+          if (sku.pricePerCarton) totalVal += qty * sku.pricePerCarton;
+          
+          if (sku.category === 'DWB' || ['Kite Glow', 'Burq Action', 'Vero'].includes(sku.category)) {
+             const weightPerCtnKg = (sku.weight_gm_per_pack * (sku.unitsPerCarton || 0)) / 1000;
+             totalTonnage += (qty * weightPerCtnKg) / 1000;
+          }
+          
+          if (sku.category === 'Match') {
+            totalGross += qty * (sku.grossPerCarton || 0);
+          }
+        });
+
+        return [
+          o.id, o.date, o.region, o.tsm, o.town, o.distributor,
+          ...skuCells,
+          totalVal, totalTonnage, totalGross,
+          o.status, o.remarks, o.dispatched_date, o.submitted_at
+        ];
+      });
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "Primary_Orders!A1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [headers, ...rows] },
+      });
+    } catch (e) {
+      console.error("pushPrimaryOrders Error:", e);
+    }
+  }
+
   async function pullSalesHistory(sheets: any, spreadsheetId: string, ignoreLock = false) {
     try {
       console.log(`Pulling Sales History from ${spreadsheetId}... (ignoreLock: ${ignoreLock})`);
@@ -3977,6 +4213,9 @@ async function startServer() {
 
     // 7. Refresh summary sheets
     await refreshSummarySheets(sheets, spreadsheetId);
+
+    // 8. Push Primary Orders
+    await pushPrimaryOrders(sheets, spreadsheetId);
 
     // Update Last Sync
     const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });

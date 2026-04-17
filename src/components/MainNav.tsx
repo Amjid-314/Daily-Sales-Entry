@@ -15,7 +15,8 @@ import {
   Maximize2,
   Minimize2,
   Home,
-  ClipboardList
+  ClipboardList,
+  ShoppingCart
 } from 'lucide-react';
 
 const SUPER_ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
@@ -30,6 +31,7 @@ export const APP_TABS = [
   { id: 'missing_entries', label: 'Missing Entries', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'] },
   { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'stocks', label: 'Stocks', icon: Box, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
+  { id: 'primary_orders', label: 'Primary Order', icon: ShoppingCart, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'admin', label: 'Admin', icon: ShieldCheck, roles: ['Super Admin', 'Admin'] },
   { id: 'help', label: 'Help', icon: HelpCircle, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
 ];
@@ -104,35 +106,36 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
         {/* Back to Home Button */}
         <button
           onClick={() => setView('home')}
-          className="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all border border-slate-200 group"
+          className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-3 py-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 rounded-xl transition-all border border-slate-200 group"
+          title="Back to Menu"
         >
           <Home className="w-4 h-4 group-hover:scale-110 transition-transform" />
-          <span className="text-[10px] font-black uppercase tracking-widest">Back to Menu</span>
+          <span className="hidden sm:inline text-[10px] font-black uppercase tracking-widest">Back to Menu</span>
         </button>
       </div>
 
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-1 sm:gap-2">
         {activeTab && (
-          <div className="flex items-center gap-2 px-4 py-2 bg-seablue/5 border border-seablue/10 rounded-xl">
+          <div className="flex items-center gap-1.5 sm:gap-2 px-2 sm:px-4 py-1.5 sm:py-2 bg-seablue/5 border border-seablue/10 rounded-xl">
             <activeTab.icon className="w-4 h-4 text-seablue" />
-            <span className="text-xs font-black text-seablue uppercase tracking-widest">{activeTab.label}</span>
+            <span className="hidden sm:inline text-xs font-black text-seablue uppercase tracking-widest">{activeTab.label}</span>
           </div>
         )}
 
         <button 
           onClick={toggleFullscreen}
-          className="p-2 text-slate-400 hover:text-seablue transition-all rounded-xl hover:bg-seablue/5"
+          className="p-1.5 sm:p-2 text-slate-400 hover:text-seablue transition-all rounded-xl hover:bg-seablue/5"
           title={isFullscreen ? "Exit Fullscreen" : "Enter Fullscreen"}
         >
-          {isFullscreen ? <Minimize2 className="w-5 h-5" /> : <Maximize2 className="w-5 h-5" />}
+          {isFullscreen ? <Minimize2 className="w-4 h-4 sm:w-5 sm:h-5" /> : <Maximize2 className="w-4 h-4 sm:w-5 sm:h-5" />}
         </button>
 
         <button 
           onClick={onLogout} 
-          className="p-2 text-slate-400 hover:text-rose-500 transition-all rounded-xl hover:bg-rose-50"
+          className="p-1.5 sm:p-2 text-slate-400 hover:text-rose-500 transition-all rounded-xl hover:bg-rose-50"
           title="Logout"
         >
-          <LogOut className="w-5 h-5" />
+          <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
         </button>
       </div>
     </nav>

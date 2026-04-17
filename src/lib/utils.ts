@@ -36,6 +36,43 @@ export const getWorkingDays = (year: number, month: number, holidaysStr: string,
   return workingDays;
 };
 
+export const calculateOrderAge = (orderDate: string) => {
+  if (!orderDate) return 0;
+  const start = new Date(orderDate);
+  const end = new Date();
+  let days = 0;
+  let current = new Date(start);
+  // Normalize current to start of day
+  current.setHours(0, 0, 0, 0);
+  end.setHours(0, 0, 0, 0);
+
+  while (current <= end) {
+    if (current.getDay() !== 0) { // 0 is Sunday
+      days++;
+    }
+    current.setDate(current.getDate() + 1);
+  }
+  return days > 0 ? days - 1 : 0; // -1 because current day shouldn't count as a full day "passed" if we just ordered
+};
+
+export const calculateTonnage = (items: Record<string, number>, SKUS: any[]) => {
+  return Object.entries(items).reduce((total, [skuId, qty]) => {
+    const sku = SKUS.find(s => s.id === skuId);
+    if (!sku) return total;
+    if (sku.category !== 'DWB' && !['Kite Glow', 'Burq Action', 'Vero'].includes(sku.category)) return total;
+    const weightPerCtnKg = (sku.weight_gm_per_pack * (sku.unitsPerCarton || 0)) / 1000;
+    return total + (qty * weightPerCtnKg) / 1000; // Tons
+  }, 0);
+};
+
+export const calculateGross = (items: Record<string, number>, SKUS: any[]) => {
+  return Object.entries(items).reduce((total, [skuId, qty]) => {
+    const sku = SKUS.find(s => s.id === skuId);
+    if (!sku || sku.category !== 'Match') return total;
+    return total + (qty * (sku.grossPerCarton || 0));
+  }, 0);
+};
+
 export const isTSMEntry = (obName: string, tsmName: string) => {
   if (!obName || !tsmName) return false;
   const obNameClean = obName.replace(/^\*TSM\s*-\s*/i, '').trim().toLowerCase();
