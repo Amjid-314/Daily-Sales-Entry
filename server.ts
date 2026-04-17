@@ -863,9 +863,10 @@ async function startServer() {
       'Date', 'Month', 'Director', 'NSM', 'RSM', 'SC', 'ASM/TSM', 'Town', 'Distributor', 'OB Name', 'OB Contact', 'Route', 
       'Zone', 'Region',
       'Total Shops', 'Visited Shops', 'Productive Shops', 'Visit Type',
-      ...SKUS.map(sku => `${sku.name} (${sku.category})`),
-      ...CATEGORIES.map(cat => `${cat} Prod`),
+      ...SKUS.map(sku => sku.name),
+      'Kite Glow Tonnage (Kg)', 'Burq Action Tonnage (Kg)', 'Vero Tonnage (Kg)', 'DWB Tonnage (Kg)', 'Match Gross',
       'Total Tonnage (Kg)',
+      'Kite Glow Prod', 'Burq Action Prod', 'Vero Prod', 'DWB Prod', 'Match Prod',
       'Submitted At', 'Latitude', 'Longitude', 'Accuracy'
     ];
   }
@@ -894,20 +895,31 @@ async function startServer() {
     const month = order.month || (order.date ? order.date.slice(0, 7) : '');
 
     let totalTonnageKg = 0;
+    const catStats: Record<string, number> = {
+      "Kite Glow": 0, "Burq Action": 0, "Vero": 0, "DWB": 0, "Match": 0
+    };
+
     const skuColumns = SKUS.map(sku => {
       if (isAbsent) return 0;
       const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-      const totalPacks = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+      const totalPacks = (Number(item.ctn || 0) * (sku.unitsPerCarton || 1)) + (Number(item.dzn || 0) * (sku.unitsPerDozen || 1)) + Number(item.pks || 0);
       const ctns = sku.unitsPerCarton > 0 ? totalPacks / sku.unitsPerCarton : 0;
       
-      // Weight calculation: (Total Packs * Weight per Pack in gm) / 1000 = Kg
-      // Tonnage: Include only washing powder + DWB ... Exclude Match
-      if (sku.category !== 'Match') {
+      const isWashingPowder = ["Kite Glow", "Burq Action", "Vero"].includes(sku.category);
+      
+      // Update Category Tonnage/Gross
+      if (sku.category === 'Match') {
+        catStats["Match"] += ctns * (sku.grossPerCarton || 0);
+      } else {
         const weightKg = (totalPacks * (sku.weight_gm_per_pack || 0)) / 1000;
         totalTonnageKg += weightKg;
+        if (catStats.hasOwnProperty(sku.category)) {
+          catStats[sku.category] += weightKg;
+        }
       }
       
-      return ctns;
+      // Return Bags for Washing Powder, Ctns for others
+      return isWashingPowder ? totalPacks : ctns;
     });
 
     return [
@@ -918,8 +930,19 @@ async function startServer() {
       isAbsent ? 0 : order.productive_shops, 
       visitTypeLabel,
       ...skuColumns,
-      ...CATEGORIES.map(cat => isAbsent ? 0 : (catProdData[cat] || 0)),
+      // Tonnage/Gross Columns (BA-BF)
+      catStats["Kite Glow"].toFixed(2),
+      catStats["Burq Action"].toFixed(2),
+      catStats["Vero"].toFixed(2),
+      catStats["DWB"].toFixed(2),
+      catStats["Match"].toFixed(2),
       totalTonnageKg.toFixed(2),
+      // Productivity Columns
+      isAbsent ? 0 : (catProdData["Kite Glow"] || 0),
+      isAbsent ? 0 : (catProdData["Burq Action"] || 0),
+      isAbsent ? 0 : (catProdData["Vero"] || 0),
+      isAbsent ? 0 : (catProdData["DWB"] || 0),
+      isAbsent ? 0 : (catProdData["Match"] || 0),
       order.submitted_at, order.latitude || '', order.longitude || '', order.accuracy || ''
     ];
   }
@@ -1869,6 +1892,9 @@ async function startServer() {
       // Also refresh summary sheets
       await refreshSummarySheets(sheets, spreadsheetId);
       
+      // Also push primary orders to ensure they align with new SKUs
+      await pushPrimaryOrders(sheets, spreadsheetId);
+      
       return rows.length;
     } catch (err) {
       console.error("Repush Sales Data Error:", err);
@@ -2277,11 +2303,12 @@ async function startServer() {
       let obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       
       // Filter based on role
-      if (role === 'TSM' || role === 'ASM' || role === 'TSM Entry') {
-        const trimmedName = (name || '').trim().toLowerCase();
+      if (role === 'TSM' || role === 'ASM' || role === 'TSM Entry' || role === 'SC') {
+        const trimmedName = (name || '').trim().toLowerCase().replace(/\s+/g, '');
         obs = obs.filter((ob: any) => {
-          const tsmName = (ob.tsm || '').trim().toLowerCase();
-          return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
+          const tsmName = (ob.tsm || '').trim().toLowerCase().replace(/\s+/g, '');
+          // Robust matching: exact match after removing spaces, or one includes the other
+          return tsmName === trimmedName || (tsmName.length > 3 && (tsmName.includes(trimmedName) || trimmedName.includes(tsmName)));
         });
       } else if (role === 'OB') {
         const trimmedContact = (contact || '').trim().toLowerCase();
@@ -2434,14 +2461,12 @@ async function startServer() {
           dists = [];
         }
       } else if (role === 'TSM' || role === 'ASM' || role === 'TSM Entry') {
-        
-        const trimmedName = (name || '').trim().toLowerCase();
+        const trimmedName = (name || '').trim().toLowerCase().replace(/\s+/g, '');
         const allDists = db.prepare("SELECT * FROM distributors").all();
         dists = allDists.filter((d: any) => {
-          const tsmName = (d.tsm || '').trim().toLowerCase();
-          return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
+          const tsmName = (d.tsm || '').trim().toLowerCase().replace(/\s+/g, '');
+          return tsmName === trimmedName || (tsmName.length > 3 && (tsmName.includes(trimmedName) || trimmedName.includes(tsmName)));
         });
-
       } else {
         dists = [];
       }
@@ -4073,7 +4098,14 @@ async function startServer() {
           SKUS.forEach(sku => {
             const val = parseFloat(getVal([`${sku.name} (${sku.category})`, sku.name])) || 0;
             if (val > 0) {
-              orderData[sku.id] = { ctn: val, dzn: 0, pks: 0 };
+              const isWashingPowder = ["Kite Glow", "Burq Action", "Vero"].includes(sku.category);
+              if (isWashingPowder) {
+                // For Washing Powder, val is total packs (bags)
+                orderData[sku.id] = { ctn: 0, dzn: 0, pks: val };
+              } else {
+                // For DWB/Match, val is cartons
+                orderData[sku.id] = { ctn: val, dzn: 0, pks: 0 };
+              }
             }
           });
 

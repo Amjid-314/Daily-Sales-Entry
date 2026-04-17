@@ -8424,17 +8424,17 @@ export default function App() {
       obs = obs.filter(ob => (ob.nsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
     } else if (userRole === 'RSM' || userRole === 'SC') {
       obs = obs.filter(ob => (ob.region || '').trim().toLowerCase() === (userRegion || '').trim().toLowerCase() || (ob.rsm || '').trim().toLowerCase() === (userName || '').trim().toLowerCase() || (ob.sc || '').trim().toLowerCase() === (userName || '').trim().toLowerCase());
-    } else if ((userRole === 'TSM' || userRole === 'ASM')) {
-      const trimmedName = (userName || '').trim().toLowerCase();
+    } else if ((userRole === 'TSM' || userRole === 'ASM' || userRole === 'TSM ENTRY' || userRole === 'SC')) {
+      const searchName = (userName || '').trim().toLowerCase().replace(/\s+/g, '');
       obs = obs.filter(ob => {
-        const tsmName = (ob.tsm || '').trim().toLowerCase();
-        return tsmName === trimmedName || tsmName.includes(trimmedName) || trimmedName.includes(tsmName);
+        const tsmName = (ob.tsm || '').trim().toLowerCase().replace(/\s+/g, '');
+        return tsmName === searchName || (tsmName.length > 3 && (tsmName.includes(searchName) || searchName.includes(tsmName)));
       });
       
       // Add TSM themselves as an option
       if (userName) {
-        const tsmAssign = tsmAssignments.find(t => (t.tsm_name || '').trim().toLowerCase() === trimmedName);
-        const tsmTown = tsmAssign?.town || distributors.find(d => (d.tsm || '').trim().toLowerCase() === trimmedName)?.town || '';
+        const tsmAssign = tsmAssignments.find(t => (t.tsm_name || '').trim().toLowerCase().replace(/\s+/g, '') === searchName);
+        const tsmTown = tsmAssign?.town || distributors.find(d => (d.tsm || '').trim().toLowerCase().replace(/\s+/g, '') === searchName)?.town || '';
         const tsmRoutes = tsmAssign?.routes ? tsmAssign.routes.split(',').map((r: string) => r.trim()) : ['TSM Route'];
         
         obs.unshift({
@@ -8451,16 +8451,16 @@ export default function App() {
       obs = obs.filter(ob => (ob.contact || '').trim() === (userContact || '').trim());
     }
 
-    if (selectedTSM && userRole !== 'TSM' && userRole !== 'ASM') {
-      const trimmedSelected = selectedTSM.trim().toLowerCase();
+    if (selectedTSM && userRole !== 'TSM' && userRole !== 'ASM' && userRole !== 'TSM ENTRY') {
+      const trimmedSelected = selectedTSM.trim().toLowerCase().replace(/\s+/g, '');
       obs = obs.filter(ob => {
-        const tsmName = (ob.tsm || '').trim().toLowerCase();
-        return tsmName === trimmedSelected || tsmName.includes(trimmedSelected) || trimmedSelected.includes(tsmName);
+        const tsmName = (ob.tsm || '').trim().toLowerCase().replace(/\s+/g, '');
+        return tsmName === trimmedSelected || (tsmName.length > 3 && (tsmName.includes(trimmedSelected) || trimmedSelected.includes(tsmName)));
       });
       
       // Add TSM themselves as an option
-      const tsmAssign = tsmAssignments.find(t => (t.tsm_name || '').trim().toLowerCase() === trimmedSelected);
-      const tsmTown = tsmAssign?.town || distributors.find(d => (d.tsm || '').trim().toLowerCase() === trimmedSelected)?.town || '';
+      const tsmAssign = tsmAssignments.find(t => (t.tsm_name || '').trim().toLowerCase().replace(/\s+/g, '') === trimmedSelected);
+      const tsmTown = tsmAssign?.town || distributors.find(d => (d.tsm || '').trim().toLowerCase().replace(/\s+/g, '') === trimmedSelected)?.town || '';
       const tsmRoutes = tsmAssign?.routes ? tsmAssign.routes.split(',').map((r: string) => r.trim()) : ['TSM Route'];
 
       obs.unshift({
