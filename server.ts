@@ -255,6 +255,16 @@ function initDB(retryCount = 0) {
         dispatched_date TEXT,
         submitted_at DATETIME DEFAULT CURRENT_TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS primary_targets (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        target_type TEXT, -- 'Town' or 'Distributor'
+        target_key TEXT, -- The name of the town or distributor
+        brand_name TEXT,
+        target_ctn REAL DEFAULT 0,
+        month TEXT,
+        UNIQUE(target_type, target_key, brand_name, month)
+      );
     `);
 
     // Check for missing columns in primary_orders (for migrations)
@@ -3017,6 +3027,83 @@ async function startServer() {
     } catch (err) {
       console.error("Fetch Primary Orders Error:", err);
       res.status(500).json({ error: "Failed to fetch primary orders" });
+    }
+  });
+
+  // --- Target Management Endpoints ---
+
+  app.get("/api/targets/primary", authenticateToken, (req: any, res) => {
+    try {
+      const month = req.query.month || new Date().toISOString().slice(0, 7);
+      const targets = db.prepare("SELECT * FROM primary_targets WHERE month = ?").all(month);
+      res.json(targets);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to fetch primary targets" });
+    }
+  });
+
+  app.post("/api/targets/primary", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'SC'), (req: any, res) => {
+    const { targets, month } = req.body; // Expecting array of { target_type, target_key, brand_name, target_ctn }
+    if (!targets || !Array.isArray(targets)) return res.status(400).json({ error: "Invalid targets format" });
+    
+    try {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO primary_targets (target_type, target_key, brand_name, target_ctn, month)
+        VALUES (?, ?, ?, ?, ?)
+      `);
+      
+      const transaction = db.transaction((targetList) => {
+        for (const t of targetList) {
+          insert.run(t.target_type, t.target_key, t.brand_name, t.target_ctn || 0, month);
+        }
+      });
+      
+      transaction(targets);
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to save primary targets" });
+    }
+  });
+
+  app.get("/api/targets/ob", authenticateToken, (req: any, res) => {
+    try {
+      const month = req.query.month || new Date().toISOString().slice(0, 7);
+      const targets = db.prepare(`
+        SELECT t.*, a.name as ob_name, a.distributor, a.town 
+        FROM brand_targets t
+        JOIN ob_assignments a ON t.ob_contact = a.contact
+        WHERE t.month = ?
+      `).all(month);
+      res.json(targets);
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to fetch OB targets" });
+    }
+  });
+
+  app.post("/api/targets/ob", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'SC'), (req: any, res) => {
+    const { targets, month } = req.body; // Expecting array of { ob_contact, brand_name, target_ctn }
+    if (!targets || !Array.isArray(targets)) return res.status(400).json({ error: "Invalid targets format" });
+
+    try {
+      const insert = db.prepare(`
+        INSERT OR REPLACE INTO brand_targets (ob_contact, brand_name, target_ctn, month)
+        VALUES (?, ?, ?, ?)
+      `);
+      
+      const transaction = db.transaction((targetList) => {
+        for (const t of targetList) {
+          insert.run(t.ob_contact, t.brand_name, t.target_ctn || 0, month);
+        }
+      });
+      
+      transaction(targets);
+      res.json({ success: true });
+    } catch (err) {
+      console.error(err);
+      res.status(500).json({ error: "Failed to save OB targets" });
     }
   });
 

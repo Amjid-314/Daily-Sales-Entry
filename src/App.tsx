@@ -364,6 +364,7 @@ interface NationalDashboardProps {
   obAssignments?: any[];
   selectedHeadCountDetail: any;
   setSelectedHeadCountDetail: (d: any) => void;
+  obTargets?: any[];
 }
 
 const NationalDashboard = ({ 
@@ -373,7 +374,8 @@ const NationalDashboard = ({
   apiFetch, backupLogs = [], stockHistory = [],
   missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries,
   users = [], obAssignments = [],
-  selectedHeadCountDetail, setSelectedHeadCountDetail
+  selectedHeadCountDetail, setSelectedHeadCountDetail,
+  obTargets
 }: NationalDashboardProps) => {
   const [offDayFilter, setOffDayFilter] = useState('All');
   const [expandedOB, setExpandedOB] = useState<string | null>(null);
@@ -4890,7 +4892,25 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
   );
 };
 
-const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, getPSTDate, SKUS, CATEGORIES, userRole, userName, userRegion, userContact, onRefresh, isSyncing, selectedMonth, setSelectedMonth }: any) => {
+const ReportsView = ({ 
+  history, 
+  obAssignments, 
+  hierarchy, 
+  obTargets, // Add this
+  tsmList, 
+  appConfig, 
+  getPSTDate, 
+  SKUS, 
+  CATEGORIES, 
+  userRole, 
+  userName, 
+  userRegion, 
+  userContact, 
+  onRefresh, 
+  isSyncing, 
+  selectedMonth, 
+  setSelectedMonth 
+}: any) => {
   const currentMonth = selectedMonth || getPSTDate().slice(0, 7);
   const today = getPSTDate();
   const dayOfMonth = parseInt(today.split('-')[2]);
@@ -4980,7 +5000,17 @@ const ReportsView = ({ history, obAssignments, hierarchy, tsmList, appConfig, ge
     return obs.filter((ob: any) => !ob.name.toLowerCase().includes('test')).map((ob: any) => {
       const obHierarchy = hierarchy?.find((h: any) => h.ob_id === ob.contact);
       const targets: Record<string, number> = {};
-      if (obHierarchy) {
+      
+      // Prioritize local targets from Target Setting View
+      const localTargets = obTargets?.filter((t: any) => t.ob_contact === ob.contact && t.month === currentMonth);
+      
+      if (localTargets && localTargets.length > 0) {
+        CATEGORIES.forEach((cat: string) => {
+          const lt = localTargets.find((t: any) => t.brand_name === cat);
+          targets[cat] = Number(lt?.target_ctn) || 0;
+        });
+      } else if (obHierarchy) {
+        // Fallback to hierarchy data if no local targets set
         let totalSpecificTarget = 0;
         CATEGORIES.forEach((cat: string) => {
           const targetKey = `target_${cat.toLowerCase().replace(/\s+/g, '_')}`;
@@ -6301,7 +6331,7 @@ const normalizeRole = (role: string): any => {
 };
 
 export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'intro' | 'help' | 'tsm_performance' | 'command_center' | 'insights' | 'stats' | 'home'>(() => {
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'intro' | 'help' | 'tsm_performance' | 'command_center' | 'insights' | 'stats' | 'home' | 'target_setting'>(() => {
     const saved = localStorage.getItem('user_data');
     if (saved) {
       try {
@@ -6317,6 +6347,9 @@ export default function App() {
     const saved = localStorage.getItem('auth_token');
     return (saved === 'null' || !saved) ? null : saved;
   });
+  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7)); // Move here
+  const [primaryTargets, setPrimaryTargets] = useState<any[]>([]);
+  const [obTargets, setObTargets] = useState<any[]>([]); // Move here
   const [user, setUser] = useState<any | null>(() => {
     const saved = localStorage.getItem('user_data');
     try { return saved ? JSON.parse(saved) : null; } catch(e) { return null; }
@@ -6328,6 +6361,24 @@ export default function App() {
   const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
   const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
+  
+  const fetchTargetsData = async () => {
+    try {
+      const token = localStorage.getItem('auth_token');
+      const [pRes, oRes] = await Promise.all([
+        fetch(`/api/targets/primary?month=${selectedMonth}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json()),
+        fetch(`/api/targets/ob?month=${selectedMonth}`, { headers: { 'Authorization': `Bearer ${token}` } }).then(r => r.json())
+      ]);
+      setPrimaryTargets(pRes || []);
+      setObTargets(oRes || []);
+    } catch (e) {
+      console.error("Targets fetch failed", e);
+    }
+  };
+
+  useEffect(() => {
+    if (token) fetchTargetsData();
+  }, [token, selectedMonth, view]);
   const [matrixView, setMatrixView] = useState<string>('Total');
   const [targetView, setTargetView] = useState('Brand');
   const [showUserManual, setShowUserManual] = useState(false);
@@ -6594,7 +6645,6 @@ export default function App() {
     }
     return response;
   };
-  const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().slice(0, 7));
   const [history, setHistory] = useState<any[]>([]);
   const [hierarchy, setHierarchy] = useState<any[]>([]);
   const [nationalStats, setNationalStats] = useState<any[]>([]);
@@ -7364,10 +7414,17 @@ export default function App() {
     setIsLoadingPrimary(true);
     try {
       const m = month || selectedMonth;
-      const res = await apiFetch(`/api/primary-orders?month=${m}`);
-      if (res.ok) {
-        const data = await res.json();
+      const [orderRes, targetRes] = await Promise.all([
+        apiFetch(`/api/primary-orders?month=${m}`),
+        apiFetch(`/api/targets/primary?month=${m}`)
+      ]);
+      if (orderRes.ok) {
+        const data = await orderRes.json();
         setPrimaryOrderHistory(data);
+      }
+      if (targetRes.ok) {
+        const tData = await targetRes.json();
+        setPrimaryTargets(tData || []);
       }
     } catch (err) {
       console.error("Failed to fetch primary orders:", err);
@@ -8601,8 +8658,325 @@ export default function App() {
 
   
 
+  const TargetSettingView = () => {
+    const [subView, setSubView] = useState<'primary' | 'ob'>('primary');
+    const [loading, setLoading] = useState(false);
+    const [targetSearch, setTargetSearch] = useState('');
+
+    // Hierarchy State
+    const [selectedRegion, setSelectedRegion] = useState('');
+    const [selectedTSM, setSelectedTSM] = useState('');
+    const [selectedTown, setSelectedTown] = useState('');
+
+    const fetchViewData = async () => {
+      setLoading(true);
+      try {
+        const [pRes, oRes, obList, dList] = await Promise.all([
+          apiFetch(`/api/targets/primary?month=${selectedMonth}`).then(r => r.json()),
+          apiFetch(`/api/targets/ob?month=${selectedMonth}`).then(r => r.json()),
+          apiFetch('/api/admin/obs').then(r => r.json()),
+          apiFetch('/api/admin/distributors').then(r => r.json())
+        ]);
+        setPrimaryTargets(pRes || []);
+        setObTargets(oRes || []);
+        // No setObs/setDistributors needed as they use top level?
+        // Wait, I saw distributors state was top level 6691.
+        // I should update those.
+        setObAssignments(obList || []);
+        setDistributors(dList || []);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    useEffect(() => {
+      fetchViewData();
+    }, [selectedMonth]);
+
+    const canEdit = ['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes((userRole || '').toUpperCase());
+
+    const regions = [...new Set(distributors.map(d => d.region))].filter(Boolean).sort() as string[];
+    const tsms = [...new Set(distributors.filter(d => !selectedRegion || d.region === selectedRegion).map(d => d.tsm))].filter(Boolean).sort() as string[];
+    const townsList = [...new Set(distributors.filter(d => (!selectedRegion || d.region === selectedRegion) && (!selectedTSM || d.tsm === selectedTSM)).map(d => d.town))].filter(Boolean).sort() as string[];
+    
+    // Use top level obs and distributors
+    const allObs = obAssignments;
+    const allDists = distributors;
+
+    const filteredDists = allDists.filter(d => 
+      (!selectedRegion || d.region === selectedRegion) && 
+      (!selectedTSM || d.tsm === selectedTSM) && 
+      (!selectedTown || d.town === selectedTown) &&
+      (!targetSearch || d.name.toLowerCase().includes(targetSearch.toLowerCase()))
+    );
+
+    const filteredObs = allObs.filter(ob => 
+      (!selectedRegion || ob.region === selectedRegion) && 
+      (!selectedTSM || ob.tsm === selectedTSM) && 
+      (!selectedTown || ob.town === selectedTown) &&
+      (!targetSearch || ob.name.toLowerCase().includes(targetSearch.toLowerCase()) || ob.contact.includes(targetSearch))
+    );
+
+    const handleSavePrimary = async (type: 'Town' | 'Distributor', key: string, brand: string, val: string) => {
+      if (!canEdit) return;
+      const num = parseFloat(val) || 0;
+      try {
+        await apiFetch('/api/targets/primary', {
+          method: 'POST',
+          body: JSON.stringify({ month: selectedMonth, targets: [{ target_type: type, target_key: key, brand_name: brand, target_ctn: num }] })
+        });
+        setPrimaryTargets(prev => {
+          const filtered = prev.filter(t => !(t.target_type === type && t.target_key === key && t.brand_name === brand));
+          return [...filtered, { target_type: type, target_key: key, brand_name: brand, target_ctn: num, month: selectedMonth }];
+        });
+      } catch (e) { alert("Error saving primary target"); }
+    };
+
+    const handleSaveOB = async (contact: string, brand: string, val: string) => {
+      if (!canEdit) return;
+      const num = parseFloat(val) || 0;
+      try {
+        await apiFetch('/api/targets/ob', {
+          method: 'POST',
+          body: JSON.stringify({ month: selectedMonth, targets: [{ ob_contact: contact, brand_name: brand, target_ctn: num }] })
+        });
+        setObTargets(prev => {
+          const filtered = prev.filter(t => !(t.ob_contact === contact && t.brand_name === brand));
+          return [...filtered, { ob_contact: contact, brand_name: brand, target_ctn: num, month: selectedMonth }];
+        });
+      } catch (e) { alert("Error saving OB target"); }
+    };
+
+    // Distributor Target Categories: Match, DWB, Washing Powder
+    const distCategories = ["Washing Powder", "DWB", "Match"];
+    // OB Target Categories: Full brand list
+    const obCategories = ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"];
+
+    return (
+      <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
+        <header className="flex flex-col gap-6 bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-slate-100">
+           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+             <div className="flex items-center gap-4">
+                <div className="w-12 h-12 bg-indigo-50 rounded-2xl flex items-center justify-center text-indigo-600 shadow-sm border border-indigo-100/50">
+                   <Target className="w-6 h-6" />
+                </div>
+                <div>
+                   <h2 className="text-lg font-black text-slate-800 uppercase tracking-widest leading-none">Target Management</h2>
+                   <p className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-wide">
+                     {canEdit ? 'Manage primary & OB targets locally' : 'Viewing targets as per your assignment'}
+                   </p>
+                </div>
+             </div>
+             
+             <div className="flex flex-wrap items-center gap-3">
+                <div className="flex bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-inner">
+                   <button 
+                     onClick={() => setSubView('primary')}
+                     className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${subView === 'primary' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                   >
+                     Primary Targets
+                   </button>
+                   <button 
+                     onClick={() => setSubView('ob')}
+                     className={`px-4 py-2 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${subView === 'ob' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
+                   >
+                     OB Targets
+                   </button>
+                </div>
+                
+                <div className="flex items-center gap-2 bg-indigo-50/50 px-3 py-1.5 rounded-xl border border-indigo-100">
+                   <Calendar className="w-3.5 h-3.5 text-indigo-500" />
+                   <input type="month" value={selectedMonth} onChange={e => setSelectedMonth(e.target.value)} className="bg-transparent text-[11px] font-bold text-indigo-700 focus:outline-none" />
+                </div>
+             </div>
+           </div>
+
+           {/* Hierarchy Dropdowns */}
+           <div className="grid grid-cols-1 md:grid-cols-4 gap-4 pt-4 border-t border-slate-50">
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Region</label>
+                <select 
+                  className="w-full input-clean py-2 text-[11px] rounded-xl"
+                  value={selectedRegion}
+                  onChange={e => { setSelectedRegion(e.target.value); setSelectedTSM(''); setSelectedTown(''); }}
+                >
+                  <option value="">All Regions</option>
+                  {regions.map(r => <option key={r} value={r}>{r}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">TSM</label>
+                <select 
+                  className="w-full input-clean py-2 text-[11px] rounded-xl"
+                  value={selectedTSM}
+                  onChange={e => { setSelectedTSM(e.target.value); setSelectedTown(''); }}
+                >
+                  <option value="">All TSMs</option>
+                  {tsms.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Town</label>
+                <select 
+                  className="w-full input-clean py-2 text-[11px] rounded-xl"
+                  value={selectedTown}
+                  onChange={e => setSelectedTown(e.target.value)}
+                >
+                  <option value="">All Towns</option>
+                  {townsList.map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Search Name</label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3 h-3 text-slate-400" />
+                  <input 
+                    type="text" 
+                    placeholder="Search..."
+                    value={targetSearch}
+                    onChange={e => setTargetSearch(e.target.value)}
+                    className="w-full input-clean py-2 pl-9 text-[11px] rounded-xl"
+                  />
+                </div>
+              </div>
+           </div>
+        </header>
+
+        <section className="bg-white rounded-3xl shadow-xl shadow-slate-200/40 border border-slate-100 overflow-hidden">
+          <div className="overflow-x-auto">
+             <table className="w-full text-left border-collapse">
+                <thead className="bg-slate-50/50 border-b border-slate-100">
+                   <tr>
+                      <th className="px-6 py-4 text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[200px]">
+                        {subView === 'primary' ? 'Town / Distributor' : 'Order Booker'}
+                      </th>
+                      {(subView === 'primary' ? distCategories : obCategories).map(cat => (
+                        <th key={cat} className="px-4 py-4 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest min-w-[120px]">
+                           {cat}
+                           <span className="block text-[8px] font-bold text-indigo-400/60 lowercase tracking-normal text-center">
+                             {subView === 'ob' ? 'ctns/bags' : (cat === 'Match' ? 'gross' : 'tonnage')}
+                           </span>
+                        </th>
+                      ))}
+                   </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-50">
+                  {subView === 'primary' ? (
+                    <>
+                      {/* Towns Section */}
+                      {!selectedTown && !targetSearch && (
+                        <tr className="bg-indigo-50/30 font-black text-[10px] text-indigo-600 uppercase tracking-widest"><td colSpan={distCategories.length + 1} className="px-6 py-2">By Town (Tons/Gross)</td></tr>
+                      )}
+                      {townsList.map(town => (
+                        <tr key={`town-${town}`} className="hover:bg-slate-50/50 transition-colors">
+                           <td className="px-6 py-4">
+                              <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{town}</span>
+                           </td>
+                           {distCategories.map(cat => {
+                             const target = primaryTargets.find(pt => pt.target_type === 'Town' && pt.target_key === town && pt.brand_name === cat);
+                             return (
+                               <td key={cat} className="px-2 py-2">
+                                  <input 
+                                    type="number" 
+                                    disabled={!canEdit}
+                                    defaultValue={target?.target_ctn || ''} 
+                                    onBlur={e => handleSavePrimary('Town', town, cat, e.target.value)}
+                                    placeholder="0.00"
+                                    className={`w-full bg-transparent border-b border-transparent text-center text-xs font-bold text-slate-700 py-1 transition-all ${canEdit ? 'hover:border-slate-200 focus:border-seablue focus:outline-none' : 'cursor-not-allowed opacity-70'}`}
+                                  />
+                               </td>
+                             )
+                           })}
+                        </tr>
+                      ))}
+                      {/* Distributors Section */}
+                      {!targetSearch && (
+                        <tr className="bg-emerald-50/30 font-black text-[10px] text-emerald-600 uppercase tracking-widest"><td colSpan={distCategories.length + 1} className="px-6 py-2">By Distributor (Tons/Gross)</td></tr>
+                      )}
+                      {filteredDists.map(dist => (
+                        <tr key={`dist-${dist.name}`} className="hover:bg-slate-50/50 transition-colors">
+                           <td className="px-6 py-4">
+                              <div className="flex flex-col">
+                                <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{dist.name}</span>
+                                <span className="text-[8px] font-bold text-slate-400 uppercase">{dist.town}</span>
+                              </div>
+                           </td>
+                           {distCategories.map(cat => {
+                             const target = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === dist.name && pt.brand_name === cat);
+                             return (
+                               <td key={cat} className="px-2 py-2">
+                                  <input 
+                                    type="number" 
+                                    disabled={!canEdit}
+                                    defaultValue={target?.target_ctn || ''} 
+                                    onBlur={e => handleSavePrimary('Distributor', dist.name, cat, e.target.value)}
+                                    placeholder="0.00"
+                                    className={`w-full bg-transparent border-b border-transparent text-center text-xs font-bold text-slate-700 py-1 transition-all ${canEdit ? 'hover:border-slate-200 focus:border-seablue focus:outline-none' : 'cursor-not-allowed opacity-70'}`}
+                                  />
+                               </td>
+                             )
+                           })}
+                        </tr>
+                      ))}
+                    </>
+                  ) : (
+                    filteredObs.map(ob => (
+                      <tr key={ob.contact} className="hover:bg-slate-50/50 transition-colors">
+                         <td className="px-6 py-4">
+                            <div className="flex flex-col">
+                               <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{ob.name}</span>
+                               <span className="text-[9px] font-bold text-slate-400 font-mono tracking-tighter uppercase">{ob.town} | {ob.contact}</span>
+                            </div>
+                         </td>
+                         {obCategories.map(cat => {
+                           const target = obTargets.find(ot => ot.ob_contact === ob.contact && ot.brand_name === cat);
+                           return (
+                             <td key={cat} className="px-2 py-2">
+                                <input 
+                                  type="number" 
+                                  disabled={!canEdit}
+                                  defaultValue={target?.target_ctn || ''} 
+                                  onBlur={e => handleSaveOB(ob.contact, cat, e.target.value)}
+                                  placeholder="0"
+                                  className={`w-full bg-transparent border-b border-transparent text-center text-xs font-bold text-slate-700 py-1 transition-all ${canEdit ? 'hover:border-slate-200 focus:border-seablue focus:outline-none' : 'cursor-not-allowed opacity-70'}`}
+                                />
+                             </td>
+                           )
+                         })}
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+             </table>
+             {((subView === 'primary' && filteredDists.length === 0 && townsList.length === 0) || (subView === 'ob' && filteredObs.length === 0)) && (
+               <div className="p-20 text-center flex flex-col items-center gap-3">
+                  <div className="w-12 h-12 bg-slate-50 rounded-full flex items-center justify-center text-slate-300">
+                    <EyeOff className="w-6 h-6" />
+                  </div>
+                  <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.2em]">No results found for selected filters</p>
+               </div>
+             )}
+          </div>
+        </section>
+      </div>
+    );
+  };
+
   if (!token || token === 'null') {
     return <Login onLogin={handleLogin} logo={appLogo} />;
+  }
+
+  if (view === 'target_setting') {
+    return (
+      <div className="min-h-screen bg-slate-50 flex flex-col">
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <main className="flex-1 max-w-[1600px] mx-auto p-4 sm:p-6 w-full">
+           <TargetSettingView />
+        </main>
+      </div>
+    );
   }
 
   if (showWelcome) {
@@ -8700,6 +9074,7 @@ export default function App() {
                 obAssignments={obAssignments}
                 selectedHeadCountDetail={selectedHeadCountDetail}
                 setSelectedHeadCountDetail={setSelectedHeadCountDetail}
+                obTargets={obTargets}
               />
             )}
           </div>
@@ -9490,6 +9865,7 @@ export default function App() {
                 history={nationalStats} 
                 obAssignments={obAssignments} 
                 hierarchy={hierarchy}
+                obTargets={obTargets}
                 tsmList={tsmList} 
                 appConfig={appConfig} 
                 getPSTDate={getPSTDate} 
@@ -11492,16 +11868,51 @@ export default function App() {
                         <th className="px-4 py-4 text-center">Gross Units (GR)</th>
                         <th className="px-4 py-4 text-center">Total Value</th>
                         <th className="px-6 py-4 text-right">Total Units (Ctns/Bags)</th>
+                        <th className="px-6 py-4 text-right">Target (Ctns)</th>
+                        <th className="px-6 py-4 text-right">Achieve %</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-50">
                       {(() => {
-                        const agg: Record<string, { val: number, tons: number, gross: number, items: number }> = {};
-                        primaryOrderHistory
+                        const agg: Record<string, { val: number, tons: number, gross: number, items: number, target: number }> = {};
+                        
+                        // Role-based data filtering
+                        const roleFilteredOrders = primaryOrderHistory.filter(o => {
+                          const role = (userRole || '').toUpperCase();
+                          if (role === 'TSM' || role === 'ASM') return o.tsm === userName;
+                          if (role === 'RSM') return o.region === userRegion;
+                          return true;
+                        });
+
+                        const roleFilteredTargets = primaryTargets.filter(t => {
+                          const role = (userRole || '').toUpperCase();
+                          if (role === 'TSM' || role === 'ASM') {
+                            const myDists = allDistributors.filter(d => d.tsm === userName);
+                            const myTowns = myDists.map(d => d.town);
+                            const myDistNames = myDists.map(d => d.distributor);
+                            if (t.target_type === 'Region') return false;
+                            if (t.target_type === 'TSM') return t.target_key === userName;
+                            if (t.target_type === 'Town') return myTowns.includes(t.target_key);
+                            if (t.target_type === 'Distributor') return myDistNames.includes(t.target_key);
+                          }
+                          if (role === 'RSM' || role === 'SC') {
+                            if (t.target_type === 'Region') return t.target_key === userRegion;
+                            // For RSM, we could also include all towns/dists in their region
+                            const myDists = allDistributors.filter(d => (d.region || '').toUpperCase() === (userRegion || '').toUpperCase());
+                            const myTowns = myDists.map(d => d.town);
+                            const myDistNames = myDists.map(d => d.distributor);
+                            if (t.target_type === 'Town') return myTowns.includes(t.target_key);
+                            if (t.target_type === 'Distributor') return myDistNames.includes(t.target_key);
+                          }
+                          return true;
+                        });
+
+                        // Process Orders
+                        roleFilteredOrders
                           .filter(o => !selectedMonth || o.date.startsWith(selectedMonth))
                           .forEach(order => {
                             const grp = (order[primaryAggregationLevel.toLowerCase()] || 'Unknown').toString();
-                            if (!agg[grp]) agg[grp] = { val: 0, tons: 0, gross: 0, items: 0 };
+                            if (!agg[grp]) agg[grp] = { val: 0, tons: 0, gross: 0, items: 0, target: 0 };
                             
                             const items = JSON.parse(order.items || '{}');
                             agg[grp].val += Number(order.total_amount || 0);
@@ -11510,45 +11921,125 @@ export default function App() {
                             agg[grp].items += Object.values(items).reduce((a:any, b:any) => a + Number(b), 0) as number;
                           });
 
-                        return Object.entries(agg).sort((a,b) => b[1].val - a[1].val).map(([group, data]) => (
-                          <tr key={group} className="hover:bg-slate-50/50 transition-all">
-                            <td className="px-6 py-4">
-                              <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{group}</span>
-                            </td>
-                            <td className="px-4 py-4 text-center">
-                              <span className="text-[11px] font-black text-emerald-600">{data.tons.toFixed(3)} TO</span>
-                            </td>
-                            <td className="px-4 py-4 text-center">
-                              <span className="text-[11px] font-black text-indigo-600">{data.gross.toLocaleString()} GR</span>
-                            </td>
-                            <td className="px-4 py-4 text-center font-mono text-xs font-bold text-slate-700">
-                              Rs {data.val.toLocaleString()}
-                            </td>
-                            <td className="px-6 py-4 text-right">
-                              <span className="text-xs font-black text-seablue">{data.items.toLocaleString()}</span>
-                            </td>
-                          </tr>
-                        ));
+                        // Enrich with Targets (Corrected Unit logic as per user request)
+                        roleFilteredTargets.forEach(t => {
+                          if (t.target_type === primaryAggregationLevel) {
+                            const grp = t.target_key;
+                            if (t.month === selectedMonth) {
+                              if (!agg[grp]) agg[grp] = { val: 0, tons: 0, gross: 0, items: 0, target: 0 };
+                              agg[grp].target += parseFloat(t.target_ctn) || 0;
+                            }
+                          }
+                        });
+
+                        return Object.entries(agg).sort((a,b) => b[1].val - a[1].val).map(([group, data]) => {
+                          // Standard achievement: Match target with correct units
+                          // WP & DWB are in Tons, Match is in Gross.
+                          const ach = data.target > 0 ? ((data.tons + data.gross) / data.target) * 100 : 0;
+                          return (
+                            <tr key={group} className="hover:bg-slate-50/50 transition-all">
+                              <td className="px-6 py-4">
+                                <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{group}</span>
+                              </td>
+                              <td className="px-4 py-4 text-center">
+                                <span className="text-[11px] font-black text-emerald-600">{data.tons.toFixed(3)} TO</span>
+                              </td>
+                              <td className="px-4 py-4 text-center">
+                                <span className="text-[11px] font-black text-indigo-600">{data.gross.toLocaleString()} GR</span>
+                              </td>
+                              <td className="px-4 py-4 text-center font-mono text-xs font-bold text-slate-700">
+                                Rs {data.val.toLocaleString()}
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <span className="text-xs font-black text-seablue">{data.items.toLocaleString()}</span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <span className="text-xs font-black text-slate-400">{data.target.toLocaleString()}</span>
+                              </td>
+                              <td className="px-6 py-4 text-right">
+                                <div className="flex flex-col items-end gap-1">
+                                  <span className={`text-xs font-black ${ach >= 100 ? 'text-emerald-600' : ach >= 70 ? 'text-amber-600' : 'text-rose-600'}`}>
+                                    {ach.toFixed(1)}%
+                                  </span>
+                                  <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
+                                     <div 
+                                       className={`h-full transition-all duration-500 ${ach >= 100 ? 'bg-emerald-500' : ach >= 70 ? 'bg-amber-500' : 'bg-rose-500'}`} 
+                                       style={{ width: `${Math.min(100, ach)}%` }}
+                                     />
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        });
                       })()}
                     </tbody>
                     <tfoot>
                        <tr className="bg-slate-50 font-black text-slate-900 border-t border-slate-200">
                           <td className="px-6 py-4 text-[10px] uppercase tracking-widest">Grand Total Analysis</td>
                           {(() => {
-                             let tVal = 0, tTons = 0, tGross = 0, tItems = 0;
+                             let tVal = 0, tTons = 0, tGross = 0, tItems = 0, tTarget = 0;
+                             const brandTotals: Record<string, number> = {};
+                             
                              primaryOrderHistory.filter(o => !selectedMonth || o.date.startsWith(selectedMonth)).forEach(order => {
                                 const items = JSON.parse(order.items || '{}');
                                 tVal += Number(order.total_amount || 0);
                                 tTons += calculateTonnage(items, SKUS);
                                 tGross += calculateGross(items, SKUS);
                                 tItems += Object.values(items).reduce((a:any,b:any) => a + Number(b), 0) as number;
+                                
+                                SKUS.forEach(sku => {
+                                  brandTotals[sku.category] = (brandTotals[sku.category] || 0) + (items[sku.id] || 0);
+                                });
                              });
+                             primaryTargets.forEach(t => {
+                                if (t.target_type === primaryAggregationLevel) {
+                                   tTarget += parseFloat(t.target_ctn) || 0;
+                                }
+                             });
+                             const tAch = tTarget > 0 ? (tItems / tTarget) * 100 : 0;
                              return (
                                <>
-                                 <td className="px-4 py-4 text-center text-emerald-700 font-black">{tTons.toFixed(3)} TO</td>
-                                 <td className="px-4 py-4 text-center text-indigo-700 font-black">{tGross.toLocaleString()} GR</td>
-                                 <td className="px-4 py-4 text-center font-mono text-xs font-black">Rs {tVal.toLocaleString()}</td>
-                                 <td className="px-6 py-4 text-right text-seablue font-black">{tItems.toLocaleString()}</td>
+                                 <td className="px-4 py-4 text-center text-emerald-700 font-black">
+                                   <div className="flex flex-col">
+                                      <span>{tTons.toFixed(3)} TO</span>
+                                      <span className="text-[8px] text-slate-400 font-bold uppercase mt-1">Net Weight</span>
+                                      <div className="flex flex-wrap justify-center gap-x-2 mt-1">
+                                         {Object.entries(brandTotals).map(([b, v]) => {
+                                            if (v === 0 || b === 'Match') return null;
+                                            const firstSku = SKUS.find(s => s.category === b);
+                                            const w = (firstSku ? (firstSku.weight_gm_per_pack * firstSku.unitsPerCarton) / 1000000 : 0) * v;
+                                            return w > 0 ? (
+                                              <span key={b} className="text-[7px] text-emerald-500 uppercase font-bold">{b.slice(0,4)}:{w.toFixed(2)}</span>
+                                            ) : null;
+                                         })}
+                                      </div>
+                                   </div>
+                                 </td>
+                                 <td className="px-4 py-4 text-center text-indigo-700 font-black">
+                                   <div className="flex flex-col">
+                                      <span>{tGross.toLocaleString()} GR</span>
+                                      <span className="text-[8px] text-slate-400 font-bold uppercase mt-1">Match Gross</span>
+                                   </div>
+                                 </td>
+                                 <td className="px-4 py-4 text-center font-mono text-xs font-black">
+                                   <div className="flex flex-col">
+                                      <span>Rs {tVal.toLocaleString()}</span>
+                                      <span className="text-[8px] text-slate-400 font-bold uppercase mt-1 text-center w-full">Total Value</span>
+                                   </div>
+                                 </td>
+                                 <td className="px-6 py-4 text-right text-seablue font-black">
+                                    <div className="flex flex-col items-end">
+                                      <span>{tItems.toLocaleString()} Ctns</span>
+                                        <div className="flex flex-wrap justify-end gap-x-2 mt-1 max-w-[300px]">
+                                          {Object.entries(brandTotals).map(([b, v]) => v > 0 && (
+                                            <span key={b} className="text-[8px] text-slate-400 uppercase font-bold">{b}: {v.toLocaleString()}</span>
+                                          ))}
+                                        </div>
+                                    </div>
+                                 </td>
+                                 <td className="px-6 py-4 text-right text-slate-500 font-black">{tTarget.toLocaleString()}</td>
+                                 <td className="px-6 py-4 text-right text-indigo-700 font-black">{tAch.toFixed(1)}%</td>
                                </>
                              );
                           })()}
