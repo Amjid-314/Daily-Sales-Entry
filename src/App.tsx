@@ -82,7 +82,8 @@ import {
   FileText,
   Truck,
   Edit2,
-  Maximize2
+  Maximize2,
+  LogOut
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
 import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry, calculateOrderAge, calculateTonnage, calculateGross } from './lib/utils';
@@ -203,7 +204,7 @@ const PWAInstallPrompt = () => {
   );
 };
 
-const HomeHub = ({ setView, userRole, userName, logo, tabs, userEmail }: any) => {
+const HomeHub = ({ setView, userRole, userName, logo, tabs, userEmail, onLogout }: any) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   
   const menuItems = tabs.filter((tab: any) => {
@@ -317,6 +318,18 @@ const HomeHub = ({ setView, userRole, userName, logo, tabs, userEmail }: any) =>
           <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Ready</p>
         </div>
       </motion.div>
+
+      {/* Logout Button */}
+      <motion.button
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.8 }}
+        onClick={onLogout}
+        className="mt-8 flex items-center gap-2 px-6 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-full border border-rose-500/20 transition-all font-black text-[10px] uppercase tracking-[0.2em]"
+      >
+        <LogOut className="w-3.5 h-3.5" />
+        Logout System
+      </motion.button>
     </div>
   );
 };
@@ -625,7 +638,9 @@ const NationalDashboard = ({
       let totalCtns = 0;
       let brandSales: Record<string, number> = {};
       let brandTonnage: Record<string, number> = {};
+      let brandGross: Record<string, number> = {};
       let totalWeightKg = 0;
+      let totalMatchGross = 0;
       
       skus.forEach(sku => {
         const item = (orderData || {})[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
@@ -647,14 +662,16 @@ const NationalDashboard = ({
           } else {
             totalCtns += ctns;
           }
-          const weightKg = (packs * (Number(sku.weight_gm_per_pack) || 0)) / 1000;
           
-          // Ignore "Match" tonnage for now as per user request
-          if (sku.category !== 'Match') {
+          if (sku.category === 'Match') {
+            const gross = ctns * (sku.grossPerCarton || 0);
+            totalMatchGross += gross;
+            brandGross[sku.category] = (brandGross[sku.category] || 0) + gross;
+            brandTonnage[sku.category] = 0; // Gross, not tonnage
+          } else {
+            const weightKg = (packs * (Number(sku.weight_gm_per_pack) || 0)) / 1000;
             totalWeightKg += weightKg;
             brandTonnage[sku.category] = (brandTonnage[sku.category] || 0) + (weightKg / 1000);
-          } else {
-            brandTonnage[sku.category] = 0;
           }
           
           brandSales[sku.category] = (brandSales[sku.category] || 0) + ctns;
@@ -669,8 +686,10 @@ const NationalDashboard = ({
         totalBags,
         totalCtns,
         totalWeightKg,
+        totalMatchGross,
         brandSales,
         brandTonnage,
+        brandGross,
         isTSMEntry: isTSMEntryRow,
         visitEfficiency,
         isFakeVisit,
@@ -1028,11 +1047,13 @@ const NationalDashboard = ({
     const totalSalaryCost = totalOBSalary + totalTSMSalary;
     const costPerBag = totalSales > 0 ? totalSalaryCost / totalSales : 0;
     const totalTonnage = monthStats.filter(s => !s.isTSMEntry).reduce((sum, s) => sum + (s.totalWeightKg || 0), 0) / 1000;
+    const totalMatchGross = monthStats.filter(s => !s.isTSMEntry).reduce((sum, s) => sum + (s.totalMatchGross || 0), 0);
     const costPerKg = totalTonnage > 0 ? totalSalaryCost / (totalTonnage * 1000) : 0;
 
     const brandTotals: Record<string, number> = {};
     const brandActiveOBs: Record<string, number> = {};
     const brandTonnage: Record<string, number> = {};
+    const brandGross: Record<string, number> = {};
     const brandTargets: Record<string, number> = {};
     const skuTotals: Record<string, number> = {};
 
@@ -1065,6 +1086,7 @@ const NationalDashboard = ({
       brandTotals[b] = obOnlyStats.reduce((sum, s) => sum + (s.brandSales[b] || 0), 0);
       brandActiveOBs[b] = new Set(brandStats.map(s => s.ob_contact)).size;
       brandTonnage[b] = obOnlyStats.reduce((sum, s) => sum + (s.brandTonnage[b] || 0), 0);
+      brandGross[b] = obOnlyStats.reduce((sum, s) => sum + (s.brandGross?.[b] || 0), 0);
       
       brandTargets[b] = filteredHierarchy.reduce((sum, h) => {
         const targetKey = `target_${b.toLowerCase().replace(/\s+/g, '_')}`;
@@ -1091,6 +1113,7 @@ const NationalDashboard = ({
         achievement: brandTotals[b] || 0,
         percentage: (brandTargets[b] || 0) > 0 ? (brandTotals[b] / brandTargets[b]) * 100 : 0,
         tonnage: brandTonnage[b] || 0,
+        gross: brandGross[b] || 0,
         unit
       };
     });
@@ -1113,7 +1136,7 @@ const NationalDashboard = ({
     return { 
       totalBags, totalCtns, totalSales, totalTarget, achievementPerc, uniqueOBs, uniqueTSMs, 
       totalSalaryCost, costPerBag, costPerKg, brandTotals, brandActiveOBs, brandTonnage, 
-      brandTargets, totalTonnage, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, 
+      brandTargets, totalTonnage, totalMatchGross, skuTotals, productivity, zeroSaleOBs, lowPerfOBs, 
       avgSalesPerOB, dropSize, totalVisited, totalProductive, totalShops, brandWiseStats,
       weakestRoutes, last8Visits
     };
@@ -1751,8 +1774,12 @@ const NationalDashboard = ({
 
                 <div className="mt-4 pt-3 border-t border-slate-50 flex justify-between items-center">
                   <div className="flex flex-col">
-                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">Tonnage</span>
-                    <span className="text-xs font-black text-slate-700">{brand.tonnage.toFixed(3)} T</span>
+                    <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                      {brand.name === 'Match' ? 'Gross' : 'Tonnage'}
+                    </span>
+                    <span className="text-xs font-black text-slate-700">
+                      {brand.name === 'Match' ? brand.gross.toLocaleString() : brand.tonnage.toFixed(3)} {brand.name === 'Match' ? '' : 'T'}
+                    </span>
                   </div>
                   <div className="w-16 h-1 bg-slate-100 rounded-full overflow-hidden">
                     <div 
@@ -1772,57 +1799,67 @@ const NationalDashboard = ({
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="card-clean p-5 bg-gradient-to-br from-seablue to-indigo-900 text-white shadow-xl shadow-blue-100 relative overflow-hidden group">
               <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Total Target</div>
-              <div className="text-4xl font-black tracking-tighter">{Math.round(summary.totalTarget).toLocaleString()} <span className="text-sm font-normal opacity-70">B/C</span></div>
+              <div className="text-2xl sm:text-4xl font-black tracking-tighter">{Math.round(summary.totalTarget).toLocaleString()} <span className="text-sm font-normal opacity-70">B/C</span></div>
               <div className="text-[10px] font-black text-white/80 mt-2 uppercase tracking-tight">Monthly Goal</div>
             </div>
             <div className="card-clean p-5 bg-gradient-to-br from-emerald-600 to-teal-900 text-white shadow-xl shadow-emerald-100 relative overflow-hidden group">
               <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Total Achievement</div>
-              <div className="text-4xl font-black tracking-tighter">{Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70">B/C</span></div>
+              <div className="text-2xl sm:text-4xl font-black tracking-tighter">{Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70">B/C</span></div>
               <div className="text-[10px] font-black text-white/80 mt-2 uppercase tracking-tight">Current Month Sales</div>
+            </div>
+            <div className="card-clean p-5 bg-gradient-to-br from-indigo-600 to-blue-900 text-white shadow-xl shadow-blue-100 relative overflow-hidden group">
+              <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Total Tonnage</div>
+              <div className="text-2xl sm:text-4xl font-black tracking-tighter">{summary.totalTonnage.toFixed(2)} <span className="text-sm font-normal opacity-70">Tons</span></div>
+              <div className="text-[10px] font-black text-white/80 mt-2 uppercase tracking-tight">Washing Powder Only</div>
+            </div>
+            <div className="card-clean p-5 bg-gradient-to-br from-amber-600 to-orange-900 text-white shadow-xl shadow-amber-100 relative overflow-hidden group">
+              <div className="text-[10px] uppercase font-black text-white/60 tracking-widest mb-1">Total Match Gross</div>
+              <div className="text-2xl sm:text-4xl font-black tracking-tighter">{Math.round(summary.totalMatchGross).toLocaleString()}</div>
+              <div className="text-[10px] font-black text-white/80 mt-2 uppercase tracking-tight">Matches Only</div>
             </div>
             <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
               <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Achievement %</div>
-              <div className={`text-4xl font-black ${summary.achievementPerc >= 100 ? 'text-emerald-600' : summary.achievementPerc >= 80 ? 'text-amber-500' : 'text-rose-600'}`}>
+              <div className={`text-2xl sm:text-4xl font-black ${summary.achievementPerc >= 100 ? 'text-emerald-600' : summary.achievementPerc >= 80 ? 'text-amber-500' : 'text-rose-600'}`}>
                 {summary.achievementPerc.toFixed(1)}%
               </div>
               <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Target vs Ach</div>
             </div>
             <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
               <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">MTD Sales</div>
-              <div className="text-4xl font-black text-indigo-600">{Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70 text-slate-400">B/C</span></div>
+              <div className="text-2xl sm:text-4xl font-black text-indigo-600">{Math.round(summary.totalSales).toLocaleString()} <span className="text-sm font-normal opacity-70 text-slate-400">B/C</span></div>
               <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Month to Date</div>
             </div>
             <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
               <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Productivity %</div>
-              <div className={`text-4xl font-black ${summary.productivity >= 70 ? 'text-emerald-600' : summary.productivity >= 50 ? 'text-amber-500' : 'text-rose-600'}`}>
+              <div className={`text-2xl sm:text-4xl font-black ${summary.productivity >= 70 ? 'text-emerald-600' : summary.productivity >= 50 ? 'text-amber-500' : 'text-rose-600'}`}>
                 {summary.productivity.toFixed(1)}%
               </div>
               <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Productive / Visited</div>
             </div>
             <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
               <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost / KG</div>
-              <div className="text-4xl font-black text-rose-600">
+              <div className="text-2xl sm:text-4xl font-black text-rose-600">
                 Rs.{summary.costPerKg.toFixed(1)}
               </div>
               <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Salary Cost per KG</div>
             </div>
             <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
               <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Cost / Bag</div>
-              <div className="text-4xl font-black text-rose-600">
+              <div className="text-2xl sm:text-4xl font-black text-rose-600">
                 Rs.{summary.costPerBag.toFixed(1)}
               </div>
               <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Salary Cost per Bag</div>
             </div>
             <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
               <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Avg Sales / OB</div>
-              <div className="text-4xl font-black text-seablue">
+              <div className="text-2xl sm:text-4xl font-black text-seablue">
                 {Math.round(summary.avgSalesPerOB).toLocaleString()}
               </div>
               <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Bags per OB</div>
             </div>
             <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
               <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest mb-1">Drop Size</div>
-              <div className="text-4xl font-black text-emerald-600">
+              <div className="text-2xl sm:text-4xl font-black text-emerald-600">
                 {summary.dropSize.toFixed(1)}
               </div>
               <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Bags / Productive Shop</div>
@@ -6409,8 +6446,23 @@ export default function App() {
 
     const mtdTotalBags = (mtdBrandTotals['Kite Glow'] || 0) + (mtdBrandTotals['Burq Action'] || 0) + (mtdBrandTotals['Vero'] || 0);
     const mtdTotalCtns = (mtdBrandTotals['DWB'] || 0) + (mtdBrandTotals['Match'] || 0);
+    
+    // Calculate Tonnage for Washing Powder + DWB
+    const mtdTonnage = Object.entries(mtdBrandTotals).reduce((sum, [cat, val]) => {
+      if (cat === 'Match') return sum;
+      const firstSku = SKUS.find(s => s.category === cat);
+      if (!firstSku) return sum;
+      const weightPerCtn = (firstSku.weight_gm_per_pack * firstSku.unitsPerCarton) / 1000;
+      return sum + (val * weightPerCtn) / 1000;
+    }, 0);
+
+    // Calculate Match Gross
+    const mtdMatchGross = (mtdBrandTotals['Match'] || 0) * (SKUS.find(s => s.category === 'Match')?.grossPerCarton || 10); // Approximation using first SKU gross
+
     const washingPowderLine = `Total Washing Powder=${mtdBrandTotals['Kite Glow']?.toFixed(0) || 0}+${mtdBrandTotals['Burq Action']?.toFixed(0) || 0}+${mtdBrandTotals['Vero']?.toFixed(0) || 0}=${mtdTotalBags.toFixed(0)}`;
-    const totalMtdExecutionLine = `Total MTD Execution: ${mtdTotalBags.toFixed(2).replace(/\.00$/, '')} Bags, ${mtdTotalCtns.toFixed(2).replace(/\.00$/, '')} Ctns`;
+    const totalMtdExecutionLine = `Total MTD Execution: ${mtdTotalBags.toFixed(2).replace(/\.00$/, '')} Bags, ${mtdTotalCtns.toFixed(2).replace(/\.00$/, '')} Ctns\n` +
+                                 `*MTD Total Tonnage:* ${mtdTonnage.toFixed(3)} T\n` +
+                                 `*MTD Match Gross:* ${Math.round(mtdMatchGross).toLocaleString()}`;
 
     const targets = isFromHistory 
       ? (typeof orderData.targets === 'string' ? JSON.parse(orderData.targets) : (orderData.targets || {}))
@@ -8580,6 +8632,7 @@ export default function App() {
           logo={appLogo}
           tabs={APP_TABS}
           userEmail={userEmail}
+          onLogout={handleLogout}
         />
       </>
     );

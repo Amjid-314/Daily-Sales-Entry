@@ -98,11 +98,6 @@ const SKUS = [
 function calculateAchievement(orderData: any) {
   const totals: Record<string, { value: number, unit: string }> = {};
   CATEGORIES.forEach(cat => {
-    // Skip "Match" from achievement calculations
-    if (cat === 'Match') {
-      totals[cat] = { value: 0, unit: 'Ctns' };
-      return;
-    }
     const catSkus = SKUS.filter(sku => sku.category === cat);
     const unit = catSkus[0]?.unit || 'Ctns';
     
@@ -183,6 +178,7 @@ function initDB(retryCount = 0) {
       CREATE INDEX IF NOT EXISTS idx_orders_month ON submitted_orders(month);
       CREATE INDEX IF NOT EXISTS idx_orders_region ON submitted_orders(region);
       CREATE INDEX IF NOT EXISTS idx_orders_route ON submitted_orders(route);
+      CREATE INDEX IF NOT EXISTS idx_orders_lookup ON submitted_orders(ob_contact, date, route);
 
       CREATE TABLE IF NOT EXISTS ob_assignments (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -918,8 +914,8 @@ async function startServer() {
         }
       }
       
-      // Return Bags for Washing Powder, Ctns for others
-      return isWashingPowder ? totalPacks : ctns;
+      // Return Cartons/Bags (Volume) for all SKUs
+      return ctns;
     });
 
     return [
@@ -1465,11 +1461,12 @@ async function startServer() {
     }
   }
 
-  async function refreshSummarySheets(sheets: any, spreadsheetId: string) {
+  async function refreshSummarySheets(sheets: any, spreadsheetId: string, monthToSync?: string) {
     await ensureSheetsExist(sheets, spreadsheetId);
 
-    const currentMonth = getPSTDate().slice(0, 7);
-    const orders = db.prepare("SELECT * FROM submitted_orders WHERE date LIKE ?").all(`${currentMonth}%`) as any[];
+    const targetMonth = monthToSync || getPSTDate().slice(0, 7);
+    console.log(`[SUMMARY] Refreshing summaries for ${targetMonth}...`);
+    const orders = db.prepare("SELECT * FROM submitted_orders WHERE date LIKE ?").all(`${targetMonth}%`) as any[];
     const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
     const timeInfo = calculateTimeGone();
 
@@ -1498,7 +1495,7 @@ async function startServer() {
 
     for (const ob of obs) {
       const row = [
-        currentMonth,
+        targetMonth,
         ob.town || '',
         ob.name || '',
         ob.contact || '',
@@ -1514,14 +1511,17 @@ async function startServer() {
       let totalA = 0;
 
       for (const cat of CATEGORIES) {
-        const obTargets = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ? AND month = ?").get(ob.contact, cat, currentMonth) as any;
+        const obTargets = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ? AND month = ?").get(ob.contact, cat, targetMonth) as any;
         const target = obTargets ? obTargets.target_ctn : 0;
         const tillDateTarget = target * timeInfo.timeGonePercent;
         const ach = achievementMap[ob.contact]?.[cat] || 0;
 
-        totalT += target;
-        totalTillDateT += tillDateTarget;
-        totalA += ach;
+        // Tonnage/Soap categories vs Match Gross separation
+        if (cat !== 'Match') {
+          totalT += target;
+          totalTillDateT += tillDateTarget;
+          totalA += ach;
+        }
 
         row.push(target.toFixed(2));
         row.push(tillDateTarget.toFixed(2));
@@ -1543,10 +1543,10 @@ async function startServer() {
       const obOrders = orders.filter(o => o.ob_contact === ob.contact);
       const visited = obOrders.reduce((sum, o) => sum + (o.visited_shops || 0), 0);
       const productive = obOrders.reduce((sum, o) => sum + (o.productive_shops || 0), 0);
-      const ach = achievementMap[ob.contact] ? Object.values(achievementMap[ob.contact]).reduce((a, b) => a + b, 0) : 0;
+      const ach = achievementMap[ob.contact] ? CATEGORIES.filter(c => c !== 'Match').reduce((sum, cat) => sum + (achievementMap[ob.contact][cat] || 0), 0) : 0;
       
-      // Get total target for %
-      const obTargets = db.prepare("SELECT SUM(target_ctn) as total FROM brand_targets WHERE ob_contact = ? AND month = ?").get(ob.contact, currentMonth) as any;
+      // Get total target for % (excluding Match)
+      const obTargets = db.prepare("SELECT SUM(target_ctn) as total FROM brand_targets WHERE ob_contact = ? AND month = ? AND brand_name != 'Match'").get(ob.contact, targetMonth) as any;
       const target = obTargets?.total || 0;
       const tillDateTarget = target * timeInfo.timeGonePercent;
 
@@ -1579,7 +1579,7 @@ async function startServer() {
       
       tsmOBs.forEach(ob => {
         CATEGORIES.forEach(cat => {
-          const obTarget = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ? AND month = ?").get(ob.contact, cat, currentMonth) as any;
+          const obTarget = db.prepare("SELECT target_ctn FROM brand_targets WHERE ob_contact = ? AND brand_name = ? AND month = ?").get(ob.contact, cat, targetMonth) as any;
           totalT += obTarget?.target_ctn || 0;
         });
         
@@ -1592,6 +1592,7 @@ async function startServer() {
           
           const orderData = typeof o.order_data === 'string' ? JSON.parse(o.order_data) : (o.order_data || {});
           const sales = SKUS.reduce((sum: number, sku: any) => {
+            if (sku.category === 'Match') return sum; // Exclude Match from SOAP tonnage/volume totals
             const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
             const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
             return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
@@ -1601,9 +1602,9 @@ async function startServer() {
       });
 
       const today = new Date();
-      const isCurrentMonth = currentMonth === today.toISOString().slice(0, 7);
-      const dayOfMonth = isCurrentMonth ? today.getDate() : new Date(parseInt(currentMonth.slice(0, 4)), parseInt(currentMonth.slice(5, 7)), 0).getDate();
-      const daysInMonth = new Date(parseInt(currentMonth.slice(0, 4)), parseInt(currentMonth.slice(5, 7)), 0).getDate();
+      const isCurrentMonth = targetMonth === today.toISOString().slice(0, 7);
+      const dayOfMonth = isCurrentMonth ? today.getDate() : new Date(parseInt(targetMonth.slice(0, 4)), parseInt(targetMonth.slice(5, 7)), 0).getDate();
+      const daysInMonth = new Date(parseInt(targetMonth.slice(0, 4)), parseInt(targetMonth.slice(5, 7)), 0).getDate();
 
       const achievementPerc = totalT > 0 ? (totalA / totalT) * 100 : 0;
       const rpd = dayOfMonth > 0 ? totalA / dayOfMonth : 0;
@@ -1615,7 +1616,7 @@ async function startServer() {
       const rsm = tsmOBs[0]?.rsm || 'Unassigned';
 
       return [
-        currentMonth,
+        targetMonth,
         region,
         rsm,
         tsm,
@@ -1781,7 +1782,7 @@ async function startServer() {
       FROM submitted_orders
       WHERE date LIKE ?
       GROUP BY date, order_booker, route, visit_type
-    `).all(`${currentMonth}%`) as any[];
+    `).all(`${targetMonth}%`) as any[];
 
     const analysisRows = visitAnalysis.map(a => {
       const totalVisited = a.total_visited || 0;
@@ -1861,6 +1862,74 @@ async function startServer() {
     }
   }
 
+  async function cleanupLegacyPacks() {
+    console.log("Starting legacy packs cleanup in database... (Cutoff ID: 1588)");
+    const orders = db.prepare("SELECT id, order_data FROM submitted_orders WHERE id > 1588").all() as any[];
+    let fixedCount = 0;
+    
+    const transaction = db.transaction(() => {
+      for (const order of orders) {
+        let orderData;
+        try {
+          orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : order.order_data;
+        } catch (e) { continue; }
+        
+        if (!orderData) continue;
+        
+        let needsFix = false;
+        const newOrderData = { ...orderData };
+        
+        // Strategy: Only process data AFTER April 15 (ID > 1588)
+        // If it's already an object {ctn, dzn, pks}, we refine potentially wrong entries
+        // If it's a number, we convert it to the object format
+        
+        for (const sku of SKUS) {
+          const item = newOrderData[sku.id];
+          if (!item) continue;
+          
+          let val = 0;
+          let isStandardFormat = false;
+          if (typeof item === 'number') {
+            val = item;
+          } else if (item && typeof item === 'object' && item.ctn !== undefined) {
+            val = Number(item.ctn || 0);
+            isStandardFormat = true;
+          }
+          
+          if (val > 0) {
+            const upc = sku.unitsPerCarton || 1;
+            // Aggressive detection for potential "pack" entries in "carton" field
+            const isSuspicious = Number.isInteger(val) && (
+              (val >= upc && upc > 1) || 
+              (val >= 12 && upc >= 12 && val % 6 === 0 && val >= upc) || // Catch dozen-related packs
+              (val > 100) ||
+              (val % upc === 0 && upc > 1)
+            );
+
+            if (isSuspicious) {
+              const convertedVal = val / upc;
+              newOrderData[sku.id] = { ctn: convertedVal, dzn: 0, pks: 0 };
+              needsFix = true;
+            } else if (!isStandardFormat) {
+              // Convert raw numbers to object format correctly for future-proofing
+              newOrderData[sku.id] = { ctn: val, dzn: 0, pks: 0 };
+              needsFix = true;
+            }
+          }
+        }
+        
+        if (needsFix) {
+          db.prepare("UPDATE submitted_orders SET order_data = ? WHERE id = ?")
+            .run(JSON.stringify(newOrderData), order.id);
+          fixedCount++;
+        }
+      }
+    });
+    transaction();
+    console.log(`Cleanup complete. Fixed ${fixedCount} records for IDs > 1588.`);
+    return fixedCount;
+  }
+
   async function repushSalesData() {
     try {
       const client = await getGoogleSheetsClient();
@@ -1868,6 +1937,11 @@ async function startServer() {
       const { sheets, spreadsheetId } = client;
 
       console.log("Starting full Sales_Data recalculation and repush...");
+      
+      // First, fix the database data ONLY for new records
+      const fixedCount = await cleanupLegacyPacks();
+      console.log(`[REPUSH] Database cleanup finished for new records. Fixed ${fixedCount} records.`);
+      
       const orders = db.prepare("SELECT * FROM submitted_orders ORDER BY date ASC, id ASC").all() as any[];
       const obAssignments = db.prepare("SELECT * FROM ob_assignments").all() as any[];
       const obMap = obAssignments.reduce((acc, ob) => {
@@ -1878,7 +1952,15 @@ async function startServer() {
       const headers = getSalesDataHeaders();
       const rows = orders.map(order => getSalesDataRow(order, obMap));
 
-      // Overwrite Sales_Data
+      // 1. Clear existing sheet to avoid trailing old data
+      console.log("[REPUSH] Clearing Sales_Data sheet...");
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId,
+        range: 'Sales_Data!A:ZZ',
+      });
+
+      // 2. Overwrite Sales_Data
+      console.log(`[REPUSH] Overwriting Sales_Data with ${rows.length} rows...`);
       await sheets.spreadsheets.values.update({
         spreadsheetId,
         range: 'Sales_Data!A1',
@@ -1889,8 +1971,12 @@ async function startServer() {
       });
       console.log(`Sales_Data repushed with ${rows.length} rows and recalculated tonnage.`);
       
-      // Also refresh summary sheets
-      await refreshSummarySheets(sheets, spreadsheetId);
+      // Also refresh summary sheets - handle all months represented in the data
+      const months = Array.from(new Set(orders.map(o => o.date.slice(0, 7))));
+      console.log(`[REPUSH] Refreshing summaries for ${months.length} months: ${months.join(', ')}`);
+      for (const m of months) {
+        await refreshSummarySheets(sheets, spreadsheetId, m);
+      }
       
       // Also push primary orders to ensure they align with new SKUs
       await pushPrimaryOrders(sheets, spreadsheetId);
@@ -3212,8 +3298,10 @@ async function startServer() {
           if (targets && typeof targets === 'object') {
             for (const [brand, target] of Object.entries(targets)) {
               db.prepare(`
-                INSERT OR IGNORE INTO brand_targets (ob_contact, brand_name, target_ctn, month)
+                INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
                 VALUES (?, ?, ?, ?)
+                ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET 
+                  target_ctn = excluded.target_ctn
               `).run(contact, brand, target, currentMonth);
             }
           }
@@ -3692,33 +3780,35 @@ async function startServer() {
           return null;
         };
 
-        const rawRegion = getVal(['Region', 'region', 'territory', 'territory/region'])?.toString().trim() || '';
+        const std = (val: any) => val?.toString().trim().toUpperCase() || '';
+
+        const rawRegion = std(getVal(['Region', 'region', 'territory', 'territory/region']));
         const mapRegion = (r: string) => {
           if (!r) return r;
           const lower = r.toLowerCase();
-          if (lower === 'zone north' || lower === 'region kpk' || lower === 'kpk') return 'North';
+          if (lower === 'north' || lower === 'zone north' || lower === 'region kpk' || lower === 'kpk') return 'NORTH';
           return r;
         };
 
         return {
-          name: getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name'])?.toString().trim() || '',
+          name: std(getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name'])),
           contact: getVal(['ID', 'OB ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id'])?.toString().trim() || '',
-          town: getVal(['Town', 'town', 'town name'])?.toString().trim() || '',
-          distributor: getVal(['Distributor', 'distributor', 'distributor name'])?.toString().trim() || '',
-          distributor_code: getVal(['Distributor Code', 'distributor_code', 'dist_code'])?.toString().trim() || '',
-          tsm: getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm'])?.toString().trim() || '',
-          zone: getVal(['Zone', 'zone'])?.toString().trim() || '',
+          town: std(getVal(['Town', 'town', 'town name'])),
+          distributor: std(getVal(['Distributor', 'distributor', 'distributor name'])),
+          distributor_code: std(getVal(['Distributor Code', 'distributor_code', 'dist_code'])),
+          tsm: std(getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm'])),
+          zone: std(getVal(['Zone', 'zone'])),
           region: mapRegion(rawRegion),
-          nsm: getVal(['NSM', 'nsm', 'nsm name'])?.toString().trim() || '',
-          rsm: getVal(['RSM', 'rsm', 'rsm name'])?.toString().trim() || '',
-          sc: getVal(['SC', 'sc', 'sc name'])?.toString().trim() || '',
-          director: getVal(['Director', 'director', 'director sales'])?.toString().trim() || '',
-          email: getVal(['Email', 'email', 'email address'])?.toString().trim() || '',
+          nsm: std(getVal(['NSM', 'nsm', 'nsm name'])),
+          rsm: std(getVal(['RSM', 'rsm', 'rsm name'])),
+          sc: std(getVal(['SC', 'sc', 'sc name'])),
+          director: std(getVal(['Director', 'director', 'director sales'])),
+          email: getVal(['Email', 'email', 'email address'])?.toString().trim().toLowerCase() || '',
           role: getVal(['Role', 'role', 'designation'])?.toString().trim() || '',
           off_day: getVal(['Off Day', 'off day', 'off_day'])?.toString().trim() || 'Sunday',
           total_shops: parseInt(getVal(['Total Shops', 'total_shops', 'shops'])) || 50,
           target_ctn: parseFloat(getVal(['Target Ctn', 'target_ctn', 'target'])) || 0,
-          routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim()).filter((r: string) => r) : [],
+          routes: getVal(['Routes', 'routes']) ? getVal(['Routes', 'routes']).split(",").map((r: string) => r.trim().toUpperCase()).filter((r: string) => r) : [],
           targets: {
             "Kite Glow": parseFloat(getVal(['Kite Glow Target', 'kite glow', 'kite_glow_target'])) || 0,
             "Burq Action": parseFloat(getVal(['Burq Action Target', 'burq action', 'burq_action_target'])) || 0,
@@ -3727,7 +3817,7 @@ async function startServer() {
             "Match": parseFloat(getVal(['Match Target', 'match', 'match_target'])) || 0
           }
         };
-      }).filter(t => (t.name && t.contact) || t.email);
+      }).filter(t => (t.name && t.contact) || t.email || (t.town && t.distributor));
 
       const transaction = db.transaction(() => {
         for (const item of team) {
@@ -3748,37 +3838,43 @@ async function startServer() {
             `).run(item.email, item.email, item.role, userName || item.email.split('@')[0], item.contact || '', item.region, item.town, 'nopassword');
           }
 
-          if (!item.contact) continue; // Skip OB assignments if no OB ID
-
-          db.prepare(`
-            INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes, off_day)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT(contact) DO UPDATE SET
-              name = COALESCE(NULLIF(excluded.name, ''), name),
-              town = COALESCE(NULLIF(excluded.town, ''), town),
-              distributor = COALESCE(NULLIF(excluded.distributor, ''), distributor),
-              tsm = COALESCE(NULLIF(excluded.tsm, ''), tsm),
-              zone = COALESCE(NULLIF(excluded.zone, ''), zone),
-              region = COALESCE(NULLIF(excluded.region, ''), region),
-              nsm = COALESCE(NULLIF(excluded.nsm, ''), nsm),
-              rsm = COALESCE(NULLIF(excluded.rsm, ''), rsm),
-              sc = COALESCE(NULLIF(excluded.sc, ''), sc),
-              director = COALESCE(NULLIF(excluded.director, ''), director),
-              total_shops = COALESCE(NULLIF(excluded.total_shops, 0), total_shops),
-              routes = COALESCE(NULLIF(excluded.routes, '[]'), routes),
-              off_day = COALESCE(NULLIF(excluded.off_day, ''), off_day)
-          `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.zone, item.region, item.nsm, item.rsm, item.sc || '', item.director, item.total_shops, JSON.stringify(item.routes), item.off_day);
-
-          for (const [brand, target] of Object.entries(item.targets)) {
+          if (item.contact) {
             db.prepare(`
-              INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
-              VALUES (?, ?, ?, ?)
-              ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET 
-                target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn)
-            `).run(item.contact, brand, target, targetMonth);
+              INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes, off_day)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON CONFLICT(contact) DO UPDATE SET
+                name = COALESCE(NULLIF(excluded.name, ''), name),
+                town = COALESCE(NULLIF(excluded.town, ''), town),
+                distributor = COALESCE(NULLIF(excluded.distributor, ''), distributor),
+                tsm = COALESCE(NULLIF(excluded.tsm, ''), tsm),
+                zone = COALESCE(NULLIF(excluded.zone, ''), zone),
+                region = COALESCE(NULLIF(excluded.region, ''), region),
+                nsm = COALESCE(NULLIF(excluded.nsm, ''), nsm),
+                rsm = COALESCE(NULLIF(excluded.rsm, ''), rsm),
+                sc = COALESCE(NULLIF(excluded.sc, ''), sc),
+                director = COALESCE(NULLIF(excluded.director, ''), director),
+                total_shops = COALESCE(NULLIF(excluded.total_shops, 0), total_shops),
+                routes = COALESCE(NULLIF(excluded.routes, '[]'), routes),
+                off_day = COALESCE(NULLIF(excluded.off_day, ''), off_day)
+            `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.zone, item.region, item.nsm, item.rsm, item.sc || '', item.director, item.total_shops, JSON.stringify(item.routes), item.off_day);
+
+            for (const [brand, targetValue] of Object.entries(item.targets)) {
+              const target = Number(targetValue);
+              if (target > 0) {
+                db.prepare(`
+                  INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
+                  VALUES (?, ?, ?, ?)
+                  ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET 
+                    target_ctn = excluded.target_ctn
+                `).run(item.contact, brand, target, targetMonth);
+              }
+            }
           }
 
           // Also update national_hierarchy
+          // If no ob_id, use a synthetic ID to allow multiple towns/distributors
+          const finalObId = item.contact || `NA-${item.town}-${item.distributor}`.toUpperCase();
+          
           db.prepare(`
             INSERT INTO national_hierarchy (
               director_sales, nsm_name, rsm_name, sc_name, asm_tsm_name, 
@@ -3800,8 +3896,8 @@ async function startServer() {
               email = COALESCE(NULLIF(excluded.email, ''), email)
           `).run(
             item.director, item.nsm, item.rsm, item.sc || '', item.tsm,
-            item.town, item.distributor, item.distributor_code || '',
-            item.name, item.contact, item.region, item.target_ctn, targetMonth, item.email
+            item.town, item.distributor, item.distributor_code, item.name, finalObId, 
+            item.region, item.target_ctn, targetMonth, item.email
           );
         }
       });
@@ -4096,16 +4192,22 @@ async function startServer() {
 
           const orderData: Record<string, any> = {};
           SKUS.forEach(sku => {
-            const val = parseFloat(getVal([`${sku.name} (${sku.category})`, sku.name])) || 0;
+            let val = parseFloat(getVal([`${sku.name} (${sku.category})`, sku.name])) || 0;
             if (val > 0) {
-              const isWashingPowder = ["Kite Glow", "Burq Action", "Vero"].includes(sku.category);
-              if (isWashingPowder) {
-                // For Washing Powder, val is total packs (bags)
-                orderData[sku.id] = { ctn: 0, dzn: 0, pks: val };
-              } else {
-                // For DWB/Match, val is cartons
-                orderData[sku.id] = { ctn: val, dzn: 0, pks: 0 };
+              // Heuristic: If val is an integer and >= threshold, it's likely packs
+              const upc = sku.unitsPerCarton || 1;
+              const isSuspicious = Number.isInteger(val) && (
+                (val >= upc && upc > 1) || 
+                (val >= 20 && upc >= 24) ||
+                (val % upc === 0 && val > 0) ||
+                (val >= 48 && upc >= 12)
+              );
+
+              if (isSuspicious) {
+                val = val / upc;
               }
+              // Volume from sheet (Bags/Ctns) should be stored in 'ctn' field for consistent achievement calculation
+              orderData[sku.id] = { ctn: val, dzn: 0, pks: 0 };
             }
           });
 
@@ -4236,43 +4338,58 @@ async function startServer() {
 
   async function performFullSync(sheets: any, spreadsheetId: string, month?: string) {
     const targetMonth = month || new Date().toISOString().slice(0, 7);
+    console.log(`[SYNC] Starting full sync for month: ${targetMonth}`);
+    
     // 1. Ensure all sheets exist
-    const requiredSheets = ["Sales_Data", "Team_Data", "Targets_vs_Achievement", "OB_Route_Performance", "Stocks_Report", "Current_Stocks", "Last_Entry_Date", "Visit_Type_Analysis", "OB_Performance", "TSM_Performance", "Product_Config", "Users"];
+    console.log("[SYNC] Step 1/8: Ensuring sheets exist...");
     await ensureSheetsExist(sheets, spreadsheetId);
 
     // 2. Pull Product Config (Weights etc)
+    console.log("[SYNC] Step 2/8: Pulling product config...");
     await pullProductConfig(sheets, spreadsheetId);
 
     // 3. Pull Team Data (Hierarchy & Targets)
+    console.log("[SYNC] Step 3/8: Pulling team data...");
     const pullTeamResult = await pullTeamData(sheets, spreadsheetId, targetMonth);
 
     // 3.5 Pull TSM Assignments
+    console.log("[SYNC] Step 3.5: Pulling TSM assignments...");
     await pullTsmAssignments(sheets, spreadsheetId);
 
     // 4. Pull Users Data
+    console.log("[SYNC] Step 4/8: Pulling users data...");
     const pullUsersResult = await pullUsersData(sheets, spreadsheetId);
 
     // 5. Pull Sales History
+    console.log("[SYNC] Step 5/8: Pulling sales history...");
     const pullSalesResult = await pullSalesHistory(sheets, spreadsheetId);
 
     // 6. Push Product Config (to ensure format is there)
+    console.log("[SYNC] Step 6/8: Pushing product config...");
     await pushProductConfig(sheets, spreadsheetId);
 
     // 7. Refresh summary sheets
+    console.log("[SYNC] Step 7/8: Refreshing summary sheets...");
     await refreshSummarySheets(sheets, spreadsheetId);
 
+    // 7.5 Recalculate and Repush Sales Data (to fix any legacy packs)
+    console.log("[SYNC] Step 7.5: Recalculating and repushing legacy packs...");
+    const pushedCount = await repushSalesData();
+
     // 8. Push Primary Orders
+    console.log("[SYNC] Step 8/8: Pushing primary orders...");
     await pushPrimaryOrders(sheets, spreadsheetId);
 
     // Update Last Sync
     const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
+    console.log(`[SYNC] Sync complete at ${now}. Updating app_config.`);
     db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("last_sync_at", now);
 
     return {
       pulledTeam: pullTeamResult.success ? pullTeamResult.count : 0,
       pulledUsers: pullUsersResult.success ? pullUsersResult.count : 0,
       pulledSales: pullSalesResult.success ? pullSalesResult.count : 0,
-      pushedSales: 0,
+      pushedSales: pushedCount,
       lastSync: now
     };
   }

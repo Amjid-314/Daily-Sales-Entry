@@ -132,10 +132,12 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
 
         <button 
           onClick={onLogout} 
-          className="p-1.5 sm:p-2 text-slate-400 hover:text-rose-500 transition-all rounded-xl hover:bg-rose-50"
+          className="flex items-center gap-1.5 sm:gap-2 p-1.5 sm:p-2 text-rose-500 bg-rose-50 hover:bg-rose-100 transition-all rounded-xl border border-rose-100 shadow-sm"
           title="Logout"
         >
           <LogOut className="w-4 h-4 sm:w-5 sm:h-5" />
+          <span className="text-[10px] font-black uppercase tracking-widest sm:hidden">Out</span>
+          <span className="hidden sm:inline text-[10px] font-black uppercase tracking-widest">Logout</span>
         </button>
       </div>
     </nav>
