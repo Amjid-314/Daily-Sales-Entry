@@ -83,6 +83,7 @@ import {
   Truck,
   Edit2,
   Maximize2,
+  FileSpreadsheet,
   LogOut
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
@@ -6727,7 +6728,9 @@ export default function App() {
   const [tsmAssignments, setTsmAssignments] = useState<any[]>([]);
   const [isLoadingPrimary, setIsLoadingPrimary] = useState(false);
   const [isSubmittingPrimary, setIsSubmittingPrimary] = useState(false);
-  const [primarySubView, setPrimarySubView] = useState<'matrix' | 'history'>('matrix');
+  const [primarySubView, setPrimarySubView] = useState<'matrix' | 'history' | 'analysis'>('matrix');
+  const [primaryEntryDate, setPrimaryEntryDate] = useState<string>(getPSTDate());
+  const [primaryAggregationLevel, setPrimaryAggregationLevel] = useState<'Town' | 'Distributor' | 'TSM' | 'Region'>('Distributor');
   const [editingPrimaryOrder, setEditingPrimaryOrder] = useState<any | null>(null);
   const [selectedPrimaryRegion, setSelectedPrimaryRegion] = useState('');
   const [selectedPrimaryTSM, setSelectedPrimaryTSM] = useState('');
@@ -11081,7 +11084,7 @@ export default function App() {
           return apiFetch('/api/primary-orders', {
             method: 'POST',
             body: JSON.stringify({
-              date: getPSTDate(),
+              date: primaryEntryDate,
               tsm: selectedPrimaryTSM || userName,
               town: distInfo?.town || '',
               distributor: distributor,
@@ -11107,20 +11110,20 @@ export default function App() {
       }
     };
 
-    const handleUpdateStatus = async (orderId: number, status: string, remarks?: string, dispatchedDate?: string) => {
+    const handleUpdatePrimaryOrder = async (orderId: number, data: any) => {
       try {
         const res = await apiFetch(`/api/primary-orders/${orderId}`, {
           method: 'PATCH',
-          body: JSON.stringify({ status, remarks, dispatchedDate })
+          body: JSON.stringify(data)
         });
         if (res.ok) {
-          setMessage({ text: 'Order status updated!', type: 'success' });
+          setMessage({ text: 'Order updated successfully!', type: 'success' });
           fetchPrimaryOrders();
           syncGoogle();
         }
       } catch (err) {
         console.error(err);
-        setMessage({ text: 'Failed to update order status', type: 'error' });
+        setMessage({ text: 'Failed to update order', type: 'error' });
       } finally {
         setTimeout(() => setMessage(null), 3000);
       }
@@ -11198,6 +11201,12 @@ export default function App() {
                     className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primarySubView === 'history' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}
                   >
                     Order History
+                  </button>
+                  <button 
+                    onClick={() => setPrimarySubView('analysis')}
+                    className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primarySubView === 'analysis' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}
+                  >
+                    Analysis Report
                   </button>
                 </div>
               </div>
@@ -11288,6 +11297,28 @@ export default function App() {
                 </div>
                 
                 <div className="flex flex-wrap gap-2">
+                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Date:</span>
+                    <input 
+                      type="date"
+                      value={primaryEntryDate}
+                      onChange={(e) => {
+                        const selectedDate = e.target.value;
+                        const dateObj = new Date(selectedDate);
+                        const today = new Date();
+                        // Special rule for April: only allow previous dates (or today)
+                        if (dateObj.getMonth() === 3 && dateObj.getFullYear() === 2026) { // Month is 0-indexed, 3=April
+                          const todayDate = getPSTDate();
+                          if (selectedDate > todayDate) {
+                            setMessage({ text: 'April permits only past or current dates', type: 'error' });
+                            return;
+                          }
+                        }
+                        setPrimaryEntryDate(selectedDate);
+                      }}
+                      className="text-[10px] font-black text-seablue outline-none bg-transparent"
+                    />
+                  </div>
                   <select 
                     value={selectedPrimaryRegion} 
                     onChange={e => {
@@ -11417,6 +11448,116 @@ export default function App() {
                 </table>
               </div>
             </section>
+          ) : primarySubView === 'analysis' ? (
+            <section className="space-y-4">
+              <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/40 p-6 border border-slate-100">
+                <div className="flex flex-col md:flex-row md:items-center justify-between mb-6 gap-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-8 h-8 bg-emerald-50 rounded-xl flex items-center justify-center text-emerald-600">
+                      <TrendingUp className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Aggregation Analysis</h3>
+                      <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase">Breakdown by {primaryAggregationLevel}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex bg-slate-100 p-1 rounded-lg mr-2">
+                      {['Town', 'Distributor', 'TSM', 'Region'].map(level => (
+                        <button 
+                          key={level}
+                          onClick={() => setPrimaryAggregationLevel(level as any)}
+                          className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primaryAggregationLevel === level ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}
+                        >
+                          {level}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-[10px] font-bold text-slate-400">Month:</span>
+                    <input 
+                       type="month"
+                       value={selectedMonth}
+                       onChange={e => setSelectedMonth(e.target.value)}
+                       className="input-clean py-1.5 px-3 text-[10px] rounded-xl border-slate-100 shadow-sm"
+                    />
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto scrollbar-thin rounded-2xl border border-slate-50">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                        <th className="px-6 py-4">{primaryAggregationLevel} Group</th>
+                        <th className="px-4 py-4 text-center">Net Weight (TO)</th>
+                        <th className="px-4 py-4 text-center">Gross Units (GR)</th>
+                        <th className="px-4 py-4 text-center">Total Value</th>
+                        <th className="px-6 py-4 text-right">Total Units (Ctns/Bags)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-50">
+                      {(() => {
+                        const agg: Record<string, { val: number, tons: number, gross: number, items: number }> = {};
+                        primaryOrderHistory
+                          .filter(o => !selectedMonth || o.date.startsWith(selectedMonth))
+                          .forEach(order => {
+                            const grp = (order[primaryAggregationLevel.toLowerCase()] || 'Unknown').toString();
+                            if (!agg[grp]) agg[grp] = { val: 0, tons: 0, gross: 0, items: 0 };
+                            
+                            const items = JSON.parse(order.items || '{}');
+                            agg[grp].val += Number(order.total_amount || 0);
+                            agg[grp].tons += calculateTonnage(items, SKUS);
+                            agg[grp].gross += calculateGross(items, SKUS);
+                            agg[grp].items += Object.values(items).reduce((a:any, b:any) => a + Number(b), 0) as number;
+                          });
+
+                        return Object.entries(agg).sort((a,b) => b[1].val - a[1].val).map(([group, data]) => (
+                          <tr key={group} className="hover:bg-slate-50/50 transition-all">
+                            <td className="px-6 py-4">
+                              <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{group}</span>
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <span className="text-[11px] font-black text-emerald-600">{data.tons.toFixed(3)} TO</span>
+                            </td>
+                            <td className="px-4 py-4 text-center">
+                              <span className="text-[11px] font-black text-indigo-600">{data.gross.toLocaleString()} GR</span>
+                            </td>
+                            <td className="px-4 py-4 text-center font-mono text-xs font-bold text-slate-700">
+                              Rs {data.val.toLocaleString()}
+                            </td>
+                            <td className="px-6 py-4 text-right">
+                              <span className="text-xs font-black text-seablue">{data.items.toLocaleString()}</span>
+                            </td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+                    <tfoot>
+                       <tr className="bg-slate-50 font-black text-slate-900 border-t border-slate-200">
+                          <td className="px-6 py-4 text-[10px] uppercase tracking-widest">Grand Total Analysis</td>
+                          {(() => {
+                             let tVal = 0, tTons = 0, tGross = 0, tItems = 0;
+                             primaryOrderHistory.filter(o => !selectedMonth || o.date.startsWith(selectedMonth)).forEach(order => {
+                                const items = JSON.parse(order.items || '{}');
+                                tVal += Number(order.total_amount || 0);
+                                tTons += calculateTonnage(items, SKUS);
+                                tGross += calculateGross(items, SKUS);
+                                tItems += Object.values(items).reduce((a:any,b:any) => a + Number(b), 0) as number;
+                             });
+                             return (
+                               <>
+                                 <td className="px-4 py-4 text-center text-emerald-700 font-black">{tTons.toFixed(3)} TO</td>
+                                 <td className="px-4 py-4 text-center text-indigo-700 font-black">{tGross.toLocaleString()} GR</td>
+                                 <td className="px-4 py-4 text-center font-mono text-xs font-black">Rs {tVal.toLocaleString()}</td>
+                                 <td className="px-6 py-4 text-right text-seablue font-black">{tItems.toLocaleString()}</td>
+                               </>
+                             );
+                          })()}
+                       </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              </div>
+            </section>
           ) : (
             <section className="space-y-4">
               <div className="bg-white rounded-3xl shadow-xl shadow-slate-200/40 p-6 border border-slate-100">
@@ -11526,17 +11667,26 @@ export default function App() {
                                         <span className="text-[9px] font-black uppercase">Dispatched {item.dispatched_date}</span>
                                       </div>
                                    )}
+                                   {item.invoice_number && (
+                                      <div className="flex items-center gap-2 text-indigo-600">
+                                        <FileSpreadsheet className="w-3 h-3" />
+                                        <span className="text-[9px] font-black uppercase">Inv: {item.invoice_number}</span>
+                                      </div>
+                                   )}
                                  </div>
                               </td>
-                              {(userRole === 'Admin' || userRole === 'Super Admin') && (
+                              {(userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'SC') && (
                                 <td className="px-4 py-5">
                                   <div className="flex justify-center gap-2">
                                     <button 
-                                      onClick={() => setEditingPrimaryOrder(item)}
+                                      onClick={() => {
+                                        const parsedItems = JSON.parse(item.items || '{}');
+                                        setEditingPrimaryOrder({ ...item, items: parsedItems });
+                                      }}
                                       className="p-2 hover:bg-slate-100 rounded-lg text-seablue transition-colors border border-slate-100 flex items-center gap-2"
                                     >
                                       <Edit2 className="w-3.5 h-3.5" />
-                                      <span className="text-[8px] font-black uppercase tracking-widest">Update</span>
+                                      <span className="text-[8px] font-black uppercase tracking-widest">Edit/Ship</span>
                                     </button>
                                   </div>
                                 </td>
@@ -11558,70 +11708,109 @@ export default function App() {
             <motion.div 
               initial={{ opacity: 0, scale: 0.95 }}
               animate={{ opacity: 1, scale: 1 }}
-              className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden border border-slate-100"
+              className="bg-white rounded-3xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden border border-slate-100 flex flex-col"
             >
               <div className="px-6 py-4 bg-slate-50 border-b border-slate-100 flex justify-between items-center">
-                <h3 className="text-sm font-black text-seablue uppercase tracking-widest">Update Order Logistics</h3>
+                <div>
+                  <h3 className="text-sm font-black text-seablue uppercase tracking-widest">Edit & Fulfill Order</h3>
+                  <p className="text-[10px] text-slate-400 font-bold uppercase mt-0.5">{editingPrimaryOrder.distributor} — {editingPrimaryOrder.date}</p>
+                </div>
                 <button onClick={() => setEditingPrimaryOrder(null)} className="p-2 hover:bg-slate-200 rounded-full transition-colors">
                   <Maximize2 className="w-4 h-4 text-slate-400 rotate-45" />
                 </button>
               </div>
-              <div className="p-6 space-y-4">
-                <div>
-                   <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Status</label>
-                   <select 
-                     className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all"
-                     value={editingPrimaryOrder.status}
-                     onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, status: e.target.value})}
-                   >
-                     <option value="Pending">Pending</option>
-                     <option value="In Clearance">In Clearance</option>
-                     <option value="Dispatched">Dispatched</option>
-                     <option value="Cancelled">Cancelled</option>
-                   </select>
-                </div>
-                {editingPrimaryOrder.status === 'Dispatched' && (
-                  <div>
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Dispatch Date</label>
-                    <input 
-                      type="date"
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all"
-                      value={editingPrimaryOrder.dispatched_date || getPSTDate()}
-                      onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, dispatched_date: e.target.value})}
-                    />
+              <div className="p-6 overflow-y-auto space-y-6 flex-1">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Status</label>
+                      <select 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all"
+                        value={editingPrimaryOrder.status}
+                        onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, status: e.target.value})}
+                      >
+                        <option value="Pending">Pending</option>
+                        <option value="In Clearance">In Clearance</option>
+                        <option value="Dispatched">Dispatched</option>
+                        <option value="Partial Dispatched">Partial Dispatched</option>
+                        <option value="Cancelled">Cancelled</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Dispatch Date</label>
+                      <input 
+                        type="date"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all"
+                        value={editingPrimaryOrder.dispatched_date || getPSTDate()}
+                        onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, dispatched_date: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Invoice Number</label>
+                      <input 
+                        type="text"
+                        placeholder="Enter Invoice #"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all"
+                        value={editingPrimaryOrder.invoice_number || ''}
+                        onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, invoice_number: e.target.value})}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Remarks / Editing Log</label>
+                      <textarea 
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all h-24"
+                        placeholder="Log changes here..."
+                        value={editingPrimaryOrder.remarks || ''}
+                        onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, remarks: e.target.value})}
+                      />
+                    </div>
                   </div>
-                )}
-                <div>
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1.5 block">Remarks</label>
-                  <textarea 
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-seablue/20 focus:border-seablue transition-all h-24"
-                    placeholder="Enter any logistics remarks..."
-                    value={editingPrimaryOrder.remarks || ''}
-                    onChange={(e) => setEditingPrimaryOrder({...editingPrimaryOrder, remarks: e.target.value})}
-                  />
+
+                  <div className="md:col-span-2 border-l border-slate-100 pl-6 h-full flex flex-col">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-4 block">Actual Dispatched Quantities (Ctns/Bags)</label>
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 overflow-y-auto pb-4">
+                      {SKUS.map(sku => (
+                        <div key={sku.id} className="p-3 bg-slate-50 rounded-2xl border border-slate-100 transition-all hover:bg-slate-100">
+                           <p className="text-[9px] font-black text-slate-400 uppercase leading-none mb-2">{sku.name}</p>
+                           <input 
+                              type="number"
+                              min="0"
+                              value={editingPrimaryOrder.items[sku.id] || 0}
+                              onChange={(e) => setEditingPrimaryOrder({
+                                ...editingPrimaryOrder,
+                                items: { ...editingPrimaryOrder.items, [sku.id]: parseInt(e.target.value) || 0 }
+                              })}
+                              className="w-full bg-white border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-black text-seablue text-center"
+                           />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
                 </div>
-                <div className="pt-2 flex gap-3">
-                  <button 
-                    onClick={() => setEditingPrimaryOrder(null)}
-                    className="flex-1 py-3 border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all"
-                  >
-                    Cancel
-                  </button>
-                  <button 
-                    onClick={async () => {
-                      await handleUpdateStatus(
-                        editingPrimaryOrder.id, 
-                        editingPrimaryOrder.status, 
-                        editingPrimaryOrder.remarks, 
-                        editingPrimaryOrder.dispatched_date
-                      );
-                      setEditingPrimaryOrder(null);
-                    }}
-                    className="flex-2 py-3 bg-seablue text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-seablue/20 hover:scale-[1.02] transition-all"
-                  >
-                    Save Changes
-                  </button>
-                </div>
+              </div>
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex gap-3">
+                <button 
+                  onClick={() => setEditingPrimaryOrder(null)}
+                  className="flex-1 py-3 border border-slate-200 rounded-xl text-xs font-black uppercase tracking-widest text-slate-500 hover:bg-slate-50 transition-all"
+                >
+                  Discard
+                </button>
+                <button 
+                  onClick={async () => {
+                    const { id, status, remarks, dispatched_date, invoice_number, items } = editingPrimaryOrder;
+                    await handleUpdatePrimaryOrder(id, { 
+                      status, 
+                      remarks: `${remarks}\n[Edited by ${userName} at ${getPSTTimestamp()}]`, 
+                      dispatchedDate: dispatched_date,
+                      invoiceNumber: invoice_number,
+                      items
+                    });
+                    setEditingPrimaryOrder(null);
+                  }}
+                  className="flex-[2] py-3 bg-seablue text-white rounded-xl text-xs font-black uppercase tracking-widest shadow-lg shadow-seablue/20 hover:scale-[1.01] transition-all"
+                >
+                  Confirm Fulfillment
+                </button>
               </div>
             </motion.div>
           </div>

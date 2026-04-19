@@ -2961,10 +2961,10 @@ async function startServer() {
     }
   });
 
-  app.patch("/api/primary-orders/:id", authenticateToken, authorizeRoles('Admin', 'Super Admin'), (req: any, res) => {
+  app.patch("/api/primary-orders/:id", authenticateToken, authorizeRoles('Admin', 'Super Admin', 'SC'), (req: any, res) => {
     try {
       const { id } = req.params;
-      const { status, remarks, dispatchedDate, invoiceNumber } = req.body;
+      const { status, remarks, dispatchedDate, invoiceNumber, items, date } = req.body;
       
       const updates: string[] = [];
       const params: any[] = [];
@@ -2973,13 +2973,15 @@ async function startServer() {
       if (remarks !== undefined) { updates.push("remarks = ?"); params.push(remarks); }
       if (dispatchedDate !== undefined) { updates.push("dispatched_date = ?"); params.push(dispatchedDate); }
       if (invoiceNumber !== undefined) { updates.push("invoice_number = ?"); params.push(invoiceNumber); }
+      if (items !== undefined) { updates.push("items = ?"); params.push(JSON.stringify(items)); }
+      if (date !== undefined) { updates.push("date = ?"); params.push(date); }
 
       if (updates.length === 0) return res.status(400).json({ error: "No fields to update" });
 
       params.push(id);
       db.prepare(`UPDATE primary_orders SET ${updates.join(', ')} WHERE id = ?`).run(...params);
 
-      logAction(req.user.id.toString(), req.user.name, req.user.role, "UPDATE_PRIMARY_ORDER", { id, status });
+      logAction(req.user.id.toString(), req.user.name, req.user.role, "UPDATE_PRIMARY_ORDER", { id, status, hasItems: !!items });
 
       res.json({ success: true, message: "Primary order updated successfully" });
     } catch (err) {
