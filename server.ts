@@ -95,6 +95,21 @@ const SKUS = [
   { id: "m-ta-c", name: "Tanga (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
 ];
 
+function toProperCase(str: string): string {
+  if (!str) return '';
+  return str.toString().trim().split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase()).join(' ');
+}
+
+function normalizeRegion(r: string): string {
+  if (!r) return '';
+  const lower = r.toString().trim().toLowerCase();
+  // Expanded mapping based on user feedback (Ikramullah issues)
+  if (lower === 'north' || lower === 'zone north' || lower === 'region kpk' || lower === 'kpk' || lower === 'd i khan' || lower === 'di khan' || lower.includes('peshawar')) return 'North';
+  if (lower === 'south' || lower === 'zone south' || lower === 'sindh') return 'South';
+  if (lower === 'central' || lower === 'punjab') return 'Central';
+  return toProperCase(r);
+}
+
 function calculateAchievement(orderData: any) {
   const totals: Record<string, { value: number, unit: string }> = {};
   CATEGORIES.forEach(cat => {
@@ -3792,17 +3807,40 @@ async function startServer() {
           return null;
         };
         return {
-          tsm_name: getVal(['TSM Name', 'tsm name', 'tsm'])?.toString().trim() || '',
-          town: getVal(['Town', 'town'])?.toString().trim() || '',
+          tsm_name: toProperCase(getVal(['TSM Name', 'tsm name', 'tsm'])?.toString().trim() || ''),
+          town: toProperCase(getVal(['Town', 'town'])?.toString().trim() || ''),
           routes: getVal(['Routes', 'routes'])?.toString().trim() || ''
         };
       }).filter(a => a.tsm_name && a.town);
 
       const transaction = db.transaction(() => {
         db.prepare("DELETE FROM tsm_assignments").run();
+        
+        // Fetch OB routes to include in TSM routes
+        const obAssignments = db.prepare("SELECT tsm, routes FROM ob_assignments").all() as any[];
+        const obRoutesMap: Record<string, Set<string>> = {};
+        obAssignments.forEach(ob => {
+           if (!ob.tsm) return;
+           const tsmKey = toProperCase(ob.tsm);
+           if (!obRoutesMap[tsmKey]) obRoutesMap[tsmKey] = new Set();
+           if (ob.routes) {
+              try {
+                const routes = JSON.parse(ob.routes) || [];
+                routes.forEach((r: string) => obRoutesMap[tsmKey].add(r.toUpperCase()));
+              } catch(e) {}
+           }
+        });
+
         const stmt = db.prepare("INSERT INTO tsm_assignments (tsm_name, town, routes) VALUES (?, ?, ?)");
         for (const a of assignments) {
-          stmt.run(a.tsm_name, a.town, a.routes);
+          let routes = a.routes;
+          if (obRoutesMap[a.tsm_name]) {
+             const existingRoutes = routes ? routes.split(',').map(r => r.trim().toUpperCase()) : [];
+             const obRoutesList = Array.from(obRoutesMap[a.tsm_name]);
+             const combined = Array.from(new Set([...existingRoutes, ...obRoutesList])).filter(Boolean);
+             routes = combined.join(', ');
+          }
+          stmt.run(a.tsm_name, a.town, routes);
         }
       });
       transaction();
@@ -3869,29 +3907,24 @@ async function startServer() {
           return null;
         };
 
-        const std = (val: any) => val?.toString().trim().toUpperCase() || '';
+        const std = (val: any) => val?.toString().trim() || '';
+        const proper = (val: any) => toProperCase(val);
 
         const rawRegion = std(getVal(['Region', 'region', 'territory', 'territory/region']));
-        const mapRegion = (r: string) => {
-          if (!r) return r;
-          const lower = r.toLowerCase();
-          if (lower === 'north' || lower === 'zone north' || lower === 'region kpk' || lower === 'kpk') return 'NORTH';
-          return r;
-        };
 
         return {
-          name: std(getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name'])),
-          contact: getVal(['ID', 'OB ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id'])?.toString().trim() || '',
-          town: std(getVal(['Town', 'town', 'town name'])),
-          distributor: std(getVal(['Distributor', 'distributor', 'distributor name'])),
+          name: proper(getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name'])),
+          contact: std(getVal(['ID', 'OB ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id'])),
+          town: proper(getVal(['Town', 'town', 'town name'])),
+          distributor: proper(getVal(['Distributor', 'distributor', 'distributor name'])),
           distributor_code: std(getVal(['Distributor Code', 'distributor_code', 'dist_code'])),
-          tsm: std(getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm'])),
-          zone: std(getVal(['Zone', 'zone'])),
-          region: mapRegion(rawRegion),
-          nsm: std(getVal(['NSM', 'nsm', 'nsm name'])),
-          rsm: std(getVal(['RSM', 'rsm', 'rsm name'])),
-          sc: std(getVal(['SC', 'sc', 'sc name'])),
-          director: std(getVal(['Director', 'director', 'director sales'])),
+          tsm: proper(getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm'])),
+          zone: proper(getVal(['Zone', 'zone'])),
+          region: normalizeRegion(rawRegion),
+          nsm: proper(getVal(['NSM', 'nsm', 'nsm name'])),
+          rsm: proper(getVal(['RSM', 'rsm', 'rsm name'])),
+          sc: proper(getVal(['SC', 'sc', 'sc name'])),
+          director: proper(getVal(['Director', 'director', 'director sales'])),
           email: getVal(['Email', 'email', 'email address'])?.toString().trim().toLowerCase() || '',
           role: getVal(['Role', 'role', 'designation'])?.toString().trim() || '',
           off_day: getVal(['Off Day', 'off day', 'off_day'])?.toString().trim() || 'Sunday',
@@ -3909,6 +3942,9 @@ async function startServer() {
       }).filter(t => (t.name && t.contact) || t.email || (t.town && t.distributor));
 
       const transaction = db.transaction(() => {
+        // Clear ob_assignments to ensure total sync with Master Sheet
+        db.prepare("DELETE FROM ob_assignments").run();
+        
         for (const item of team) {
           if (item.email && item.role) {
             // Determine name based on role if OB Name is empty
@@ -4065,12 +4101,6 @@ async function startServer() {
         };
 
         const rawRegion = getVal(['Region', 'region'])?.toString().trim() || '';
-        const mapRegion = (r: string) => {
-          if (!r) return r;
-          const lower = r.toLowerCase();
-          if (lower === 'zone north' || lower === 'region kpk' || lower === 'kpk') return 'North';
-          return r;
-        };
 
         const emailVal = getVal(['Email', 'email'])?.toString().trim() || '';
         let usernameVal = getVal(['Username', 'username'])?.toString().trim() || '';
@@ -4085,12 +4115,12 @@ async function startServer() {
 
         return {
           username: usernameVal.toLowerCase(),
-          email: emailVal,
+          email: emailVal.toLowerCase(),
           role: getVal(['Role', 'role', 'Designation', 'designation'])?.toString().trim() || 'OB',
-          name: getVal(['Name', 'name', 'Full Name', 'full name'])?.toString().trim() || usernameVal.split('@')[0],
-          contact: getVal(['Contact', 'contact', 'Phone', 'phone'])?.toString().trim() || '',
-          region: mapRegion(rawRegion),
-          town: getVal(['Town', 'town'])?.toString().trim() || ''
+          name: toProperCase(getVal(['Name', 'name', 'Full Name', 'full name'])?.toString().trim() || usernameVal.split('@')[0]),
+          contact: getVal(['Contact', 'contact', 'Phone', 'phone', 'id'])?.toString().trim() || '',
+          region: normalizeRegion(rawRegion),
+          town: toProperCase(getVal(['Town', 'town'])?.toString().trim() || '')
         };
       }).filter(u => u !== null);
 
@@ -4269,10 +4299,6 @@ async function startServer() {
 
           const cleanRoute = getVal(['Route'])?.toString().trim() || '';
 
-          // For historical pull, we use INSERT OR IGNORE or check for existence
-          const existingRecord = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").get(cleanContact, cleanDate, cleanRoute);
-          if (existingRecord) continue;
-
           const visitTypeLabel = getVal(['Visit Type']);
           let visitType = 'A';
           if (visitTypeLabel === 'Absent') visitType = 'Absent';
@@ -4282,22 +4308,7 @@ async function startServer() {
           const orderData: Record<string, any> = {};
           SKUS.forEach(sku => {
             let val = parseFloat(getVal([`${sku.name} (${sku.category})`, sku.name])) || 0;
-            if (val > 0) {
-              // Heuristic: If val is an integer and >= threshold, it's likely packs
-              const upc = sku.unitsPerCarton || 1;
-              const isSuspicious = Number.isInteger(val) && (
-                (val >= upc && upc > 1) || 
-                (val >= 20 && upc >= 24) ||
-                (val % upc === 0 && val > 0) ||
-                (val >= 48 && upc >= 12)
-              );
-
-              if (isSuspicious) {
-                val = val / upc;
-              }
-              // Volume from sheet (Bags/Ctns) should be stored in 'ctn' field for consistent achievement calculation
-              orderData[sku.id] = { ctn: val, dzn: 0, pks: 0 };
-            }
+            orderData[sku.id] = { ctn: val, dzn: 0, pks: 0 };
           });
 
           const catProdData: Record<string, number> = {};
@@ -4307,58 +4318,27 @@ async function startServer() {
 
           const zone = getVal(['Zone']) || '';
           const rawRegion = getVal(['Region'])?.toString().trim() || '';
-          const mapRegion = (r: string) => {
-            if (!r) return r;
-            const lower = r.toLowerCase();
-            if (lower === 'zone north' || lower === 'region kpk' || lower === 'kpk') return 'North';
-            return r;
-          };
-          const region = mapRegion(rawRegion);
+          const region = normalizeRegion(rawRegion);
           const submittedAt = getVal(['Submitted At']) || new Date().toISOString();
           const lat = getVal(['Latitude']) || null;
           const lng = getVal(['Longitude']) || null;
           const acc = getVal(['Accuracy']) || null;
 
-          const existing = db.prepare("SELECT id FROM submitted_orders WHERE ob_contact = ? AND date = ?").get(cleanContact, cleanDate) as any;
-          
-          if (existing) {
-            db.prepare(`
-              UPDATE submitted_orders SET
-                month = ?,
-                director = ?, nsm = ?, rsm = ?, sc = ?, tsm = ?, town = ?, distributor = ?, order_booker = ?, route = ?,
-                zone = ?, region = ?,
-                total_shops = ?, visited_shops = ?, productive_shops = ?,
-                category_productive_data = ?, order_data = ?, targets_data = ?,
-                submitted_at = ?, latitude = ?, longitude = ?, accuracy = ?, visit_type = ?
-              WHERE id = ?
-            `).run(
-              orderMonth,
-              getVal(['Director', 'director sales']) || '', getVal(['NSM', 'nsm name']) || '', getVal(['RSM', 'rsm name']) || '', getVal(['SC', 'sc name']) || '', getVal(['TSM', 'ASM', 'asm/tsm', 'asm / tsm', 'asm_tsm_name']) || '', 
-              getVal(['Town', 'town name']) || '', getVal(['Distributor', 'distributor name']) || '', getVal(['OB Name', 'order booker name']) || '', cleanRoute,
-              zone, region,
-              parseInt(getVal(['Total Shops'])) || 0, parseInt(getVal(['Visited Shops'])) || 0, parseInt(getVal(['Productive Shops'])) || 0,
-              JSON.stringify(catProdData), 
-              JSON.stringify(orderData),
-              JSON.stringify({}), 
-              submittedAt,
-              lat, lng, acc,
-              visitType,
-              existing.id
-            );
-          } else {
-            insertOrder.run(
-              cleanDate, orderMonth, getVal(['Director', 'director sales']) || '', getVal(['NSM', 'nsm name']) || '', getVal(['RSM', 'rsm name']) || '', getVal(['SC', 'sc name']) || '', getVal(['TSM', 'ASM', 'asm/tsm', 'asm / tsm', 'asm_tsm_name']) || '', 
-              getVal(['Town', 'town name']) || '', getVal(['Distributor', 'distributor name']) || '', getVal(['OB Name', 'order booker name']) || '', cleanContact, cleanRoute,
-              zone, region,
-              parseInt(getVal(['Total Shops'])) || 0, parseInt(getVal(['Visited Shops'])) || 0, parseInt(getVal(['Productive Shops'])) || 0,
-              JSON.stringify(catProdData), 
-              JSON.stringify(orderData),
-              JSON.stringify({}), 
-              submittedAt,
-              lat, lng, acc,
-              visitType
-            );
-          }
+          // MASTER DATABASE: Overwrite existing local records by deleting first
+          db.prepare("DELETE FROM submitted_orders WHERE ob_contact = ? AND date = ? AND route = ?").run(cleanContact, cleanDate, cleanRoute);
+
+          insertOrder.run(
+            cleanDate, orderMonth, getVal(['Director', 'director sales']) || '', getVal(['NSM', 'nsm name']) || '', getVal(['RSM', 'rsm name']) || '', getVal(['SC', 'sc name']) || '', getVal(['TSM', 'ASM', 'asm/tsm', 'asm / tsm', 'asm_tsm_name']) || '', 
+            getVal(['Town', 'town name']) || '', getVal(['Distributor', 'distributor name']) || '', getVal(['OB Name', 'order booker name']) || '', cleanContact, cleanRoute,
+            zone, region,
+            parseInt(getVal(['Total Shops'])) || 0, parseInt(getVal(['Visited Shops'])) || 0, parseInt(getVal(['Productive Shops'])) || 0,
+            JSON.stringify(catProdData), 
+            JSON.stringify(orderData),
+            JSON.stringify({}), 
+            submittedAt,
+            lat, lng, acc,
+            visitType
+          );
         }
       });
       transaction();
@@ -4461,9 +4441,8 @@ async function startServer() {
     console.log("[SYNC] Step 7/8: Refreshing summary sheets...");
     await refreshSummarySheets(sheets, spreadsheetId);
 
-    // 7.5 Recalculate and Repush Sales Data (to fix any legacy packs)
-    console.log("[SYNC] Step 7.5: Recalculating and repushing legacy packs...");
-    const pushedCount = await repushSalesData();
+    // Step 7.5: SKIPPED repushSalesData as per user request to use Master Sheet as source of truth.
+    // We already pulled data in Step 5. Pushing back might overwrite user restored data incorrectly.
 
     // 8. Push Primary Orders
     console.log("[SYNC] Step 8/8: Pushing primary orders...");
@@ -4478,7 +4457,7 @@ async function startServer() {
       pulledTeam: pullTeamResult.success ? pullTeamResult.count : 0,
       pulledUsers: pullUsersResult.success ? pullUsersResult.count : 0,
       pulledSales: pullSalesResult.success ? pullSalesResult.count : 0,
-      pushedSales: pushedCount,
+      pushedSales: 0,
       lastSync: now
     };
   }

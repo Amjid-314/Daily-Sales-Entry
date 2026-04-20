@@ -7972,6 +7972,12 @@ export default function App() {
     fetchHistory();
     fetchNationalData();
     fetchPrimaryOrders();
+
+    // FORCE LIVE FETCH on load/refresh as per user request
+    if (!hasAutoRefreshed) {
+        syncGoogle();
+        setHasAutoRefreshed(true);
+    }
   }, [view, userRole, token, selectedMonth]);
 
   useEffect(() => {
@@ -11729,7 +11735,65 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="overflow-x-auto scrollbar-thin max-h-[65vh]">
+              <div className="md:hidden space-y-4 p-4">
+                {primaryFilteredDists.map((dist, idx) => {
+                  const items = primaryOrdersEntry[dist.distributor] || {};
+                  let subVal = 0;
+                  SKUS.forEach(s => { subVal += (items[s.id] || 0) * (s.pricePerCarton || 0); });
+                  const subTons = calculateTonnage(items, SKUS);
+                  const subGross = calculateGross(items, SKUS);
+
+                  return (
+                    <div key={`${dist.distributor}-${idx}`} className="card-clean p-4 border border-slate-100 shadow-sm bg-white relative overflow-hidden group">
+                      <div className="flex justify-between items-start mb-4">
+                        <div className="flex-1">
+                          <h3 className="text-sm font-black text-seablue uppercase tracking-tight leading-none truncate pr-2">{dist.distributor}</h3>
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
+                             <span className="text-[9px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md font-bold uppercase tracking-tighter">{dist.town}</span>
+                             <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{dist.tsm}</span>
+                          </div>
+                        </div>
+                        <div className="text-right flex flex-col items-end">
+                           {subTons > 0 && <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md leading-none mb-1">{subTons.toFixed(3)} TO</span>}
+                           {subGross > 0 && <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md leading-none">{subGross} GR</span>}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-x-3 gap-y-4 mb-4">
+                        {SKUS.map(sku => (
+                          <div key={sku.id} className="relative">
+                            <div className="flex items-center gap-1.5 mb-1">
+                               <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[sku.category] }}></div>
+                               <span className="text-[8px] font-bold text-slate-400 uppercase truncate pr-1">{sku.name}</span>
+                            </div>
+                            <input 
+                              type="number"
+                              min="0"
+                              value={primaryOrdersEntry[dist.distributor]?.[sku.id] || ''}
+                              onChange={(e) => handlePrimaryChange(dist.distributor, sku.id, parseInt(e.target.value) || 0)}
+                              className="w-full bg-slate-50/50 border border-slate-100 rounded-lg px-2 py-2 text-[11px] font-black text-seablue focus:bg-white focus:ring-2 focus:ring-seablue/10 transition-all outline-none"
+                              placeholder="0"
+                            />
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="relative group">
+                         <FileText className="absolute left-3 top-2.5 w-3 h-3 text-slate-300" />
+                         <textarea 
+                            value={primaryRemarks[dist.distributor] || ''}
+                            onChange={(e) => handleRemarksChange(dist.distributor, e.target.value)}
+                            rows={1}
+                            className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-[10px] font-medium text-slate-600 focus:bg-white transition-all outline-none"
+                            placeholder="Order remarks or special reasons..."
+                         />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="hidden md:block overflow-x-auto scrollbar-thin max-h-[65vh]">
                 <table className="w-full text-left border-collapse min-w-[1500px]">
                   <thead className="sticky top-0 z-20">
                     <tr className="bg-slate-50/95 backdrop-blur-sm text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
