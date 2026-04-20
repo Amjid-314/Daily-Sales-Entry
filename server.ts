@@ -3841,6 +3841,12 @@ async function startServer() {
              routes = combined.join(', ');
           }
           stmt.run(a.tsm_name, a.town, routes);
+
+          // Populate distributors table from assignments for comprehensive coverage
+          db.prepare(`
+            INSERT OR IGNORE INTO distributors (town, name, tsm)
+            VALUES (?, ?, ?)
+          `).run(a.town, a.town, a.tsm_name);
         }
       });
       transaction();
@@ -3942,8 +3948,10 @@ async function startServer() {
       }).filter(t => (t.name && t.contact) || t.email || (t.town && t.distributor));
 
       const transaction = db.transaction(() => {
-        // Clear ob_assignments to ensure total sync with Master Sheet
+        // Clear tables to ensure total sync with Master Sheet
         db.prepare("DELETE FROM ob_assignments").run();
+        db.prepare("DELETE FROM users WHERE role != 'Super Admin'").run(); // Keep Super Admins to prevent lockout
+        db.prepare("DELETE FROM national_hierarchy").run();
         
         for (const item of team) {
           if (item.email && item.role) {
@@ -4024,6 +4032,14 @@ async function startServer() {
             item.town, item.distributor, item.distributor_code, item.name, finalObId, 
             item.region, item.target_ctn, targetMonth, item.email
           );
+
+          // Populate distributors table for target setting and stocks
+          if (item.town && item.distributor) {
+            db.prepare(`
+              INSERT OR REPLACE INTO distributors (town, name, tsm, region)
+              VALUES (?, ?, ?, ?)
+            `).run(item.town, item.distributor, item.tsm, item.region);
+          }
         }
       });
       transaction();
@@ -4349,6 +4365,169 @@ async function startServer() {
     }
   }
 
+  async function pullPrimaryOrders(sheets: any, spreadsheetId: string) {
+    try {
+      console.log(`[SYNC] Pulling Primary Orders from ${spreadsheetId}...`);
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "Primary_Orders!A1:ZZ2000",
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length < 2) return { success: false };
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      const transaction = db.transaction(() => {
+        db.prepare("DELETE FROM primary_orders").run();
+        const insertOrder = db.prepare(`
+          INSERT INTO primary_orders (
+            date, region, tsm, town, distributor, items, total_amount, status, remarks, dispatched_date, submitted_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `);
+
+        dataRows.forEach(row => {
+          const getVal = (names: string[]) => {
+            for (const name of names) {
+              const idx = headers.findIndex(h => h && h.trim().toLowerCase() === name.toLowerCase());
+              if (idx > -1 && row[idx] !== undefined) return row[idx];
+            }
+            return null;
+          };
+
+          const items: Record<string, number> = {};
+          let totalVal = 0;
+          SKUS.forEach(sku => {
+            const val = parseInt(getVal([sku.name, `${sku.name} (${sku.category})`])) || 0;
+            if (val > 0) {
+              items[sku.id] = val;
+              if (sku.pricePerCarton) totalVal += val * sku.pricePerCarton;
+            }
+          });
+
+          insertOrder.run(
+            getVal(['Order Date', 'date']) || getPSTDate(),
+            getVal(['Region', 'region']) || '',
+            getVal(['TSM', 'tsm']) || '',
+            getVal(['Town', 'town']) || '',
+            getVal(['Distributor', 'distributor']) || '',
+            JSON.stringify(items),
+            totalVal,
+            getVal(['Status', 'status']) || 'Pending',
+            getVal(['Remarks', 'remarks']) || '',
+            getVal(['Dispatched Date', 'dispatched_date']) || '',
+            getVal(['Submitted At', 'submitted_at']) || getPSTTimestamp()
+          );
+        });
+      });
+      transaction();
+      return { success: true, count: dataRows.length };
+    } catch (e) {
+      console.error("[SYNC] pullPrimaryOrders Error:", e);
+      return { success: false };
+    }
+  }
+
+  async function pullStockReports(sheets: any, spreadsheetId: string) {
+    try {
+      console.log(`[SYNC] Pulling Stock Reports from ${spreadsheetId}...`);
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "Stock_Reports!A1:ZZ2000",
+      });
+
+      const rows = response.data.values;
+      if (!rows || rows.length < 2) return { success: false };
+
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      const transaction = db.transaction(() => {
+        db.prepare("DELETE FROM stock_reports").run();
+        const insert = db.prepare(`
+          INSERT INTO stock_reports (date, tsm, town, distributor, stock_data, submitted_at)
+          VALUES (?, ?, ?, ?, ?, ?)
+        `);
+
+        dataRows.forEach(row => {
+          const getVal = (names: string[]) => {
+            for (const name of names) {
+              const idx = headers.findIndex(h => h && h.trim().toLowerCase() === name.toLowerCase());
+              if (idx > -1 && row[idx] !== undefined) return row[idx];
+            }
+            return null;
+          };
+
+          const stockData: Record<string, number> = {};
+          SKUS.forEach(sku => {
+            const val = parseInt(getVal([sku.name, `${sku.name} (${sku.category})`])) || 0;
+            if (val > 0) stockData[sku.id] = val;
+          });
+
+          insert.run(
+            getVal(['Date', 'date']) || getPSTDate(),
+            getVal(['TSM', 'tsm']) || '',
+            getVal(['Town', 'town']) || '',
+            getVal(['Distributor', 'distributor']) || '',
+            JSON.stringify(stockData),
+            getVal(['Submitted At', 'submitted_at']) || getPSTTimestamp()
+          );
+        });
+      });
+      transaction();
+      return { success: true, count: dataRows.length };
+    } catch (e) {
+      console.error("[SYNC] pullStockReports Error:", e);
+      return { success: false };
+    }
+  }
+
+  async function pullPrimaryTargets(sheets: any, spreadsheetId: string) {
+    try {
+      console.log(`[SYNC] Pulling Primary Targets from ${spreadsheetId}...`);
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId,
+        range: "Primary_Targets!A1:ZZ1000",
+      });
+      const rows = response.data.values;
+      if (!rows || rows.length < 2) return { success: false };
+      const headers = rows[0];
+      const dataRows = rows.slice(1);
+
+      const transaction = db.transaction(() => {
+        db.prepare("DELETE FROM primary_targets").run();
+        const insert = db.prepare(`
+          INSERT INTO primary_targets (month, category, region, tsm, town, distributor, target_ctn)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `);
+        dataRows.forEach(row => {
+          const getVal = (names: string[]) => {
+            for (const name of names) {
+              const idx = headers.findIndex(h => h && h.trim().toLowerCase() === name.toLowerCase());
+              if (idx > -1 && row[idx] !== undefined) return row[idx];
+            }
+            return null;
+          };
+          insert.run(
+            getVal(['Month', 'month']) || new Date().toISOString().slice(0, 7),
+            getVal(['Category', 'category']) || '',
+            getVal(['Region', 'region']) || '',
+            getVal(['TSM', 'tsm']) || '',
+            getVal(['Town', 'town']) || '',
+            getVal(['Distributor', 'distributor']) || '',
+            parseFloat(getVal(['Target', 'Target Ctn', 'target_ctn'])) || 0
+          );
+        });
+      });
+      transaction();
+      return { success: true, count: dataRows.length };
+    } catch (e) {
+      console.error("[SYNC] pullPrimaryTargets Error:", e);
+      return { success: false };
+    }
+  }
+
   async function pullProductConfig(sheets: any, spreadsheetId: string) {
     try {
       console.log(`Pulling Product Config from ${spreadsheetId}...`);
@@ -4433,6 +4612,16 @@ async function startServer() {
     console.log("[SYNC] Step 5/8: Pulling sales history...");
     const pullSalesResult = await pullSalesHistory(sheets, spreadsheetId);
 
+    // 5.1 Pull Primary Orders & Stock Reports (as requested to use Master Sheet as source)
+    console.log("[SYNC] Step 5.1: Pulling primary orders...");
+    const pullPrimaryResult = await pullPrimaryOrders(sheets, spreadsheetId);
+
+    console.log("[SYNC] Step 5.2: Pulling stock reports...");
+    const pullStockResult = await pullStockReports(sheets, spreadsheetId);
+
+    console.log("[SYNC] Step 5.3: Pulling primary targets...");
+    const pullPrimaryTargetsResult = await pullPrimaryTargets(sheets, spreadsheetId);
+
     // 6. Push Product Config (to ensure format is there)
     console.log("[SYNC] Step 6/8: Pushing product config...");
     await pushProductConfig(sheets, spreadsheetId);
@@ -4457,6 +4646,9 @@ async function startServer() {
       pulledTeam: pullTeamResult.success ? pullTeamResult.count : 0,
       pulledUsers: pullUsersResult.success ? pullUsersResult.count : 0,
       pulledSales: pullSalesResult.success ? pullSalesResult.count : 0,
+      pulledPrimary: pullPrimaryResult.success ? pullPrimaryResult.count : 0,
+      pulledStock: pullStockResult.success ? pullStockResult.count : 0,
+      pulledPrimaryTargets: pullPrimaryTargetsResult.success ? pullPrimaryTargetsResult.count : 0,
       pushedSales: 0,
       lastSync: now
     };

@@ -160,17 +160,17 @@ export const SKUS: SKU[] = [
   // Match
   { id: "m-ki-l", name: "Kite (L)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
   { id: "m-ki-c", name: "Kite (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
-  { id: "m-ki-r", name: "Kite (R)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
-  { id: "m-ki-s", name: "Kite (S)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-ki-r", name: "Kite (R)", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-ki-s", name: "Kite (S)", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
   
   { id: "m-ol-l", name: "Olympia (L)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
   { id: "m-ol-c", name: "Olympia (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
-  { id: "m-ol-r", name: "Olympia (R)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
-  { id: "m-ol-s", name: "Olympia (S)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-ol-r", name: "Olympia (R)", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-ol-s", name: "Olympia (S)", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
 
   { id: "m-pa-l", name: "Party (L)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
   { id: "m-pa-c", name: "Party (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
-  { id: "m-pa-r", name: "Party (R)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
+  { id: "m-pa-r", name: "Party (R)", category: "Match", unitsPerCarton: 20, unitsPerDozen: 12, pricePerCarton: 2000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 10 },
 
   { id: "m-bi-l", name: "Bird (L)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },
   { id: "m-bi-c", name: "Bird (C)", category: "Match", unitsPerCarton: 10, unitsPerDozen: 12, pricePerCarton: 1000, weight_gm_per_pack: 50, unit: 'Ctns', grossPerCarton: 5 },

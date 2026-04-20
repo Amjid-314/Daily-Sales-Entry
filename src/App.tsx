@@ -6822,34 +6822,27 @@ export default function App() {
 
   // Move Stocks hooks to top level
   const allDistributors = useMemo(() => {
+    // Combine all sources: distributors table, OB assignments, TSM assignments, and Hierarchy
     const rawData = [
       ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm, region: d.region, ob_id: d.ob_id })),
       ...obAssignments.filter(ob => ob.name).map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm, region: ob.region, ob_id: ob.contact })),
       ...tsmAssignments.map(ta => ({ town: ta.town, distributor: ta.town, tsm: ta.tsm_name, region: '', ob_id: '' })),
       ...hierarchy.map(h => ({ town: h.town_name, distributor: h.distributor_name, tsm: h.asm_tsm_name, region: h.territory_region, ob_id: h.ob_id }))
-    ].filter(d => d.town && d.distributor);
+    ].filter(d => d.town && d.distributor && d.distributor.trim() !== '');
 
-    // Group by town to find specific distributors
-    const townSpecificDistributors = new Set();
-    rawData.forEach(d => {
-      // If distributor name is different from town name, it's a specific distributor entry
-      if (d.distributor.toLowerCase() !== d.town.toLowerCase()) {
-        townSpecificDistributors.add(d.town.toLowerCase());
+    // Deduplicate: No duplicates for Town + Distributor pair
+    const seen = new Set();
+    const uniqueData = [];
+    
+    for (const d of rawData) {
+      const key = `${d.town.trim().toLowerCase()}|${d.distributor.trim().toLowerCase()}`;
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniqueData.push(d);
       }
-    });
+    }
 
-    return rawData
-      .filter(d => {
-        // If this town has specific distributors AND this entry is just "Town > Town", filter it out
-        if (townSpecificDistributors.has(d.town.toLowerCase()) && d.distributor.toLowerCase() === d.town.toLowerCase()) {
-          return false;
-        }
-        return true;
-      })
-      .filter((v, i, a) => a.findIndex(t => 
-        t.distributor.toLowerCase() === v.distributor.toLowerCase() && 
-        t.town.toLowerCase() === v.town.toLowerCase()
-      ) === i);
+    return uniqueData.sort((a, b) => a.town.localeCompare(b.town) || a.distributor.localeCompare(b.distributor));
   }, [distributors, obAssignments, tsmAssignments, hierarchy]);
 
   const filteredDistributors = useMemo(() => {
@@ -6947,7 +6940,64 @@ export default function App() {
     }
   };
 
+  const checkAndPreFill = async (date: string, obContact: string, route: string) => {
+    if (!date || !obContact || !route) return;
+
+    // Check local history first
+    let existing = history.find(h => h.date === date && h.ob_contact === obContact && h.route === route);
+
+    if (!existing) {
+      // Fetch from API specifically for this combination if not in local history
+      try {
+        const params = new URLSearchParams();
+        params.append('ob_contact', obContact);
+        params.append('from', date);
+        params.append('to', date);
+        const res = await fetch(`/api/orders?${params.toString()}`, {
+          headers: { 'Authorization': `Bearer ${token}` }
+        });
+        if (res.ok) {
+          const rows = await res.json();
+          // Find the one matching the route (api returns all for that OB and date range)
+          existing = rows.find((h: any) => h.route === route);
+        }
+      } catch (err) {
+        console.error("Error checking for existing entry", err);
+      }
+    }
+
+    if (existing) {
+      setOrder(prev => ({
+        ...prev,
+        totalShops: existing.total_shops || 50,
+        visitedShops: existing.visited_shops || 0,
+        productiveShops: existing.productive_shops || 0,
+        categoryProductiveShops: (typeof existing.category_productive_data === 'string' && existing.category_productive_data) ? JSON.parse(existing.category_productive_data) : (existing.category_productive_data || {}),
+        items: (typeof existing.order_data === 'string' && existing.order_data) ? JSON.parse(existing.order_data) : (existing.order_data || {}),
+        visitType: existing.visit_type || 'A'
+      }));
+      setMessage({ text: `Existing entry found for ${date}. Pre-filled for editing.`, type: 'success' });
+      setTimeout(() => setMessage(null), 3000);
+      return true;
+    }
+    return false;
+  };
+
   const handleMetaChange = async (field: keyof Omit<OrderState, 'items' | 'targets' | 'categoryProductiveShops'>, value: string | number) => {
+    if (field === 'date') {
+      const newDate = String(value);
+      setOrder(prev => ({ ...prev, date: newDate }));
+      checkAndPreFill(newDate, order.obContact, order.route);
+      return;
+    }
+
+    if (field === 'route') {
+      const newRoute = String(value);
+      setOrder(prev => ({ ...prev, route: newRoute }));
+      checkAndPreFill(order.date, order.obContact, newRoute);
+      return;
+    }
+
     if (field === 'town' && order.obContact.startsWith('TSM-')) {
       const tsmAssigns = tsmAssignments.filter(t => (t.tsm_name || '').trim().toLowerCase() === (order.tsm || '').trim().toLowerCase() && t.town === value);
       let routes: string[] = [];
@@ -6955,91 +7005,57 @@ export default function App() {
         if (t.routes) routes.push(...t.routes.split(',').map((r:string) => r.trim()));
       });
       if (routes.length === 0) routes = ['TSM Route'];
+      const newRoute = routes[0] || '';
       
       setOrder(prev => ({
         ...prev,
         town: String(value),
-        route: routes[0] || ''
+        route: newRoute
       }));
+      checkAndPreFill(order.date, order.obContact, newRoute);
       return;
     }
 
     if (field === 'obContact') {
       const assignment = filteredOBs.find(a => a.contact === value);
       if (assignment) {
+        let initialTown = assignment.town || '';
+        let initialRoutes = assignment.routes || [];
+        
         if (String(value).startsWith('TSM-')) {
           const tsmName = assignment.tsm;
           const tsmAssigns = tsmAssignments.filter(t => (t.tsm_name || '').trim().toLowerCase() === (tsmName || '').trim().toLowerCase());
-          
-          let initialTown = assignment.town || '';
-          let initialRoutes = assignment.routes || ['TSM Route'];
-          
           if (tsmAssigns.length > 0) {
             initialTown = tsmAssigns[0].town;
             initialRoutes = tsmAssigns[0].routes ? tsmAssigns[0].routes.split(',').map((r:string) => r.trim()) : ['TSM Route'];
+          } else {
+            initialRoutes = ['TSM Route'];
           }
-
-          setOrder(prev => ({
-            ...prev,
-            obContact: String(value),
-            orderBooker: assignment.name,
-            town: initialTown,
-            distributor: assignment.distributor || '',
-            tsm: assignment.tsm || '',
-            zone: assignment.zone || '',
-            region: assignment.region || '',
-            nsm: assignment.nsm || '',
-            rsm: assignment.rsm || '',
-            sc: assignment.sc || '',
-            director: assignment.director || '',
-            route: initialRoutes[0] || '',
-            totalShops: 50,
-            targets: {},
-            items: {},
-            categoryProductiveShops: {},
-            visitType: ''
-          }));
-        } else {
-          // Filter distributors for this town
-          const townDists = distributors.filter(d => d.town === assignment.town);
-          let autoDist = assignment.distributor;
-          
-          // If town has distributors in the independent list, use those
-          if (townDists.length === 1) {
-            autoDist = townDists[0].name;
-          } else if (townDists.length > 1) {
-            // If multiple, and the assignment distributor is one of them, keep it.
-            // Otherwise, let the user select.
-            const found = townDists.find(d => d.name === assignment.distributor);
-            if (found) {
-              autoDist = found.name;
-            } else {
-              autoDist = '';
-            }
-          }
-
-          setOrder(prev => ({
-            ...prev,
-            obContact: String(value),
-            orderBooker: assignment.name,
-            town: assignment.town,
-            distributor: autoDist,
-            tsm: assignment.tsm || '',
-            zone: assignment.zone || '',
-            region: assignment.region || '',
-            nsm: assignment.nsm || '',
-            rsm: assignment.rsm || '',
-            sc: assignment.sc || '',
-            director: assignment.director || '',
-            route: assignment.routes?.[0] || '',
-            totalShops: assignment.total_shops || 50,
-            targets: {},
-            items: {},
-            categoryProductiveShops: {},
-            visitType: ''
-          }));
         }
+
+        const newRoute = initialRoutes[0] || '';
+        setOrder(prev => ({
+          ...prev,
+          obContact: String(value),
+          orderBooker: assignment.name,
+          town: initialTown,
+          distributor: assignment.distributor || '',
+          tsm: assignment.tsm || '',
+          zone: assignment.zone || '',
+          region: assignment.region || '',
+          nsm: assignment.nsm || '',
+          rsm: assignment.rsm || '',
+          sc: assignment.sc || '',
+          director: assignment.director || '',
+          route: newRoute,
+          totalShops: assignment.total_shops || 50,
+          targets: {},
+          items: {},
+          categoryProductiveShops: {},
+          visitType: ''
+        }));
         fetchTargetsForOB(String(value));
+        checkAndPreFill(order.date, String(value), newRoute);
       } else {
         setOrder(prev => ({ ...prev, obContact: '', orderBooker: '', route: '', town: '', distributor: '', totalShops: 50, items: {}, productiveShops: 0, categoryProductiveShops: {}, zone: '', region: '', nsm: '', rsm: '', sc: '', director: '' }));
       }
@@ -8490,7 +8506,7 @@ export default function App() {
   const timeGone = calculateTimeGone();
 
   const tsmList = useMemo(() => {
-    const tsms = new Set<string>(['Muhammad Shoaib', 'Waheed Jamal', 'Ikramullah', 'Muhammad Zeeshan', 'Noman Paracha', 'Muhammad Yousaf', 'Qaisar Yousaf']);
+    const tsms = new Set<string>();
     obAssignments.forEach(ob => { if (ob.tsm) tsms.add(ob.tsm.trim()); });
     distributors.forEach(d => { if (d.tsm) tsms.add(d.tsm.trim()); });
     
@@ -8703,19 +8719,19 @@ export default function App() {
 
     const canEdit = ['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes((userRole || '').toUpperCase());
 
-    const regions = [...new Set(distributors.map(d => d.region))].filter(Boolean).sort() as string[];
-    const tsms = [...new Set(distributors.filter(d => !selectedRegion || d.region === selectedRegion).map(d => d.tsm))].filter(Boolean).sort() as string[];
-    const townsList = [...new Set(distributors.filter(d => (!selectedRegion || d.region === selectedRegion) && (!selectedTSM || d.tsm === selectedTSM)).map(d => d.town))].filter(Boolean).sort() as string[];
+    const regions = useMemo(() => [...new Set(allDistributors.map(d => d.region))].filter(Boolean).sort() as string[], [allDistributors]);
+    const tsms = useMemo(() => [...new Set(allDistributors.filter(d => !selectedRegion || d.region === selectedRegion).map(d => d.tsm))].filter(Boolean).sort() as string[], [allDistributors, selectedRegion]);
+    const townsList = useMemo(() => [...new Set(allDistributors.filter(d => (!selectedRegion || d.region === selectedRegion) && (!selectedTSM || d.tsm === selectedTSM)).map(d => d.town))].filter(Boolean).sort() as string[], [allDistributors, selectedRegion, selectedTSM]);
     
-    // Use top level obs and distributors
+    // Using deduplicated lists for better management
     const allObs = obAssignments;
-    const allDists = distributors;
+    const allDists = allDistributors;
 
     const filteredDists = allDists.filter(d => 
       (!selectedRegion || d.region === selectedRegion) && 
       (!selectedTSM || d.tsm === selectedTSM) && 
       (!selectedTown || d.town === selectedTown) &&
-      (!targetSearch || d.name.toLowerCase().includes(targetSearch.toLowerCase()))
+      (!targetSearch || d.distributor.toLowerCase().includes(targetSearch.toLowerCase()))
     );
 
     const filteredObs = allObs.filter(ob => 
@@ -8901,23 +8917,23 @@ export default function App() {
                       {!targetSearch && (
                         <tr className="bg-emerald-50/30 font-black text-[10px] text-emerald-600 uppercase tracking-widest"><td colSpan={distCategories.length + 1} className="px-6 py-2">By Distributor (Tons/Gross)</td></tr>
                       )}
-                      {filteredDists.map(dist => (
-                        <tr key={`dist-${dist.name}`} className="hover:bg-slate-50/50 transition-colors">
+                      {filteredDists.map((dist, dIdx) => (
+                        <tr key={`dist-${dist.distributor}-${dIdx}`} className="hover:bg-slate-50/50 transition-colors">
                            <td className="px-6 py-4">
                               <div className="flex flex-col">
-                                <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{dist.name}</span>
+                                <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{dist.distributor}</span>
                                 <span className="text-[8px] font-bold text-slate-400 uppercase">{dist.town}</span>
                               </div>
                            </td>
                            {distCategories.map(cat => {
-                             const target = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === dist.name && pt.brand_name === cat);
+                             const target = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === dist.distributor && pt.brand_name === cat);
                              return (
                                <td key={cat} className="px-2 py-2">
                                   <input 
                                     type="number" 
                                     disabled={!canEdit}
                                     defaultValue={target?.target_ctn || ''} 
-                                    onBlur={e => handleSavePrimary('Distributor', dist.name, cat, e.target.value)}
+                                    onBlur={e => handleSavePrimary('Distributor', dist.distributor, cat, e.target.value)}
                                     placeholder="0.00"
                                     className={`w-full bg-transparent border-b border-transparent text-center text-xs font-bold text-slate-700 py-1 transition-all ${canEdit ? 'hover:border-slate-200 focus:border-seablue focus:outline-none' : 'cursor-not-allowed opacity-70'}`}
                                   />
@@ -8976,10 +8992,21 @@ export default function App() {
 
   if (view === 'target_setting') {
     return (
-      <div className="min-h-screen bg-slate-50 flex flex-col">
+      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <main className="flex-1 max-w-[1600px] mx-auto p-4 sm:p-6 w-full">
-           <TargetSettingView />
+        <main className="flex-1 overflow-y-auto no-scrollbar w-full p-4 sm:p-6">
+           <div className="max-w-[1600px] mx-auto">
+             <TargetSettingView 
+               hierarchy={hierarchy}
+               distributors={distributors}
+               tsmList={tsmList}
+               onSave={async (data) => {
+                 await apiFetch('/api/admin/targets', { method: 'POST', body: JSON.stringify(data) });
+                 fetchAdminData();
+               }}
+               onMessage={(msg) => setMessage(msg)}
+             />
+           </div>
         </main>
       </div>
     );
@@ -9025,7 +9052,7 @@ export default function App() {
     try {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
-          <div className="min-h-screen bg-slate-50 flex flex-col">
+          <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
             <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-4">
@@ -9041,9 +9068,10 @@ export default function App() {
       // If management role, show NationalDashboard (Management Dashboard)
       if (['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM', 'ASM', 'OB'].includes((userRole || '').toUpperCase())) {
         return (
-          <div className="min-h-screen bg-slate-50 pb-40">
+          <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
             <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-            {isLoadingNational ? (
+            <main className="flex-1 overflow-y-auto no-scrollbar w-full">
+              {isLoadingNational ? (
               <div className="flex-1 flex items-center justify-center min-h-[80vh]">
                 <div className="flex flex-col items-center gap-4">
                   <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -9083,8 +9111,9 @@ export default function App() {
                 obTargets={obTargets}
               />
             )}
-          </div>
-        );
+          </main>
+        </div>
+      );
       }
 
       const normalizedRole = (userRole || '').trim().toUpperCase();
@@ -9962,8 +9991,9 @@ export default function App() {
       return null;
     }
     return (
-      <div className="min-h-screen bg-slate-50 pb-40">
+      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <main className="flex-1 overflow-y-auto no-scrollbar w-full">
         {isLoadingNational ? (
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
             <div className="flex flex-col items-center gap-4">
@@ -9997,6 +10027,7 @@ export default function App() {
             isLoadingMissingEntries={isLoadingMissingEntries}
           />
         )}
+        </main>
       </div>
     );
   }
@@ -10009,8 +10040,9 @@ export default function App() {
     return (
       <ErrorBoundary>
         <PWAInstallPrompt />
-        <div className="min-h-screen bg-slate-50 pb-40">
+        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <main className="flex-1 overflow-y-auto no-scrollbar w-full">
         {isLoadingNational ? (
           <div className="flex-1 flex items-center justify-center min-h-[80vh]">
             <div className="flex flex-col items-center gap-4">
@@ -10038,6 +10070,7 @@ export default function App() {
             setSelectedMonth={setSelectedMonth}
           />
         )}
+        </main>
       </div>
       </ErrorBoundary>
     );
@@ -10079,7 +10112,7 @@ export default function App() {
   if (view === 'admin') {
     if (!isAdminAuthenticated) {
       return (
-        <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
           <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
           <div className="flex-1 flex items-center justify-center p-4">
             <div className="card-clean p-6 max-w-sm w-full bg-white shadow-xl">
@@ -10122,7 +10155,7 @@ export default function App() {
 
     if (isLoadingAdmin) {
       return (
-        <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
           <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
@@ -10136,7 +10169,7 @@ export default function App() {
     }
 
     return (
-      <div className="min-h-screen bg-slate-50 pb-10">
+      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
         <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} logo={appLogo} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
@@ -10162,7 +10195,8 @@ export default function App() {
           </div>
         </header>
 
-        <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
+        <main className="flex-1 overflow-y-auto no-scrollbar w-full px-4 py-6">
+          <div className="max-w-4xl mx-auto space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="card-clean p-4 space-y-2">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">System Status</h3>
@@ -11231,8 +11265,9 @@ export default function App() {
               </table>
             </div>
           </section>
-        </main>
-      </div>
+        </div>
+      </main>
+    </div>
     );
   }
 
@@ -11407,12 +11442,13 @@ export default function App() {
     });
 
     return (
-      <div className="min-h-screen bg-slate-50 pb-20">
+      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <main className="max-w-4xl mx-auto p-4 space-y-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
-            <h1 className="text-2xl font-black text-seablue uppercase tracking-tight mb-2">User Manual</h1>
-            <p className="text-sm text-slate-500 mb-6">A detailed guide to using the SalesPulse application based on your role ({userRole}).</p>
+        <main className="flex-1 overflow-y-auto w-full no-scrollbar px-4 py-8">
+          <div className="max-w-4xl mx-auto space-y-6">
+            <div className="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-white">
+              <h1 className="text-2xl font-black text-seablue uppercase tracking-tight mb-2">User Manual</h1>
+              <p className="text-sm text-slate-500 mb-6">A detailed guide to using the SalesPulse application based on your role ({userRole}).</p>
             
             <div className="space-y-6">
               <div className="border-l-4 border-slate-400 pl-4">
@@ -11431,8 +11467,9 @@ export default function App() {
               ))}
             </div>
           </div>
-        </main>
-      </div>
+        </div>
+      </main>
+    </div>
     );
   }
 
@@ -11558,11 +11595,11 @@ export default function App() {
     });
 
     return (
-      <div className="min-h-screen bg-slate-50 pb-40">
+      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        
-        <div className="p-4 space-y-6 max-w-[1600px] mx-auto">
-          <motion.div 
+        <main className="flex-1 overflow-y-auto w-full no-scrollbar px-4 py-6">
+          <div className="max-w-[1600px] mx-auto space-y-6">
+            <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50 flex flex-col md:flex-row md:items-center justify-between gap-4"
@@ -12370,9 +12407,10 @@ export default function App() {
             </motion.div>
           </div>
         )}
-      </div>
-    );
-  }
+      </main>
+    </div>
+  );
+}
 
   if (view === 'stocks') {
     const handleStockChange = (distributor: string, skuId: string, val: number) => {
@@ -12418,11 +12456,11 @@ export default function App() {
     };
 
     return (
-      <div className="min-h-screen bg-slate-50 pb-40">
+      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        
-        <div className="p-4 space-y-6">
-          <motion.div 
+        <main className="flex-1 overflow-y-auto w-full no-scrollbar">
+          <div className="p-4 space-y-6 max-w-[1600px] mx-auto">
+            <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50 flex flex-col md:flex-row md:items-center justify-between gap-4"
@@ -12562,13 +12600,14 @@ export default function App() {
             </div>
           </section>
         </div>
-      </div>
-    );
-  }
+      </main>
+    </div>
+  );
+}
   if (view === 'history') {
     if (isLoadingHistory) {
       return (
-        <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
           <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
@@ -12585,9 +12624,9 @@ export default function App() {
     const totalPages = Math.ceil(history.length / itemsPerPage);
 
     return (
-      <div className="min-h-screen bg-slate-50 pb-10">
+      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <header className="bg-white border-b border-slate-200 p-4 sticky top-12 z-20 shadow-sm">
+        <header className="bg-white border-b border-slate-200 p-4 z-20 shadow-sm">
           <div className="max-w-full mx-auto px-4 flex flex-col gap-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
@@ -12725,7 +12764,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="max-w-[98%] mx-auto px-4 py-6 space-y-6">
+        <main className="flex-1 overflow-y-auto no-scrollbar w-full px-4 py-6 space-y-6">
           {history.length === 0 ? (
             <div className="card-clean p-12 text-center space-y-4">
               <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
@@ -12783,16 +12822,58 @@ export default function App() {
                                 ))}
                                 <td className="px-4 py-3 text-right font-black text-seablue text-[10px]">{totalAch.toFixed(2)}</td>
                                 <td className="px-4 py-3 text-center">
-                                  <button 
-                                    onClick={() => {
-                                      const summary = generateWhatsAppMessage(h, true);
-                                      const encodedMsg = encodeURIComponent(summary);
-                                      window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
-                                    }}
-                                    className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg"
-                                  >
-                                    <WhatsAppIcon />
-                                  </button>
+                                  <div className="flex items-center justify-center gap-1">
+                                    <button 
+                                      onClick={() => {
+                                        const summary = generateWhatsAppMessage(h, true);
+                                        const encodedMsg = encodeURIComponent(summary);
+                                        window.open(`https://wa.me/?text=${encodedMsg}`, '_blank');
+                                      }}
+                                      className="p-1.5 text-emerald-600 hover:bg-emerald-50 rounded-lg transition-colors"
+                                      title="Share to WhatsApp"
+                                    >
+                                      <WhatsAppIcon />
+                                    </button>
+                                    <button 
+                                      onClick={() => {
+                                        const assignment = obAssignments.find(ob => ob.contact === h.ob_contact);
+                                        
+                                        // Scroll to top and switch view
+                                        window.scrollTo(0, 0);
+                                        setView('entry');
+                                        
+                                        setOrder({
+                                          date: h.date,
+                                          tsm: h.tsm || assignment?.tsm || '',
+                                          town: h.town || assignment?.town || '',
+                                          distributor: h.distributor || assignment?.distributor || '',
+                                          orderBooker: h.order_booker || assignment?.name || '',
+                                          obContact: h.ob_contact,
+                                          route: h.route,
+                                          zone: h.zone || assignment?.zone || '',
+                                          region: h.region || assignment?.region || '',
+                                          nsm: h.nsm || assignment?.nsm || '',
+                                          rsm: h.rsm || assignment?.rsm || '',
+                                          sc: h.sc || assignment?.sc || '',
+                                          director: h.director || assignment?.director || '',
+                                          totalShops: h.total_shops || 50,
+                                          visitedShops: h.visited_shops || 0,
+                                          productiveShops: h.productive_shops || 0,
+                                          categoryProductiveShops: typeof h.category_productive_data === 'string' ? JSON.parse(h.category_productive_data) : (h.category_productive_data || {}),
+                                          items: typeof h.order_data === 'string' ? JSON.parse(h.order_data) : (h.order_data || {}),
+                                          targets: typeof h.targets_data === 'string' ? JSON.parse(h.targets_data) : (h.targets_data || {}),
+                                          visitType: h.visit_type || 'A'
+                                        });
+
+                                        setMessage({ text: `Editing entry: ${h.date} - ${h.route}`, type: 'success' });
+                                        setTimeout(() => setMessage(null), 3000);
+                                      }}
+                                      className="p-1.5 text-seablue hover:bg-blue-50 rounded-lg transition-colors"
+                                      title="Edit Entry"
+                                    >
+                                      <Edit2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -12823,9 +12904,9 @@ export default function App() {
     return (
       <ErrorBoundary>
         <PWAInstallPrompt />
-        <div className="min-h-screen bg-slate-50 pb-40">
+        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+        <header className="bg-white border-b border-slate-200 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-3 py-2">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -12889,7 +12970,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-6xl mx-auto px-3 py-3 space-y-3">
+      <main className="flex-1 overflow-y-auto no-scrollbar w-full px-3 py-3 space-y-3">
         {/* TSM Filter - Restricted by Role */}
         {userRole !== 'OB' && tsmList.length > 0 && (
           <div className="card-clean p-1.5 bg-seablue/5 border-seablue/10 overflow-x-auto">
@@ -12933,8 +13014,26 @@ export default function App() {
         {/* Meta Info Section */}
         <div className="card-clean p-3 grid grid-cols-2 md:grid-cols-6 gap-3">
           <div className="space-y-1">
-            <label className="text-[9px] font-bold text-slate-400 uppercase">Date</label>
-            <input type="date" value={order.date} onChange={(e) => handleMetaChange('date', e.target.value)} className="input-clean w-full text-[10px] py-1" />
+            <div className="flex justify-between items-center">
+              <label className="text-[9px] font-bold text-slate-400 uppercase">Date</label>
+              {(() => {
+                const isAdmin = userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director';
+                let isPastEditAllowed = isAdmin;
+                if (!isAdmin && appConfig?.allow_past_editing) {
+                  if (appConfig.allow_past_editing === 'true') isPastEditAllowed = true;
+                  else {
+                    try {
+                      const allowedUsers = JSON.parse(appConfig.allow_past_editing);
+                      if (Array.isArray(allowedUsers) && allowedUsers.includes(userEmail)) isPastEditAllowed = true;
+                    } catch(e) {}
+                  }
+                }
+                return isPastEditAllowed ? (
+                  <span className="text-[7px] font-black text-emerald-500 uppercase tracking-widest bg-emerald-50 px-1 rounded">Edit Mode On</span>
+                ) : null;
+              })()}
+            </div>
+            <input type="date" value={order.date} onChange={(e) => handleMetaChange('date', e.target.value)} className="input-clean w-full text-[10px] py-1 focus:ring-1 focus:ring-seablue/30" />
           </div>
           <div className="space-y-1">
             <label className="text-[9px] font-bold text-slate-400 uppercase">OB</label>
