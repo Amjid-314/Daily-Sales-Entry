@@ -3841,12 +3841,6 @@ async function startServer() {
              routes = combined.join(', ');
           }
           stmt.run(a.tsm_name, a.town, routes);
-
-          // Populate distributors table from assignments for comprehensive coverage
-          db.prepare(`
-            INSERT OR IGNORE INTO distributors (town, name, tsm)
-            VALUES (?, ?, ?)
-          `).run(a.town, a.town, a.tsm_name);
         }
       });
       transaction();
@@ -4032,14 +4026,6 @@ async function startServer() {
             item.town, item.distributor, item.distributor_code, item.name, finalObId, 
             item.region, item.target_ctn, targetMonth, item.email
           );
-
-          // Populate distributors table for target setting and stocks
-          if (item.town && item.distributor) {
-            db.prepare(`
-              INSERT OR REPLACE INTO distributors (town, name, tsm, region)
-              VALUES (?, ?, ?, ?)
-            `).run(item.town, item.distributor, item.tsm, item.region);
-          }
         }
       });
       transaction();

@@ -62,7 +62,6 @@ import {
   ShoppingCart,
   Cloud,
   CloudDownload,
-  Share2,
   TrendingUp,
   TrendingDown,
   Target,
@@ -70,7 +69,7 @@ import {
   DollarSign,
   Package,
   PackageSearch,
-  MessageCircle,
+  Share2,
   ChevronRight,
   Filter,
   ArrowDownRight,
@@ -93,6 +92,25 @@ const STORAGE_KEY = 'ob_order_draft';
 const LOGO_STORAGE_KEY = 'app_logo_base64';
 
 const SUPER_ADMIN_EMAILS = ['amjid.bisconni@gmail.com', 'Amjid.psh@gmail.com'];
+
+const USER_ROLES: Record<string, { role: 'Director' | 'NSM', region?: string }> = {
+  'waleed.elahi@gmail.com': { role: 'Director' },
+  'rzrsaleem@gmail.com': { role: 'Director', region: 'Lahore' },
+  'rizwankhattak@gmail.com': { role: 'NSM' },
+  'shahidmughal233143@gmail.com': { role: 'NSM', region: 'Lahore' },
+};
+
+const RegionViewLabel = ({ userEmail }: { userEmail: string | null }) => {
+  const email = (userEmail || '').toLowerCase();
+  if (USER_ROLES[email]?.region) {
+    return (
+      <div className="bg-amber-500 text-white px-4 py-1.5 text-[10px] font-black uppercase tracking-[0.3em] text-center shadow-inner sticky top-0 z-[60]">
+         Viewing {USER_ROLES[email].region} Region Only
+      </div>
+    );
+  }
+  return null;
+};
 
 // Error Boundary Component
 interface ErrorBoundaryProps {
@@ -380,6 +398,23 @@ const NationalDashboard = ({
   const [offDayFilter, setOffDayFilter] = useState('All');
   const [expandedOB, setExpandedOB] = useState<string | null>(null);
   const [headCountDrillDown, setHeadCountDrillDown] = useState<{ level: string, value: string }[]>([]);
+  
+  // Map and Other Management View States
+  const [mapLevel, setMapLevel] = useState<'region' | 'town'>('region');
+  const [mapFilterBrand, setMapFilterBrand] = useState('All');
+  const [mapFilterRegion, setMapFilterRegion] = useState('All');
+  const [mapFilterTSM, setMapFilterTSM] = useState('All');
+  const [mapFilterTown, setMapFilterTown] = useState('All');
+  const [mapFilterOB, setMapFilterOB] = useState('All');
+  const [contributionView, setContributionView] = useState<'Category' | 'Brand' | 'SKU'>('Brand');
+  const [achievementView, setAchievementView] = useState<'Category' | 'Brand' | 'SKU'>('Brand');
+  const [categoryWiseCategoryFilter, setCategoryWiseCategoryFilter] = useState('Washing Powder*');
+  const [categoryWiseBrandFilter, setCategoryWiseBrandFilter] = useState('All');
+  const [routeAnalysisCategoryFilter, setRouteAnalysisCategoryFilter] = useState('Washing Powder*');
+  const [routeAnalysisBrandFilter, setRouteAnalysisBrandFilter] = useState('All');
+  const [showWelcome, setShowWelcome] = useState(true);
+
+  // Filters and Data Processing logic continues below...
 
   const filteredHeadCountData = useMemo(() => {
     if (!selectedHeadCountDetail) return [];
@@ -457,6 +492,9 @@ const NationalDashboard = ({
   }, [hierarchy, userRole, userRegion, userName, userContact]);
 
   const [filterLevel, setFilterLevel] = useState<'National' | 'Region' | 'TSM' | 'Town' | 'OB' | 'Route'>(() => {
+    const email = (userEmail || '').toLowerCase();
+    if (USER_ROLES[email]?.region) return 'Region';
+    
     if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') return 'National';
     if (userRole === 'RSM' || userRole === 'SC') return 'Region';
     if (userRole === 'TSM' || userRole === 'ASM') return 'TSM';
@@ -464,14 +502,11 @@ const NationalDashboard = ({
     return 'National';
   });
 
-  const [mapLevel, setMapLevel] = useState<'region' | 'town'>('town');
-  const [mapFilterRegion, setMapFilterRegion] = useState('All');
-  const [mapFilterTSM, setMapFilterTSM] = useState('All');
-  const [mapFilterTown, setMapFilterTown] = useState('All');
-  const [mapFilterOB, setMapFilterOB] = useState('All');
-  const [mapFilterBrand, setMapFilterBrand] = useState('All');
   const [selectedOBForRoute, setSelectedOBForRoute] = useState<string | null>(null);
   const [filterValue, setFilterValue] = useState<string>(() => {
+    const email = (userEmail || '').toLowerCase();
+    if (USER_ROLES[email]?.region) return USER_ROLES[email].region;
+
     if (userRole === 'RSM' || userRole === 'SC') return userRegion || '';
     if (userRole === 'TSM' || userRole === 'ASM') return userName || '';
     if (userRole === 'OB') return userContact || '';
@@ -489,9 +524,6 @@ const NationalDashboard = ({
       }
     }
   }, [view]);
-
-  const [routeAnalysisCategoryFilter, setRouteAnalysisCategoryFilter] = useState('All');
-  const [routeAnalysisBrandFilter, setRouteAnalysisBrandFilter] = useState('All');
 
   const handleDrillDown = (level: string, value: string) => {
     setNavHistory(prev => [...prev, { level: filterLevel, value: filterValue }]);
@@ -517,8 +549,6 @@ const NationalDashboard = ({
     }
   };
   const [targetView, setTargetView] = useState('Brand');
-  const [contributionView, setContributionView] = useState<'Brand' | 'Category' | 'SKU'>('Brand');
-  const [achievementView, setAchievementView] = useState<'Brand' | 'Category' | 'SKU'>('Brand');
   const [topCategoryFilter, setTopCategoryFilter] = useState('All');
   const [topBrandFilter, setTopBrandFilter] = useState('All');
   const [heatmapView, setHeatmapView] = useState('Total');
@@ -528,11 +558,13 @@ const NationalDashboard = ({
   const [obReportBrandFilter, setObReportBrandFilter] = useState('All');
   const [tsmSkuFilter, setTsmSkuFilter] = useState('All');
   const [worstBrandFilter, setWorstBrandFilter] = useState('All');
-  const [categoryWiseCategoryFilter, setCategoryWiseCategoryFilter] = useState('Washing Powder*');
-  const [categoryWiseBrandFilter, setCategoryWiseBrandFilter] = useState('All');
 
   const visibleFilterLevels = useMemo(() => {
+    const email = (userEmail || '').toLowerCase();
+    const isRestricted = !!USER_ROLES[email]?.region;
+
     if (userRole === 'Admin' || userRole === 'Super Admin' || userRole === 'Director' || userRole === 'NSM') {
+      if (isRestricted) return ['Region', 'TSM', 'Town', 'OB', 'Route'];
       return ['National', 'Region', 'TSM', 'Town', 'OB', 'Route'];
     } else if (userRole === 'RSM' || userRole === 'SC') {
       return ['Region', 'TSM', 'Town', 'OB', 'Route'];
@@ -541,7 +573,7 @@ const NationalDashboard = ({
     } else {
       return ['OB', 'Route'];
     }
-  }, [userRole]);
+  }, [userRole, userEmail]);
 
   useEffect(() => {
     if (!visibleFilterLevels.includes(filterLevel)) {
@@ -605,6 +637,17 @@ const NationalDashboard = ({
   const processedStats = useMemo(() => {
     let baseStats = stats;
     
+    // Apply role-based region restriction
+    const email = (userEmail || '').toLowerCase();
+    if (USER_ROLES[email]?.region) {
+      const restrictedRegion = USER_ROLES[email].region;
+      baseStats = baseStats.filter(s => {
+        const h = hierarchy.find(h => h.ob_id === s.ob_contact);
+        const region = h?.territory_region || s.region;
+        return (region || '').toLowerCase() === restrictedRegion?.toLowerCase();
+      });
+    }
+
     const tsmContacts = new Set(hierarchy.map(h => (h.asm_tsm_contact || '').trim()).filter(Boolean));
     // Add contacts starting with TSM- to tsmContacts
     stats.forEach(s => {
@@ -777,8 +820,12 @@ const NationalDashboard = ({
   }, [monthStats, selectedOBForRoute]);
 
   const filterOptions = useMemo(() => {
+    const email = (userEmail || '').toLowerCase();
+    const isRestricted = email && USER_ROLES[email]?.region;
+    const restrictedRegion = isRestricted ? USER_ROLES[email].region : null;
+
     const options: Record<string, string[]> = {
-      Region: ['Lahore', 'Rawalpindi', 'North', 'Central Punjab (FSD)', 'South Punjab (Multan)', 'Sindh', 'Karachi', 'Direct'],
+      Region: isRestricted ? [restrictedRegion!] : ['Lahore', 'Rawalpindi', 'North', 'Central Punjab (FSD)', 'South Punjab (Multan)', 'Sindh', 'Karachi', 'Direct'],
       TSM: Array.from(new Set(processedStats.map(s => s.tsm))).filter(Boolean).sort() as string[],
       Town: Array.from(new Set(processedStats.map(s => s.town))).filter(Boolean).sort() as string[],
       OB: Array.from(new Set(processedStats.map(s => JSON.stringify({ name: s.ob_name, contact: s.ob_contact }))))
@@ -787,7 +834,7 @@ const NationalDashboard = ({
       Route: Array.from(new Set(processedStats.map(s => s.route))).filter(Boolean).sort() as string[],
     };
     return options;
-  }, [processedStats]);
+  }, [processedStats, userEmail]);
 
   const obPerformance = useMemo(() => {
     const obs: Record<string, any> = {};
@@ -1511,6 +1558,271 @@ const NationalDashboard = ({
       productivity: d.visited > 0 ? (d.productive / d.visited) * 100 : 0
     }));
   }, [monthStats]);
+
+  if (view === 'geo_map') {
+    return (
+      <div className="p-4 space-y-6">
+        <div className="card-clean bg-white overflow-hidden">
+          <div className="bg-slate-50 px-6 py-4 border-b border-slate-100 flex flex-col gap-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-seablue rounded-xl flex items-center justify-center text-white shadow-lg shadow-seablue/20">
+                  <Maximize2 className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest leading-none">Geospatial Distribution</h3>
+                  <p className="text-[10px] font-bold text-slate-400 mt-1 uppercase tracking-widest">Real-time Sales Location Intelligence</p>
+                </div>
+              </div>
+              <div className="flex bg-white rounded-xl p-1 border border-slate-200 shadow-sm">
+                <button 
+                  onClick={() => setMapLevel('region')}
+                  className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${mapLevel === 'region' ? 'bg-seablue text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Region
+                </button>
+                <button 
+                  onClick={() => setMapLevel('town')}
+                  className={`px-4 py-1.5 text-[10px] font-black uppercase tracking-widest rounded-lg transition-all ${mapLevel === 'town' ? 'bg-seablue text-white shadow-md' : 'text-slate-400 hover:text-slate-600'}`}
+                >
+                  Town
+                </button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+              <select 
+                value={mapFilterBrand} 
+                onChange={e => setMapFilterBrand(e.target.value)}
+                className="input-clean py-2 text-xs font-bold text-slate-600"
+              >
+                <option value="All">All Brands</option>
+                {categories.map(c => (
+                  <option key={c} value={c}>{c}</option>
+                ))}
+              </select>
+              <select 
+                value={mapFilterRegion} 
+                onChange={e => setMapFilterRegion(e.target.value)}
+                className="input-clean py-2 text-xs font-bold text-slate-600"
+                disabled={userEmail && USER_ROLES[(userEmail || '').toLowerCase()]?.region ? true : false}
+              >
+                {userEmail && USER_ROLES[(userEmail || '').toLowerCase()]?.region ? (
+                  <option value={USER_ROLES[(userEmail || '').toLowerCase()].region}>{USER_ROLES[(userEmail || '').toLowerCase()].region}</option>
+                ) : (
+                  <>
+                    <option value="All">All Regions</option>
+                    {Array.from(new Set(processedStats.filter(s => !s.isTSMEntry).map(s => s.region))).filter(Boolean).sort().map(r => (
+                      <option key={r} value={r}>{r}</option>
+                    ))}
+                  </>
+                )}
+              </select>
+              <select 
+                value={mapFilterTSM} 
+                onChange={e => setMapFilterTSM(e.target.value)}
+                className="input-clean py-2 text-xs font-bold text-slate-600"
+              >
+                <option value="All">All TSMs</option>
+                {Array.from(new Set(processedStats.filter(s => !s.isTSMEntry && (mapFilterRegion === 'All' || s.region === mapFilterRegion)).map(s => s.tsm))).filter(Boolean).sort().map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <select 
+                value={mapFilterTown} 
+                onChange={e => setMapFilterTown(e.target.value)}
+                className="input-clean py-2 text-xs font-bold text-slate-600"
+              >
+                <option value="All">All Towns</option>
+                {Array.from(new Set(processedStats.filter(s => !s.isTSMEntry && (mapFilterRegion === 'All' || s.region === mapFilterRegion) && (mapFilterTSM === 'All' || s.tsm === mapFilterTSM)).map(s => s.town))).filter(Boolean).sort().map(t => (
+                  <option key={t} value={t}>{t}</option>
+                ))}
+              </select>
+              <select 
+                value={mapFilterOB} 
+                onChange={e => setMapFilterOB(e.target.value)}
+                className="input-clean py-2 text-xs font-bold text-slate-600"
+              >
+                <option value="All">All OBs</option>
+                {Array.from(new Set(processedStats.filter(s => !s.isTSMEntry && (mapFilterRegion === 'All' || s.region === mapFilterRegion) && (mapFilterTSM === 'All' || s.tsm === mapFilterTSM) && (mapFilterTown === 'All' || s.town === mapFilterTown)).map(s => s.ob_name))).filter(Boolean).sort().map(o => (
+                  <option key={o} value={o}>{o}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          <div className="h-[70vh] w-full z-0 relative">
+            <MapContainer center={[30.3753, 69.3451]} zoom={5} style={{ height: '100%', width: '100%', zIndex: 0 }}>
+              <TileLayer
+                url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+              />
+              {(() => {
+                const filteredMapStats = processedStats.filter(s => {
+                  if (s.isTSMEntry) return false;
+                  if (mapFilterRegion !== 'All' && s.region !== mapFilterRegion) return false;
+                  if (mapFilterTSM !== 'All' && s.tsm !== mapFilterTSM) return false;
+                  if (mapFilterTown !== 'All' && s.town !== mapFilterTown) return false;
+                  if (mapFilterOB !== 'All' && s.ob_name !== mapFilterOB) return false;
+                  return true;
+                });
+
+                const getSalesForSpecificBrand = (s: any, brand: string) => {
+                  const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : (s.order_data || {});
+                  const brandSkus = skus.filter((sku: any) => sku.category === brand);
+                  return brandSkus.reduce((sum: number, sku: any) => {
+                    const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
+                    const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
+                    return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
+                  }, 0);
+                };
+
+                const brandsToShow = mapFilterBrand === 'All' ? categories : [mapFilterBrand];
+
+                if (mapLevel === 'region') {
+                  const regionData: Record<string, any> = {};
+                  
+                  filteredMapStats.forEach(s => {
+                    const coords = TOWN_COORDINATES[s.town] || (s.latitude && s.longitude ? [s.latitude, s.longitude] : null);
+                    if (!coords) return;
+
+                    if (!regionData[s.region]) {
+                      regionData[s.region] = { region: s.region, totalSales: 0, brandSales: {}, lats: [], lngs: [], towns: new Set() };
+                    }
+
+                    brandsToShow.forEach(brand => {
+                      const sales = getSalesForSpecificBrand(s, brand);
+                      if (sales > 0) {
+                        regionData[s.region].brandSales[brand] = (regionData[s.region].brandSales[brand] || 0) + sales;
+                        regionData[s.region].totalSales += sales;
+                      }
+                    });
+
+                    regionData[s.region].lats.push(coords[0]);
+                    regionData[s.region].lngs.push(coords[1]);
+                    regionData[s.region].towns.add(s.town);
+                  });
+
+                  return Object.values(regionData).filter(r => r.totalSales > 0).map((r: any, i) => {
+                    const avgLat = r.lats.reduce((a:any,b:any)=>a+b,0)/r.lats.length;
+                    const avgLng = r.lngs.reduce((a:any,b:any)=>a+b,0)/r.lngs.length;
+                    
+                    const color = mapFilterBrand !== 'All' ? (CATEGORY_COLORS[mapFilterBrand] || '#0ea5e9') : '#0ea5e9';
+
+                    return (
+                      <CircleMarker 
+                        key={`region-${r.region}-${i}`} 
+                        center={[avgLat, avgLng]} 
+                        radius={Math.max(8, Math.min(30, r.totalSales / 50))}
+                        pathOptions={{ color: color, fillColor: color, fillOpacity: 0.6, weight: 2 }}
+                      >
+                        <MapTooltip direction="top" offset={[0, -10]} className="bg-white/95 backdrop-blur-sm border-none shadow-xl rounded-xl p-2 min-w-[120px]">
+                          <div className="text-[10px] font-black text-slate-800 uppercase text-center mb-1 border-b border-slate-100 pb-1">{r.region}</div>
+                          <div className="space-y-1 mt-1">
+                            {Object.entries(r.brandSales).sort(([,a]:any, [,b]:any) => b - a).slice(0, 4).map(([brand, sales]: any) => (
+                              <div key={brand} className="flex justify-between items-center text-[9px]">
+                                <div className="flex items-center gap-1">
+                                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
+                                  <span className="font-bold text-slate-600 truncate max-w-[60px]">{brand}</span>
+                                </div>
+                                <span className="font-black text-slate-800">{Math.round(sales)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </MapTooltip>
+                      </CircleMarker>
+                    );
+                  });
+                } else {
+                  const townData: Record<string, any> = {};
+                  
+                  filteredMapStats.forEach(s => {
+                    const coords = TOWN_COORDINATES[s.town] || (s.latitude && s.longitude ? [s.latitude, s.longitude] : null);
+                    if (!coords) return;
+
+                    if (!townData[s.town]) {
+                      townData[s.town] = { town: s.town, region: s.region, totalSales: 0, brandSales: {}, coords };
+                    }
+
+                    brandsToShow.forEach(brand => {
+                      const sales = getSalesForSpecificBrand(s, brand);
+                      if (sales > 0) {
+                        townData[s.town].brandSales[brand] = (townData[s.town].brandSales[brand] || 0) + sales;
+                        townData[s.town].totalSales += sales;
+                      }
+                    });
+                  });
+
+                  return Object.values(townData).filter(t => t.totalSales > 0).map((t: any, i) => {
+                    const color = mapFilterBrand !== 'All' ? (CATEGORY_COLORS[mapFilterBrand] || '#0ea5e9') : '#0ea5e9';
+
+                    return (
+                      <CircleMarker 
+                        key={`town-${t.town}-${i}`} 
+                        center={t.coords} 
+                        radius={Math.max(6, Math.min(25, t.totalSales / 20))}
+                        pathOptions={{ color: color, fillColor: color, fillOpacity: 0.6, weight: 2 }}
+                      >
+                        <MapTooltip direction="top" offset={[0, -10]} className="bg-white/95 backdrop-blur-sm border-none shadow-xl rounded-xl p-2 min-w-[120px]">
+                          <div className="text-[10px] font-black text-slate-800 uppercase text-center mb-1 border-b border-slate-100 pb-1">{t.town}</div>
+                          <div className="text-[8px] font-bold text-slate-400 uppercase text-center mb-1">{t.region}</div>
+                          <div className="space-y-1 mt-1">
+                            {Object.entries(t.brandSales).sort(([,a]:any, [,b]:any) => b - a).slice(0, 4).map(([brand, sales]: any) => (
+                              <div key={brand} className="flex justify-between items-center text-[9px]">
+                                <div className="flex items-center gap-1">
+                                  <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
+                                  <span className="font-bold text-slate-600 truncate max-w-[60px]">{brand}</span>
+                                </div>
+                                <span className="font-black text-slate-800">{Math.round(sales)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        </MapTooltip>
+                      </CircleMarker>
+                    );
+                  });
+                }
+              })()}
+            </MapContainer>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (view === 'stats') {
+    return (
+      <div className="p-4 space-y-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="card-clean p-6 bg-white border border-slate-100">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6">Sales by Category</h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={categoryStats}>
+                  <XAxis dataKey="category" hide />
+                  <YAxis hide />
+                  <Tooltip />
+                  <Bar dataKey="totalSales" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+          <div className="card-clean p-6 bg-white border border-slate-100">
+            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6">Sales Trend (MTD)</h3>
+            <div className="h-[300px]">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={trendData}>
+                  <XAxis dataKey="month" hide />
+                  <YAxis hide />
+                  <Tooltip />
+                  <Bar dataKey="totalSales" fill="#0ea5e9" />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
@@ -2264,7 +2576,7 @@ const NationalDashboard = ({
                         }}
                         className="flex items-center gap-1.5 ml-auto text-[10px] font-black text-emerald-600 uppercase hover:text-emerald-700 transition-colors"
                       >
-                        <MessageCircle className="w-3 h-3" />
+                        <Share2 className="w-3 h-3" />
                         Notify TSM
                       </button>
                     </td>
@@ -6330,12 +6642,19 @@ const normalizeRole = (role: string): any => {
   return role;
 };
 
-export default function App() {
-  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'intro' | 'help' | 'tsm_performance' | 'command_center' | 'insights' | 'stats' | 'home' | 'target_setting'>(() => {
+function App() {
+  const [view, setView] = useState<'entry' | 'history' | 'dashboard' | 'admin' | 'stocks' | 'national' | 'reports' | 'intro' | 'help' | 'tsm_performance' | 'command_center' | 'insights' | 'stats' | 'home' | 'target_setting' | 'geo_map'>(() => {
     const saved = localStorage.getItem('user_data');
     if (saved) {
       try {
-        const role = normalizeRole(JSON.parse(saved).role);
+        const savedUser = JSON.parse(saved);
+        const email = (savedUser.email || '').toLowerCase();
+        let role = normalizeRole(savedUser.role);
+        
+        if (USER_ROLES[email]) {
+          role = USER_ROLES[email].role;
+        }
+
         if (['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(role)) {
           return 'home';
         }
@@ -6355,11 +6674,19 @@ export default function App() {
     try { return saved ? JSON.parse(saved) : null; } catch(e) { return null; }
   });
 
-  const [userRole, setUserRole] = useState<'Super Admin' | 'Admin' | 'TSM' | 'ASM' | 'OB' | 'Director' | 'NSM' | 'RSM' | 'SC' | null>(() => normalizeRole(user?.role));
+  const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
+  const [userRole, setUserRole] = useState<'Super Admin' | 'Admin' | 'TSM' | 'ASM' | 'OB' | 'Director' | 'NSM' | 'RSM' | 'SC' | null>(() => {
+    const email = (user?.email || '').toLowerCase();
+    if (USER_ROLES[email]) return USER_ROLES[email].role;
+    return normalizeRole(user?.role);
+  });
   const [userName, setUserName] = useState<string | null>(() => user?.name || null);
   const [userContact, setUserContact] = useState<string | null>(() => user?.contact || null);
-  const [userEmail, setUserEmail] = useState<string | null>(() => user?.email || null);
-  const [userRegion, setUserRegion] = useState<string | null>(() => user?.region || null);
+  const [userRegion, setUserRegion] = useState<string | null>(() => {
+    const email = (user?.email || '').toLowerCase();
+    if (USER_ROLES[email]?.region) return USER_ROLES[email].region;
+    return user?.region || null;
+  });
   const [isAdminAuthenticated, setIsAdminAuthenticated] = useState(false);
   
   const fetchTargetsData = async () => {
@@ -6386,16 +6713,26 @@ export default function App() {
   const [selectedHeadCountDetail, setSelectedHeadCountDetail] = useState<any>(null);
 
   const handleLogin = (token: string, userData: any) => {
-    const role = normalizeRole(userData.role);
+    const email = (userData.email || '').toLowerCase();
+    let role = normalizeRole(userData.role);
+    let region = userData.region;
+
+    if (USER_ROLES[email]) {
+      role = USER_ROLES[email].role;
+      if (USER_ROLES[email].region) {
+        region = USER_ROLES[email].region;
+      }
+    }
+
     setToken(token);
     setUser(userData);
     setUserRole(role);
     setUserName(userData.name);
     setUserContact(userData.contact);
     setUserEmail(userData.email);
-    setUserRegion(userData.region);
+    setUserRegion(region);
     localStorage.setItem('auth_token', token);
-    localStorage.setItem('user_data', JSON.stringify(userData));
+    localStorage.setItem('user_data', JSON.stringify({ ...userData, role, region }));
     
     if ((role === 'TSM' || role === 'ASM')) {
       setSelectedTSM(userData.name);
@@ -6657,6 +6994,28 @@ export default function App() {
   });
   const [historyPage, setHistoryPage] = useState(1);
   const itemsPerPage = 10;
+  useEffect(() => {
+    // Force fullscreen UI behaviors
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+
+    // Disable right click to prevent DevTools / Inspection for non-admins
+    const handleContextMenu = (e: MouseEvent) => {
+      if (!SUPER_ADMIN_EMAILS.includes((userEmail || '').toLowerCase())) {
+        e.preventDefault();
+      }
+    };
+    window.addEventListener('contextmenu', handleContextMenu);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      window.removeEventListener('contextmenu', handleContextMenu);
+    };
+  }, [userEmail]);
+
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [hasAutoRefreshed, setHasAutoRefreshed] = useState(false);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
@@ -6822,27 +7181,34 @@ export default function App() {
 
   // Move Stocks hooks to top level
   const allDistributors = useMemo(() => {
-    // Combine all sources: distributors table, OB assignments, TSM assignments, and Hierarchy
     const rawData = [
       ...distributors.map(d => ({ town: d.town, distributor: d.name, tsm: d.tsm, region: d.region, ob_id: d.ob_id })),
       ...obAssignments.filter(ob => ob.name).map(ob => ({ town: ob.town, distributor: ob.distributor, tsm: ob.tsm, region: ob.region, ob_id: ob.contact })),
       ...tsmAssignments.map(ta => ({ town: ta.town, distributor: ta.town, tsm: ta.tsm_name, region: '', ob_id: '' })),
       ...hierarchy.map(h => ({ town: h.town_name, distributor: h.distributor_name, tsm: h.asm_tsm_name, region: h.territory_region, ob_id: h.ob_id }))
-    ].filter(d => d.town && d.distributor && d.distributor.trim() !== '');
+    ].filter(d => d.town && d.distributor);
 
-    // Deduplicate: No duplicates for Town + Distributor pair
-    const seen = new Set();
-    const uniqueData = [];
-    
-    for (const d of rawData) {
-      const key = `${d.town.trim().toLowerCase()}|${d.distributor.trim().toLowerCase()}`;
-      if (!seen.has(key)) {
-        seen.add(key);
-        uniqueData.push(d);
+    // Group by town to find specific distributors
+    const townSpecificDistributors = new Set();
+    rawData.forEach(d => {
+      // If distributor name is different from town name, it's a specific distributor entry
+      if (d.distributor.toLowerCase() !== d.town.toLowerCase()) {
+        townSpecificDistributors.add(d.town.toLowerCase());
       }
-    }
+    });
 
-    return uniqueData.sort((a, b) => a.town.localeCompare(b.town) || a.distributor.localeCompare(b.distributor));
+    return rawData
+      .filter(d => {
+        // If this town has specific distributors AND this entry is just "Town > Town", filter it out
+        if (townSpecificDistributors.has(d.town.toLowerCase()) && d.distributor.toLowerCase() === d.town.toLowerCase()) {
+          return false;
+        }
+        return true;
+      })
+      .filter((v, i, a) => a.findIndex(t => 
+        t.distributor.toLowerCase() === v.distributor.toLowerCase() && 
+        t.town.toLowerCase() === v.town.toLowerCase()
+      ) === i);
   }, [distributors, obAssignments, tsmAssignments, hierarchy]);
 
   const filteredDistributors = useMemo(() => {
@@ -8719,19 +9085,19 @@ export default function App() {
 
     const canEdit = ['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes((userRole || '').toUpperCase());
 
-    const regions = useMemo(() => [...new Set(allDistributors.map(d => d.region))].filter(Boolean).sort() as string[], [allDistributors]);
-    const tsms = useMemo(() => [...new Set(allDistributors.filter(d => !selectedRegion || d.region === selectedRegion).map(d => d.tsm))].filter(Boolean).sort() as string[], [allDistributors, selectedRegion]);
-    const townsList = useMemo(() => [...new Set(allDistributors.filter(d => (!selectedRegion || d.region === selectedRegion) && (!selectedTSM || d.tsm === selectedTSM)).map(d => d.town))].filter(Boolean).sort() as string[], [allDistributors, selectedRegion, selectedTSM]);
+    const regions = [...new Set(distributors.map(d => d.region))].filter(Boolean).sort() as string[];
+    const tsms = [...new Set(distributors.filter(d => !selectedRegion || d.region === selectedRegion).map(d => d.tsm))].filter(Boolean).sort() as string[];
+    const townsList = [...new Set(distributors.filter(d => (!selectedRegion || d.region === selectedRegion) && (!selectedTSM || d.tsm === selectedTSM)).map(d => d.town))].filter(Boolean).sort() as string[];
     
-    // Using deduplicated lists for better management
+    // Use top level obs and distributors
     const allObs = obAssignments;
-    const allDists = allDistributors;
+    const allDists = distributors;
 
     const filteredDists = allDists.filter(d => 
       (!selectedRegion || d.region === selectedRegion) && 
       (!selectedTSM || d.tsm === selectedTSM) && 
       (!selectedTown || d.town === selectedTown) &&
-      (!targetSearch || d.distributor.toLowerCase().includes(targetSearch.toLowerCase()))
+      (!targetSearch || d.name.toLowerCase().includes(targetSearch.toLowerCase()))
     );
 
     const filteredObs = allObs.filter(ob => 
@@ -8917,23 +9283,23 @@ export default function App() {
                       {!targetSearch && (
                         <tr className="bg-emerald-50/30 font-black text-[10px] text-emerald-600 uppercase tracking-widest"><td colSpan={distCategories.length + 1} className="px-6 py-2">By Distributor (Tons/Gross)</td></tr>
                       )}
-                      {filteredDists.map((dist, dIdx) => (
-                        <tr key={`dist-${dist.distributor}-${dIdx}`} className="hover:bg-slate-50/50 transition-colors">
+                      {filteredDists.map(dist => (
+                        <tr key={`dist-${dist.name}`} className="hover:bg-slate-50/50 transition-colors">
                            <td className="px-6 py-4">
                               <div className="flex flex-col">
-                                <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{dist.distributor}</span>
+                                <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{dist.name}</span>
                                 <span className="text-[8px] font-bold text-slate-400 uppercase">{dist.town}</span>
                               </div>
                            </td>
                            {distCategories.map(cat => {
-                             const target = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === dist.distributor && pt.brand_name === cat);
+                             const target = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === dist.name && pt.brand_name === cat);
                              return (
                                <td key={cat} className="px-2 py-2">
                                   <input 
                                     type="number" 
                                     disabled={!canEdit}
                                     defaultValue={target?.target_ctn || ''} 
-                                    onBlur={e => handleSavePrimary('Distributor', dist.distributor, cat, e.target.value)}
+                                    onBlur={e => handleSavePrimary('Distributor', dist.name, cat, e.target.value)}
                                     placeholder="0.00"
                                     className={`w-full bg-transparent border-b border-transparent text-center text-xs font-bold text-slate-700 py-1 transition-all ${canEdit ? 'hover:border-slate-200 focus:border-seablue focus:outline-none' : 'cursor-not-allowed opacity-70'}`}
                                   />
@@ -8992,21 +9358,11 @@ export default function App() {
 
   if (view === 'target_setting') {
     return (
-      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+      <div className="min-h-screen bg-slate-50 flex flex-col">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <main className="flex-1 overflow-y-auto no-scrollbar w-full p-4 sm:p-6">
-           <div className="max-w-[1600px] mx-auto">
-             <TargetSettingView 
-               hierarchy={hierarchy}
-               distributors={distributors}
-               tsmList={tsmList}
-               onSave={async (data) => {
-                 await apiFetch('/api/admin/targets', { method: 'POST', body: JSON.stringify(data) });
-                 fetchAdminData();
-               }}
-               onMessage={(msg) => setMessage(msg)}
-             />
-           </div>
+        <RegionViewLabel userEmail={userEmail} />
+        <main className="flex-1 max-w-[1600px] mx-auto p-4 sm:p-6 w-full">
+           <TargetSettingView />
         </main>
       </div>
     );
@@ -9048,12 +9404,13 @@ export default function App() {
     );
   }
 
-  if (view === 'dashboard' || view === 'command_center' || view === 'insights' || view === 'missing_entries') {
+  if (['dashboard', 'command_center', 'insights', 'missing_entries', 'stats', 'geo_map', 'target_setting', 'performance', 'stock_reports'].includes(view || '')) {
     try {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
-          <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+          <div className="min-h-screen bg-slate-50 flex flex-col">
             <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+            <RegionViewLabel userEmail={userEmail} />
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-4">
                 <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -9068,10 +9425,10 @@ export default function App() {
       // If management role, show NationalDashboard (Management Dashboard)
       if (['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM', 'ASM', 'OB'].includes((userRole || '').toUpperCase())) {
         return (
-          <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+          <div className="min-h-screen bg-slate-50 pb-40">
             <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-            <main className="flex-1 overflow-y-auto no-scrollbar w-full">
-              {isLoadingNational ? (
+            <RegionViewLabel userEmail={userEmail} />
+            {isLoadingNational ? (
               <div className="flex-1 flex items-center justify-center min-h-[80vh]">
                 <div className="flex flex-col items-center gap-4">
                   <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -9111,9 +9468,8 @@ export default function App() {
                 obTargets={obTargets}
               />
             )}
-          </main>
-        </div>
-      );
+          </div>
+        );
       }
 
       const normalizedRole = (userRole || '').trim().toUpperCase();
@@ -9369,7 +9725,8 @@ export default function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} logo={appLogo} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <RegionViewLabel userEmail={userEmail} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -9985,135 +10342,14 @@ export default function App() {
     }
   }
 
-  if (view === 'stats') {
-    if (!['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(userRole || '')) {
-      setView('dashboard');
-      return null;
-    }
-    return (
-      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
-        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <main className="flex-1 overflow-y-auto no-scrollbar w-full">
-        {isLoadingNational ? (
-          <div className="flex-1 flex items-center justify-center min-h-[80vh]">
-            <div className="flex flex-col items-center gap-4">
-              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Stats...</p>
-            </div>
-          </div>
-        ) : (
-          <StatsView 
-            history={nationalStats} 
-            obAssignments={hierarchy} 
-            users={users}
-            tsmList={tsmList} 
-            appConfig={appConfig} 
-            getPSTDate={getPSTDate} 
-            SKUS={SKUS} 
-            CATEGORIES={CATEGORIES} 
-            userRole={userRole}
-            userName={userName}
-            userRegion={userRegion}
-            userContact={userContact}
-            onRefresh={syncEverything}
-            isSyncing={isSyncingGlobal}
-            selectedMonth={selectedMonth}
-            setSelectedMonth={setSelectedMonth}
-            dailyStatus={dailyStatus}
-            fetchDailyStatus={fetchDailyStatus}
-            isLoadingDailyStatus={isLoadingDailyStatus}
-            missingEntriesReport={missingEntriesReport}
-            fetchMissingEntriesReport={fetchMissingEntriesReport}
-            isLoadingMissingEntries={isLoadingMissingEntries}
-          />
-        )}
-        </main>
-      </div>
-    );
-  }
 
-  if (view === 'reports') {
-    if (!['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'].includes(userRole || '')) {
-      setView('dashboard');
-      return null;
-    }
-    return (
-      <ErrorBoundary>
-        <PWAInstallPrompt />
-        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
-        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <main className="flex-1 overflow-y-auto no-scrollbar w-full">
-        {isLoadingNational ? (
-          <div className="flex-1 flex items-center justify-center min-h-[80vh]">
-            <div className="flex flex-col items-center gap-4">
-              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Reports...</p>
-            </div>
-          </div>
-        ) : (
-          <ReportsView 
-            history={nationalStats} 
-            obAssignments={obAssignments} 
-            hierarchy={hierarchy}
-            tsmList={tsmList} 
-            appConfig={appConfig} 
-            getPSTDate={getPSTDate} 
-            SKUS={SKUS} 
-            CATEGORIES={CATEGORIES} 
-            userRole={userRole} 
-            userName={userName} 
-            userRegion={userRegion}
-            userContact={userContact}
-            onRefresh={syncEverything}
-            isSyncing={isSyncingGlobal}
-            selectedMonth={selectedMonth}
-            setSelectedMonth={setSelectedMonth}
-          />
-        )}
-        </main>
-      </div>
-      </ErrorBoundary>
-    );
-  }
-
-  if (view === 'tsm_performance') {
-    return (
-      <ErrorBoundary>
-        <div className="min-h-screen bg-slate-50 pb-40">
-        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        {isLoadingNational ? (
-          <div className="flex-1 flex items-center justify-center min-h-[80vh]">
-            <div className="flex flex-col items-center gap-4">
-              <Loader2 className="w-10 h-10 text-seablue animate-spin" />
-              <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">Loading Target vs Achievement...</p>
-            </div>
-          </div>
-        ) : (
-          <TSMPerformanceView 
-            history={nationalStats} 
-            hierarchy={hierarchy} 
-            CATEGORIES={CATEGORIES} 
-            SKUS={SKUS}
-            userRole={userRole}
-            userName={userName}
-            userRegion={userRegion}
-            selectedMonth={selectedMonth}
-            setSelectedMonth={setSelectedMonth}
-            setView={setView}
-            onRefresh={syncEverything}
-            isSyncing={isSyncingGlobal}
-          />
-        )}
-      </div>
-      </ErrorBoundary>
-    );
-  }
 
   if (view === 'admin') {
     if (!isAdminAuthenticated) {
       return (
-        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+        <div className="min-h-screen bg-slate-50 flex flex-col">
           <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+          <RegionViewLabel userEmail={userEmail} />
           <div className="flex-1 flex items-center justify-center p-4">
             <div className="card-clean p-6 max-w-sm w-full bg-white shadow-xl">
               <div className="flex items-center gap-3 mb-6">
@@ -10155,8 +10391,9 @@ export default function App() {
 
     if (isLoadingAdmin) {
       return (
-        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+        <div className="min-h-screen bg-slate-50 flex flex-col">
           <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+          <RegionViewLabel userEmail={userEmail} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -10169,8 +10406,9 @@ export default function App() {
     }
 
     return (
-      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
-        <MainNav view={view} setView={setView} role={userRole} onLogout={handleLogout} logo={appLogo} />
+      <div className="min-h-screen bg-slate-50 pb-10">
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <RegionViewLabel userEmail={userEmail} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto flex justify-between items-center">
             <div className="flex items-center gap-3">
@@ -10195,8 +10433,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto no-scrollbar w-full px-4 py-6">
-          <div className="max-w-4xl mx-auto space-y-6">
+        <main className="max-w-4xl mx-auto px-4 py-6 space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div className="card-clean p-4 space-y-2">
               <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">System Status</h3>
@@ -11265,11 +11502,11 @@ export default function App() {
               </table>
             </div>
           </section>
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
     );
   }
+
 
   if (view === 'help') {
     const helpContent = [
@@ -11442,13 +11679,13 @@ export default function App() {
     });
 
     return (
-      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+      <div className="min-h-screen bg-slate-50 pb-20">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <main className="flex-1 overflow-y-auto w-full no-scrollbar px-4 py-8">
-          <div className="max-w-4xl mx-auto space-y-6">
-            <div className="bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-white">
-              <h1 className="text-2xl font-black text-seablue uppercase tracking-tight mb-2">User Manual</h1>
-              <p className="text-sm text-slate-500 mb-6">A detailed guide to using the SalesPulse application based on your role ({userRole}).</p>
+        <RegionViewLabel userEmail={userEmail} />
+        <main className="max-w-4xl mx-auto p-4 space-y-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100">
+            <h1 className="text-2xl font-black text-seablue uppercase tracking-tight mb-2">User Manual</h1>
+            <p className="text-sm text-slate-500 mb-6">A detailed guide to using the SalesPulse application based on your role ({userRole}).</p>
             
             <div className="space-y-6">
               <div className="border-l-4 border-slate-400 pl-4">
@@ -11467,9 +11704,8 @@ export default function App() {
               ))}
             </div>
           </div>
-        </div>
-      </main>
-    </div>
+        </main>
+      </div>
     );
   }
 
@@ -11595,11 +11831,12 @@ export default function App() {
     });
 
     return (
-      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+      <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <main className="flex-1 overflow-y-auto w-full no-scrollbar px-4 py-6">
-          <div className="max-w-[1600px] mx-auto space-y-6">
-            <motion.div 
+        <RegionViewLabel userEmail={userEmail} />
+        
+        <div className="p-4 space-y-6 max-w-[1600px] mx-auto">
+          <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50 flex flex-col md:flex-row md:items-center justify-between gap-4"
@@ -12407,10 +12644,9 @@ export default function App() {
             </motion.div>
           </div>
         )}
-      </main>
-    </div>
-  );
-}
+      </div>
+    );
+  }
 
   if (view === 'stocks') {
     const handleStockChange = (distributor: string, skuId: string, val: number) => {
@@ -12456,11 +12692,12 @@ export default function App() {
     };
 
     return (
-      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+      <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <main className="flex-1 overflow-y-auto w-full no-scrollbar">
-          <div className="p-4 space-y-6 max-w-[1600px] mx-auto">
-            <motion.div 
+        <RegionViewLabel userEmail={userEmail} />
+        
+        <div className="p-4 space-y-6">
+          <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
             className="glass-card p-6 rounded-3xl border border-white/60 shadow-xl shadow-slate-200/50 flex flex-col md:flex-row md:items-center justify-between gap-4"
@@ -12600,15 +12837,15 @@ export default function App() {
             </div>
           </section>
         </div>
-      </main>
-    </div>
-  );
-}
+      </div>
+    );
+  }
   if (view === 'history') {
     if (isLoadingHistory) {
       return (
-        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+        <div className="min-h-screen bg-slate-50 flex flex-col">
           <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+          <RegionViewLabel userEmail={userEmail} />
           <div className="flex-1 flex items-center justify-center">
             <div className="flex flex-col items-center gap-4">
               <Loader2 className="w-10 h-10 text-seablue animate-spin" />
@@ -12624,9 +12861,10 @@ export default function App() {
     const totalPages = Math.ceil(history.length / itemsPerPage);
 
     return (
-      <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+      <div className="min-h-screen bg-slate-50 pb-10">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <header className="bg-white border-b border-slate-200 p-4 z-20 shadow-sm">
+        <RegionViewLabel userEmail={userEmail} />
+        <header className="bg-white border-b border-slate-200 p-4 sticky top-12 z-20 shadow-sm">
           <div className="max-w-full mx-auto px-4 flex flex-col gap-4">
             <div className="flex justify-between items-center">
               <div className="flex items-center gap-3">
@@ -12764,7 +13002,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="flex-1 overflow-y-auto no-scrollbar w-full px-4 py-6 space-y-6">
+        <main className="max-w-[98%] mx-auto px-4 py-6 space-y-6">
           {history.length === 0 ? (
             <div className="card-clean p-12 text-center space-y-4">
               <div className="w-16 h-16 bg-slate-100 text-slate-400 rounded-full flex items-center justify-center mx-auto">
@@ -12891,22 +13129,15 @@ export default function App() {
     );
   }
 
-  if (!token || token === 'null') {
-    return (
-      <>
-        <PWAInstallPrompt />
-        <Login onLogin={handleLogin} logo={appLogo} />
-      </>
-    );
-  }
 
   if (view === 'entry') {
     return (
       <ErrorBoundary>
         <PWAInstallPrompt />
-        <div className="fixed inset-0 z-50 bg-slate-50 flex flex-col overflow-hidden">
+        <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
-        <header className="bg-white border-b border-slate-200 z-30 shadow-sm">
+        <RegionViewLabel userEmail={userEmail} />
+        <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-3 py-2">
           <div className="flex justify-between items-center">
             <div className="flex items-center gap-2">
@@ -12970,7 +13201,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="flex-1 overflow-y-auto no-scrollbar w-full px-3 py-3 space-y-3">
+      <main className="max-w-6xl mx-auto px-3 py-3 space-y-3">
         {/* TSM Filter - Restricted by Role */}
         {userRole !== 'OB' && tsmList.length > 0 && (
           <div className="card-clean p-1.5 bg-seablue/5 border-seablue/10 overflow-x-auto">
@@ -13377,23 +13608,31 @@ export default function App() {
         )}
       </AnimatePresence>
 
-      {/* Chatbot removed as per user request */}
-    </div>
-    </ErrorBoundary>
+      </div>
+      </ErrorBoundary>
     );
   }
 
+  // Final catch-all for unknown views or initial load
   return (
-    <div className="min-h-screen bg-slate-900 flex items-center justify-center">
-      <div className="text-center">
-        <h2 className="text-2xl font-black text-white mb-4 uppercase tracking-tighter">View Not Found</h2>
-        <button 
-          onClick={() => setView('home')}
-          className="px-6 py-3 bg-seablue text-white rounded-2xl font-black uppercase tracking-widest"
-        >
-          Return Home
+    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-seablue/20 rounded-full blur-[100px] animate-pulse"></div>
+      <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px] animate-pulse delay-1000"></div>
+      <motion.div 
+        initial={{ opacity: 0, y: -20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="text-center mb-20 z-10"
+      >
+        <div className="w-20 h-20 bg-seablue rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-2xl">
+          <LayoutDashboard className="w-10 h-10 text-white" />
+        </div>
+        <h1 className="text-3xl font-black text-white uppercase tracking-tighter leading-none">SalesPulse</h1>
+        <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.3em] mt-3 tracking-widest">System Initializing...</p>
+        <button onClick={() => setView('dashboard')} className="mt-8 px-8 py-3 bg-white text-seablue rounded-full font-black uppercase tracking-widest hover:scale-105 transition-transform">
+          Enter System
         </button>
-      </div>
+      </motion.div>
     </div>
   );
-}
+};
+export default App;
