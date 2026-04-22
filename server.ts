@@ -21,6 +21,13 @@ process.on('unhandledRejection', (reason, promise) => {
 const JWT_SECRET = process.env.JWT_SECRET || "salespulse-secret-key-2026";
 const SUPER_ADMIN_EMAILS = ["amjid.bisconni@gmail.com", "Amjid.psh@gmail.com"];
 
+const MANAGEMENT_ROLES: Record<string, { role: 'Director' | 'NSM', region?: string }> = {
+  'waleed.elahi@gmail.com': { role: 'Director' },
+  'rzrsaleem@gmail.com': { role: 'Director', region: 'Lahore' },
+  'rizwankhattak@gmail.com': { role: 'NSM' },
+  'shahidmughal233143@gmail.com': { role: 'NSM', region: 'Lahore' },
+};
+
 // Extend Express Request type
 declare global {
   namespace Express {
@@ -2151,77 +2158,112 @@ async function startServer() {
       
       let user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)").get(username, username) as any;
       
+      const lowerUsername = (username || '').toLowerCase();
+      const isManagementEmail = MANAGEMENT_ROLES[lowerUsername];
+
+      if (user && isManagementEmail) {
+        // Ensure management role and region are always up to date from the hardcoded list
+        if (user.role !== isManagementEmail.role || user.region !== (isManagementEmail.region || null)) {
+          console.log(`[LOGIN] Updating role/region for management user ${username} to ${isManagementEmail.role}/${isManagementEmail.region || 'National'}`);
+          db.prepare("UPDATE users SET role = ?, region = ? WHERE id = ?")
+            .run(isManagementEmail.role, isManagementEmail.region || null, user.id);
+          user.role = isManagementEmail.role;
+          user.region = isManagementEmail.region || null;
+        }
+      }
+
       if (!user) {
         // Fallback for first time admin login
         const lowerUsername = username.toLowerCase();
         const isSuperAdminEmail = SUPER_ADMIN_EMAILS.some(e => e.toLowerCase() === lowerUsername);
+        const isManagementEmail = MANAGEMENT_ROLES[lowerUsername];
         
-        if (isSuperAdminEmail || lowerUsername === 'admin') {
-          const role = 'Super Admin';
-          const name = 'Admin';
+        if (isSuperAdminEmail || lowerUsername === 'admin' || isManagementEmail) {
+          const role = isManagementEmail ? isManagementEmail.role : (isSuperAdminEmail ? 'Super Admin' : 'Admin');
+          const region = isManagementEmail ? isManagementEmail.region : null;
+          const name = toProperCase(isManagementEmail ? lowerUsername.split('@')[0].replace(/\./g, ' ') : (isSuperAdminEmail ? 'Super Admin' : 'Admin'));
           const hashedPassword = await bcrypt.hash(password || 'Admin@123', 10);
-          const info = db.prepare("INSERT INTO users (username, email, role, name, password) VALUES (?, ?, ?, ?, ?)")
-            .run(username, isSuperAdminEmail ? username : 'admin@salespulse.local', role, name, hashedPassword);
+          
+          const info = db.prepare("INSERT INTO users (username, email, role, name, password, region) VALUES (?, ?, ?, ?, ?, ?)")
+            .run(username, (isSuperAdminEmail || isManagementEmail) ? username : 'admin@salespulse.local', role, name, hashedPassword, region);
           user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid) as any;
         } else {
-          // Try to sync users from Google Sheets on the fly
-          try {
-            const client = await getGoogleSheetsClient();
-            if (client) {
-              console.log(`[LOGIN] User ${username} not found. Triggering on-the-fly sync...`);
-              // Pull Users, Team and TSM Assignments to ensure everything is ready
-              await pullUsersData(client.sheets, client.spreadsheetId);
-              await pullTeamData(client.sheets, client.spreadsheetId);
-              await pullTsmAssignments(client.sheets, client.spreadsheetId);
-              
-              // Try fetching the user again
-              user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)").get(username, username) as any;
-            }
-          } catch (syncErr) {
-            console.error("[LOGIN] On-the-fly user sync failed:", syncErr);
+          // Try to check in hierarchy or assignments first before Google Sheets sync
+          let hUser = db.prepare("SELECT * FROM national_hierarchy WHERE LOWER(ob_id) = LOWER(?) OR LOWER(ob_name) = LOWER(?)").get(username, username) as any;
+          if (!hUser) {
+            hUser = db.prepare("SELECT * FROM ob_assignments WHERE LOWER(contact) = LOWER(?) OR LOWER(name) = LOWER(?)").get(username, username) as any;
+          }
+
+          if (hUser) {
+            const role = hUser.role || (hUser.ob_id ? 'OB' : 'TSM');
+            const name = hUser.name || hUser.ob_name || username;
+            const region = hUser.region || hUser.territory_region;
+            const hashedPassword = await bcrypt.hash(password || 'Admin@123', 10);
+            
+            const info = db.prepare("INSERT INTO users (username, email, role, name, contact, region, password) VALUES (?, ?, ?, ?, ?, ?, ?)")
+              .run(username, username.includes('@') ? username : null, role, toProperCase(name), hUser.contact || hUser.ob_id, region, hashedPassword);
+            user = db.prepare("SELECT * FROM users WHERE id = ?").get(info.lastInsertRowid) as any;
           }
 
           if (!user) {
-            return res.status(401).json({ error: "User not registered. Contact Admin" });
+            // Try to sync users from Google Sheets on the fly
+            try {
+              const client = await getGoogleSheetsClient();
+              if (client) {
+                console.log(`[LOGIN] User ${username} not found. Triggering on-the-fly sync...`);
+                // Pull Users, Team and TSM Assignments to ensure everything is ready
+                await pullUsersData(client.sheets, client.spreadsheetId);
+                await pullTeamData(client.sheets, client.spreadsheetId);
+                await pullTsmAssignments(client.sheets, client.spreadsheetId);
+                
+                // Try fetching the user again
+                user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)").get(username, username) as any;
+              }
+            } catch (syncErr) {
+              console.error("[LOGIN] On-the-fly user sync failed:", syncErr);
+            }
+          }
+
+          if (!user) {
+            return res.status(401).json({ error: "User not registered. Please contact your Admin or provide a valid ID." });
           }
         }
-      } else {
-        // User found, but let's ensure their team data is synced if they are TSM or higher
-        // and it's been a while or data is missing
-        const isManagement = ['ADMIN', 'SUPER ADMIN', 'DIRECTOR', 'NSM', 'RSM', 'TSM', 'ASM', 'SC'].includes(user.role?.toUpperCase());
-        if (isManagement) {
-           const obCount = db.prepare("SELECT COUNT(*) as count FROM ob_assignments").get() as any;
-           if (obCount.count === 0) {
-             console.log(`[LOGIN] Management user ${username} logged in but team data is empty. Syncing...`);
-             try {
-               const client = await getGoogleSheetsClient();
-               if (client) {
-                 await pullTeamData(client.sheets, client.spreadsheetId);
-                 await pullTsmAssignments(client.sheets, client.spreadsheetId);
-               }
-             } catch (e) {
-               console.error("[LOGIN] Background team sync failed:", e);
-             }
-           }
-        }
-        
-        // If password is provided, check it. If not, allow login if it's an email-only request
-        if (password) {
-          if (user.password === 'nopassword' || user.password === '123456' || user.password === 'password123' || user.password === '123') {
-             const lowerPass = password.toLowerCase();
-             if (password !== user.password && password !== '123456' && lowerPass !== 'password123' && password !== '123') {
-               return res.status(401).json({ error: "Invalid credentials" });
-             }
-          } else {
-             const isValid = await bcrypt.compare(password, user.password);
-             if (!isValid) {
-               return res.status(401).json({ error: "Invalid credentials" });
-             }
-          }
-        }
-        // If no password provided, we still allow login as requested by the user
       }
 
+      // User found, but let's ensure their team data is synced if they are TSM or higher
+      // and it's been a while or data is missing
+      const isManagement = ['ADMIN', 'SUPER ADMIN', 'DIRECTOR', 'NSM', 'RSM', 'TSM', 'ASM', 'SC'].includes(user.role?.toUpperCase());
+      if (isManagement) {
+        const obCount = db.prepare("SELECT COUNT(*) as count FROM ob_assignments").get() as any;
+        if (obCount.count === 0) {
+          console.log(`[LOGIN] Management user ${username} logged in but team data is empty. Syncing...`);
+          try {
+            const client = await getGoogleSheetsClient();
+            if (client) {
+              await pullTeamData(client.sheets, client.spreadsheetId);
+              await pullTsmAssignments(client.sheets, client.spreadsheetId);
+            }
+          } catch (e) {
+            console.error("[LOGIN] Background team sync failed:", e);
+          }
+        }
+      }
+      
+      // If password is provided, check it. If not, allow login if it's an email-only request
+      if (password) {
+        if (user.password === 'nopassword' || user.password === '123456' || user.password === 'password123' || user.password === '123') {
+          const lowerPass = password.toLowerCase();
+          if (password !== user.password && password !== '123456' && lowerPass !== 'password123' && password !== '123') {
+            return res.status(401).json({ error: "Invalid credentials" });
+          }
+        } else {
+          const isValid = await bcrypt.compare(password, user.password);
+          if (!isValid) {
+            return res.status(401).json({ error: "Invalid credentials" });
+          }
+        }
+      }
+      // If no password provided, we still allow login as requested by the user
       let finalRole = user.role;
       let finalRegion = user.region;
       
