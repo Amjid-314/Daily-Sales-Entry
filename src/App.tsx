@@ -1,5 +1,5 @@
 import * as React from 'react';
-import { useState, useEffect, useRef, useMemo } from 'react';
+import { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import Papa from 'papaparse';
 import { 
@@ -367,7 +367,7 @@ interface NationalDashboardProps {
   userRegion?: string | null;
   userName?: string | null;
   userContact?: string | null;
-  timeGone: number;
+  timeGone: any;
   holidays: string;
   lastSync?: string;
   selectedMonth: string;
@@ -378,6 +378,9 @@ interface NationalDashboardProps {
   missingEntriesReport: any[];
   fetchMissingEntriesReport: (m?: string) => void;
   isLoadingMissingEntries: boolean;
+  dailyStatus?: any[];
+  fetchDailyStatus?: (d: string) => void;
+  isLoadingDailyStatus?: boolean;
   users?: any[];
   obAssignments?: any[];
   selectedHeadCountDetail: any;
@@ -386,15 +389,26 @@ interface NationalDashboardProps {
 }
 
 const NationalDashboard = ({ 
-  view, setView, stats, hierarchy, categories, skus, isSyncing, onRefresh, 
+  view, setView, stats, hierarchy, categories, skus, isSyncing, onRefresh,
   userRole, userEmail, userRegion, userName, userContact, 
   timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, 
   apiFetch, backupLogs = [], stockHistory = [],
   missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries,
+  dailyStatus = [], fetchDailyStatus = () => {}, isLoadingDailyStatus = false,
   users = [], obAssignments = [],
   selectedHeadCountDetail, setSelectedHeadCountDetail,
   obTargets
 }: NationalDashboardProps) => {
+  const getPSTDate = () => {
+    return new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
+  };
+  
+  const currentPSTDay = new Date(getPSTDate()).toISOString().split('T')[0];
+
+  const tsmList = useMemo(() => {
+    return Array.from(new Set(hierarchy.map(h => h.asm_tsm_name))).filter(Boolean).sort() as string[];
+  }, [hierarchy]);
+
   const [offDayFilter, setOffDayFilter] = useState('All');
   const [expandedOB, setExpandedOB] = useState<string | null>(null);
   const [headCountDrillDown, setHeadCountDrillDown] = useState<{ level: string, value: string }[]>([]);
@@ -1350,10 +1364,13 @@ const NationalDashboard = ({
       tsms[tsm].achievementPerc = tsmTotalTarget > 0 ? (tsms[tsm].totalSales / tsmTotalTarget) * 100 : 0;
       tsms[tsm].averageOBAchievement = achievements.length > 0 ? achievements.reduce((a, b) => a + b, 0) / achievements.length : 0;
       
-      // Projected Sales
-      const workingDays = 25; // Default
-      const daysPassed = new Set(obOnlyStats.map(s => s.date)).size || 1;
-      tsms[tsm].projectedSales = (tsms[tsm].totalSales / daysPassed) * workingDays;
+      // Projected Sales & RPD Correction
+      const totalDays = timeGone?.total || 25;
+      const passedDays = timeGone?.passed || 1;
+      const remainingDays = timeGone?.remaining || 1;
+      
+      tsms[tsm].projectedSales = (tsms[tsm].totalSales / passedDays) * totalDays;
+      tsms[tsm].rpd = remainingDays > 0 ? Math.max(0, (tsms[tsm].totalTarget - tsms[tsm].totalSales) / remainingDays) : 0;
     });
 
     return Object.values(tsms)
@@ -2841,6 +2858,72 @@ const NationalDashboard = ({
           </div>
         </div>
       </div>
+      )}
+
+      {view === 'tsm_performance' && (
+        <TSMPerformanceView 
+          history={stats}
+          hierarchy={hierarchy}
+          CATEGORIES={categories}
+          SKUS={skus}
+          userRole={userRole}
+          userName={userName}
+          userRegion={userRegion}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+          setView={setView}
+          onRefresh={onRefresh}
+          isSyncing={isSyncing}
+        />
+      )}
+
+      {view === 'stats' && (
+        <StatsView 
+          history={stats}
+          obAssignments={obAssignments}
+          users={users}
+          tsmList={tsmList}
+          appConfig={{ holidays, total_working_days: 25 }} // total_working_days might be missing, 25 is safe default
+          getPSTDate={() => currentPSTDay}
+          SKUS={skus}
+          CATEGORIES={categories}
+          userRole={userRole}
+          userName={userName}
+          userRegion={userRegion}
+          userContact={userContact}
+          onRefresh={onRefresh}
+          isSyncing={isSyncing}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+          missingEntriesReport={missingEntriesReport}
+          fetchMissingEntriesReport={fetchMissingEntriesReport}
+          isLoadingMissingEntries={isLoadingMissingEntries}
+          dailyStatus={dailyStatus}
+          fetchDailyStatus={fetchDailyStatus}
+          isLoadingDailyStatus={isLoadingDailyStatus}
+        />
+      )}
+
+      {view === 'reports' && (
+        <ReportsView 
+          history={stats}
+          obAssignments={obAssignments}
+          hierarchy={hierarchy}
+          obTargets={obTargets}
+          tsmList={tsmList}
+          appConfig={{ holidays }}
+          getPSTDate={() => currentPSTDay}
+          SKUS={skus}
+          CATEGORIES={categories}
+          userRole={userRole}
+          userName={userName}
+          userRegion={userRegion}
+          userContact={userContact}
+          onRefresh={onRefresh}
+          isSyncing={isSyncing}
+          selectedMonth={selectedMonth}
+          setSelectedMonth={setSelectedMonth}
+        />
       )}
 
       {view === 'insights' && (
@@ -5058,6 +5141,36 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
   const uniqueRegions = useMemo(() => Array.from(new Set(obPerformanceData.map(d => d.region))).sort(), [obPerformanceData]);
   const uniqueTSMs = useMemo(() => Array.from(new Set(obPerformanceData.map(d => d.tsmName))).sort(), [obPerformanceData]);
 
+  const handleShareGlobal = useCallback(() => {
+    const today = getPSTDate();
+    const passed = timeGone?.passed || 0;
+    const total = timeGone?.total || 0;
+    const remaining = timeGone?.remaining || 0;
+    const monthProgress = timeGone?.percentage?.toFixed(1) || '0';
+    
+    let msg = `*Global Sales Summary - ${today}*\n`;
+    msg += `*Month Progress:* ${monthProgress}% (${passed}/${total} Days)\n`;
+    msg += `------------------\n\n`;
+    
+    data.brandWiseStats.forEach((b: any) => {
+      const ach = Number(b.achievement || 0);
+      const tgt = Number(b.target || 0);
+      const perc = tgt > 0 ? (ach / tgt) * 100 : 0;
+      const rpd = remaining > 0 ? (tgt - ach) / remaining : 0;
+      
+      msg += `*${b.name}* (${perc.toFixed(0)}%)\n`;
+      msg += `Ach: ${ach.toFixed(2)} | Tgt: ${tgt.toFixed(2)}\n`;
+      msg += `RPD: ${rpd.toFixed(2)} ${b.unit === 'C' ? 'Ctns' : 'Bags'}\n\n`;
+    });
+    
+    msg += `------------------\n`;
+    msg += `*Total Today Volume:* ${Number(data.totalSales || 0).toFixed(2)}\n`;
+    msg += `*Overall Achievement:* ${Number(data.achievementPerc || 0).toFixed(1)}%\n`;
+    msg += `*Unique OBs Active:* ${data.uniqueOBs || 0}`;
+    
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+  }, [timeGone, data]);
+
   const handleTSMClick = (tsmName: string) => {
     // We need to set some global filter for command center, but for now we can just navigate
     // A better way is to pass the TSM name to the command center view.
@@ -5084,6 +5197,9 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
           />
           <button onClick={onRefresh} disabled={isSyncing} className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 transition-colors disabled:opacity-50">
             <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} />
+          </button>
+          <button onClick={handleShareGlobal} className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-colors">
+            <Send className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -6580,12 +6696,19 @@ const WelcomeScreen = ({ user, stats, hierarchy, logo, onEnter, isLoading, timeG
                           <button 
                             onClick={(e) => {
                               e.stopPropagation();
+                              const totalDays = timeGone?.total || 1;
+                              const passedDays = timeGone?.passed || 1;
+                              const remainingDays = timeGone?.remaining || 1;
+                              const monthProgress = timeGone?.percentage?.toFixed(1) || '0';
+
                               let msg = `*Performance Analysis: ${ob.obName}*\n`;
-                              msg += `Date: ${new Date().toLocaleDateString()}\n\n`;
+                              msg += `Date: ${new Date().toLocaleDateString()}\n`;
+                              msg += `Month Progress: ${monthProgress}% (${passedDays}/${totalDays} Working Days)\n\n`;
+                              
                               ob.groupKpis.forEach(kpi => {
-                                msg += `*${kpi.name}*\n`;
-                                msg += `Target: ${Math.round(kpi.target)} | Achieved: ${Math.round(kpi.achievement)} (${kpi.percentage.toFixed(0)}%)\n`;
-                                msg += `RPD: ${Math.round(kpi.requiredPerDay)} | Avg/Day: ${Math.round(kpi.dailyAvg)}\n`;
+                                msg += `*${kpi.name}* (${kpi.percentage.toFixed(0)}%)\n`;
+                                msg += `Achieved: ${Math.round(kpi.achievement)} | Target: ${Math.round(kpi.target)}\n`;
+                                msg += `Required/Day: ${Math.round(kpi.requiredPerDay)} | Avg/Day: ${Math.round(kpi.dailyAvg)}\n`;
                                 msg += `Projected: ${Math.round(kpi.projectedAchievement)} (${kpi.projectedPercentage.toFixed(0)}%)\n\n`;
                               });
                               window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
@@ -6945,42 +7068,64 @@ function App() {
   };
 
   const apiFetch = async (url: string, options: any = {}) => {
-    const currentToken = token || localStorage.getItem('auth_token');
-    if (!currentToken || currentToken === 'null') {
-      throw new Error("No authentication token found");
-    }
-    const headers = {
-      ...options.headers,
-      'Authorization': `Bearer ${currentToken}`,
-      'Content-Type': 'application/json'
-    };
-    const response = await fetch(url, { ...options, headers });
-    if (response.status === 401) {
-      console.warn(`apiFetch: 401 on ${url}. Logging out.`);
-      const errorMsg = "Session expired. Please login again.";
-      setMessage({ text: errorMsg, type: 'error' });
-      handleLogout();
-      setTimeout(() => setMessage(null), 5000);
-      throw new Error(errorMsg);
-    }
-    if (response.status === 403) {
-      console.warn(`apiFetch: 403 on ${url}. Access denied.`);
-      let errorMsg = "Access denied. You don't have permission for this action.";
-      try {
-        const data = await response.json();
-        if (data && data.error) {
-          errorMsg = data.error;
-          // If token is invalid/expired, logout
-          if (errorMsg.toLowerCase().includes('token')) {
-            handleLogout();
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 sec timeout
+
+    try {
+      const currentToken = token || localStorage.getItem('auth_token');
+      if (!currentToken || currentToken === 'null') {
+        throw new Error("No authentication token found");
+      }
+      const headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${currentToken}`,
+        'Content-Type': 'application/json'
+      };
+      
+      const response = await fetch(url, { 
+        ...options, 
+        headers,
+        signal: controller.signal 
+      });
+      clearTimeout(timeoutId);
+
+      if (response.status === 401) {
+        console.warn(`apiFetch: 401 on ${url}. Logging out.`);
+        const errorMsg = "Session expired. Please login again.";
+        setMessage({ text: errorMsg, type: 'error' });
+        handleLogout();
+        setTimeout(() => setMessage(null), 5000);
+        throw new Error(errorMsg);
+      }
+
+      if (response.status === 403) {
+        console.warn(`apiFetch: 403 on ${url}. Access denied.`);
+        let errorMsg = "Access denied. You don't have permission for this action.";
+        try {
+          const data = await response.json();
+          if (data && data.error) {
+            errorMsg = data.error;
+            if (errorMsg.toLowerCase().includes('token')) {
+              handleLogout();
+            }
           }
-        }
-      } catch (e) {}
-      setMessage({ text: errorMsg, type: 'error' });
-      setTimeout(() => setMessage(null), 5000);
-      throw new Error(errorMsg);
+        } catch (e) {}
+        setMessage({ text: errorMsg, type: 'error' });
+        setTimeout(() => setMessage(null), 5000);
+        throw new Error(errorMsg);
+      }
+
+      return response;
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error.name === 'AbortError') {
+        const timeoutMsg = 'Request timed out (5s limit)';
+        setMessage({ text: timeoutMsg, type: 'error' });
+        setTimeout(() => setMessage(null), 5000);
+        throw new Error(timeoutMsg);
+      }
+      throw error;
     }
-    return response;
   };
   const [history, setHistory] = useState<any[]>([]);
   const [hierarchy, setHierarchy] = useState<any[]>([]);
@@ -8014,13 +8159,7 @@ function App() {
     });
   };
 
-  useEffect(() => {
-    if (!token || token === 'null') return;
-    // Auto-sync on mount if config is available - FOR ALL USERS as requested
-    if (appConfig.google_spreadsheet_id && !isSyncingGlobal) {
-      syncEverything();
-    }
-  }, [appConfig.google_spreadsheet_id, token]);
+  // Removed auto-sync on mount to prevent startup delays
 
   // Periodic refresh for NSM/RSM/SC/Director every 30 minutes
   useEffect(() => {
@@ -8344,23 +8483,58 @@ function App() {
     } catch (err) { console.error(err); }
   };
 
+  // Load initial data based on view
   useEffect(() => {
     if (!token || token === 'null') return;
-    const normalizedRole = (userRole || '').toUpperCase();
-    if (['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole)) {
-      fetchAdminData();
-      fetchUsers();
-    }
-    fetchHistory();
-    fetchNationalData();
-    fetchPrimaryOrders();
+    
+    // Set a global loading timeout as a safety net
+    const loadingTimeout = setTimeout(() => {
+      setIsLoadingAdmin(false);
+      setIsLoadingNational(false);
+      setIsLoadingHistory(false);
+      setIsLoadingPrimary(false);
+    }, 5000);
 
-    // FORCE LIVE FETCH on load/refresh as per user request
-    if (!hasAutoRefreshed) {
-        syncGoogle();
-        setHasAutoRefreshed(true);
-    }
-  }, [view, userRole, token, selectedMonth]);
+    const loadData = async () => {
+      const normalizedRole = (userRole || '').toUpperCase();
+      const isManagement = ['ADMIN', 'SUPER ADMIN', 'TSM', 'ASM', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'OB'].includes(normalizedRole);
+
+      try {
+        const promises: Promise<any>[] = [];
+
+        // Common for all authenticated users
+        promises.push(fetchHistory());
+        promises.push(fetchPrimaryOrders());
+
+        if (isManagement) {
+          promises.push(fetchAdminData());
+          promises.push(fetchNationalData());
+          promises.push(fetchUsers());
+        }
+
+        await Promise.all(promises);
+      } catch (err) {
+        console.error("Initial data load error:", err);
+      } finally {
+        setIsLoadingAdmin(false);
+        setIsLoadingNational(false);
+        setIsLoadingHistory(false);
+        setIsLoadingPrimary(false);
+        clearTimeout(loadingTimeout);
+      }
+    };
+
+    loadData();
+    
+    return () => clearTimeout(loadingTimeout);
+  }, [token, userRole]); // Only re-run when auth changes, not on every view change
+
+  // Refetch when month changes
+  useEffect(() => {
+    if (!token || token === 'null') return;
+    fetchNationalData();
+    fetchAdminData(); // This fetches hierarchy too
+  }, [selectedMonth, token]);
 
   useEffect(() => {
     if (!token || token === 'null') return;
@@ -9404,7 +9578,7 @@ function App() {
     );
   }
 
-  if (['dashboard', 'command_center', 'insights', 'missing_entries', 'stats', 'geo_map', 'target_setting', 'performance', 'stock_reports'].includes(view || '')) {
+  if (['dashboard', 'command_center', 'insights', 'missing_entries', 'stats', 'geo_map', 'target_setting', 'tsm_performance', 'reports', 'stock_reports'].includes(view || '')) {
     try {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
@@ -9450,7 +9624,7 @@ function App() {
                 userRegion={userRegion}
                 userName={userName}
                 userContact={userContact}
-                timeGone={timeGone.percentage}
+                timeGone={timeGone}
                 holidays={appConfig.holidays || ''}
                 lastSync={appConfig.last_sync_at}
                 selectedMonth={selectedMonth}
@@ -9466,6 +9640,9 @@ function App() {
                 selectedHeadCountDetail={selectedHeadCountDetail}
                 setSelectedHeadCountDetail={setSelectedHeadCountDetail}
                 obTargets={obTargets}
+                dailyStatus={dailyStatus}
+                fetchDailyStatus={fetchDailyStatus}
+                isLoadingDailyStatus={isLoadingDailyStatus}
               />
             )}
           </div>
@@ -9760,8 +9937,9 @@ function App() {
               <button 
                 onClick={() => {
                   const summary = `*Global Sales Dashboard - ${today}*\n` +
+                    `Month Progress: ${timeGone.percentage.toFixed(1)}% (${timeGone.passed}/${timeGone.total} Working Days)\n` +
                     `------------------\n` +
-                    chartData.map(d => `*${d.name}:*\n  Ach: ${d.Achievement.toFixed(2)}\n  Brand Target: ${d.Target.toFixed(2)}`).join('\n') +
+                    chartData.map(d => `*${d.name}:*\n  Ach: ${d.Achievement.toFixed(2)}\n  Brand Target: ${d.Target.toFixed(2)}\n  RPD: ${((d.Target - d.Achievement) / (timeGone.remaining || 1)).toFixed(2)}`).join('\n') +
                     `\n------------------\n` +
                     `*Total Today:* ${(Object.values(globalToday) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}\n` +
                     `*Total Brand Target:* ${(Object.values(globalTargets) as number[]).reduce((a: number, b: number) => a + b, 0).toFixed(2)}`;

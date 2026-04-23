@@ -19,7 +19,13 @@ process.on('unhandledRejection', (reason, promise) => {
 });
 
 const JWT_SECRET = process.env.JWT_SECRET || "salespulse-secret-key-2026";
-const SUPER_ADMIN_EMAILS = ["amjid.bisconni@gmail.com", "Amjid.psh@gmail.com"];
+const SUPER_ADMIN_EMAILS = [
+  "amjid.bisconni@gmail.com", 
+  "Amjid.psh@gmail.com",
+  "shafaqatsaim555@gmail.com",
+  "nomantariqp080@gmail.com",
+  "mohammadsaeed1992@gmail.com"
+];
 
 const MANAGEMENT_ROLES: Record<string, { role: 'Director' | 'NSM', region?: string }> = {
   'waleed.elahi@gmail.com': { role: 'Director' },
@@ -810,7 +816,20 @@ async function startServer() {
     // Delete dummy entries for Usama as requested
     db.prepare("DELETE FROM submitted_orders WHERE order_booker LIKE ?").run("%Usama%");
     
-    console.log("Database cleanup completed: Duplicates removed and dummy entries deleted.");
+    // [DATA CORRECTION] Nowshera Fazal Munir Traders - Replace Abbas/Farhan with Abdullah
+    console.log("[DATA CORRECTION] Updating Nowshera Fazal Munir Traders OB assignments...");
+    db.prepare(`
+      UPDATE ob_assignments 
+      SET name = 'Abdullah', contact = 'Abdullah' 
+      WHERE distributor = 'Fazal Munir Traders' AND town = 'Nowshera' AND (name IN ('Abbas', 'Farhan') OR contact IN ('Abbas', 'Farhan'))
+    `).run();
+    db.prepare(`
+      UPDATE national_hierarchy 
+      SET ob_name = 'Abdullah', ob_id = 'Abdullah' 
+      WHERE distributor_name = 'Fazal Munir Traders' AND town_name = 'Nowshera' AND (ob_name IN ('Abbas', 'Farhan') OR ob_id IN ('Abbas', 'Farhan'))
+    `).run();
+    
+    console.log("Database cleanup completed: Duplicates removed, dummy entries deleted, and OB assignments updated.");
   } catch (e) {
     console.error("Cleanup error:", e);
   }
@@ -1015,13 +1034,21 @@ async function startServer() {
     return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
   }
 
-  function calculateTimeGone() {
+  function calculateTimeGone(monthStr?: string) {
     const now = new Date(new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" }));
-    const year = now.getFullYear();
-    const month = now.getMonth();
-    const today = now.getDate();
+    const currentMonthStr = now.toISOString().slice(0, 7);
+    const targetMonthStr = monthStr || currentMonthStr;
     
-    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const year = parseInt(targetMonthStr.slice(0, 4));
+    const month = parseInt(targetMonthStr.slice(5, 7)) - 1;
+    
+    const isPastMonth = targetMonthStr < currentMonthStr;
+    const isFutureMonth = targetMonthStr > currentMonthStr;
+    
+    const lastDay = new Date(year, month + 1, 0).getDate();
+    const today = isPastMonth ? lastDay : (isFutureMonth ? 0 : now.getDate());
+    
+    const daysInMonth = lastDay;
     
     const holidaysRow = db.prepare("SELECT value FROM app_config WHERE key = 'holidays'").get() as any;
     const holidaysStr = holidaysRow?.value || '';
@@ -1032,12 +1059,7 @@ async function startServer() {
     
     for (let d = 1; d <= daysInMonth; d++) {
       const date = new Date(year, month, d);
-      // Format to YYYY-MM-DD local time
-      const dateStr = [
-        date.getFullYear(),
-        String(date.getMonth() + 1).padStart(2, '0'),
-        String(date.getDate()).padStart(2, '0')
-      ].join('-');
+      const dateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       
       const isSunday = date.getDay() === 0;
       const isHoliday = holidays.includes(dateStr);
@@ -1050,7 +1072,7 @@ async function startServer() {
       }
     }
     
-    const timeGonePercent = totalWorkingDays > 0 ? (workingDaysGone / totalWorkingDays) : 0;
+    const timeGonePercent = totalWorkingDays > 0 ? (workingDaysGone / totalWorkingDays) : (isPastMonth ? 1 : 0);
     
     return {
       today,
@@ -1500,7 +1522,7 @@ async function startServer() {
     console.log(`[SUMMARY] Refreshing summaries for ${targetMonth}...`);
     const orders = db.prepare("SELECT * FROM submitted_orders WHERE date LIKE ?").all(`${targetMonth}%`) as any[];
     const obs = db.prepare("SELECT * FROM ob_assignments").all() as any[];
-    const timeInfo = calculateTimeGone();
+    const timeInfo = calculateTimeGone(targetMonth);
 
     // --- SHEET 2: Targets_vs_Achievement (Town, OB, Brand Wise) ---
     const targetHeaders = [
@@ -1616,7 +1638,7 @@ async function startServer() {
         });
         
         // Find orders for this OB in current month
-        const obOrders = orders.filter(o => o.ob_contact === ob.contact && !o.isTSMEntry);
+        const obOrders = orders.filter(o => o.ob_contact === ob.contact);
         obOrders.forEach(o => {
           if (o.visit_type !== 'Absent') activeOBs.add(ob.contact);
           visitedShops += Number(o.visited_shops) || 0;
@@ -1749,17 +1771,22 @@ async function startServer() {
     // 1. Add rows for all actual submissions
     orders.forEach(order => {
       const orderData = typeof order.order_data === 'string' ? JSON.parse(order.order_data) : (order.order_data || {});
-      const targetsData = typeof order.targets_data === 'string' ? JSON.parse(order.targets_data) : (order.targets_data || {});
+      const targetDataRaw = typeof order.targets_data === 'string' ? JSON.parse(order.targets_data) : (order.targets_data || {});
       const ach = calculateAchievement(orderData);
-      const totalAch = Object.values(ach).reduce((a: any, b: any) => Number(a) + Number(b), 0);
-      const totalTarget = Object.values(targetsData).reduce((a: any, b: any) => Number(a) + Number(b), 0);
+      
+      let totalAch = 0;
+      CATEGORIES.forEach(cat => totalAch += (ach[cat]?.value || 0));
+      
+      let totalTarget = 0;
+      // Get monthly targets for this OB to show relative daily performance if order targets are empty
+      CATEGORIES.forEach(cat => totalTarget += (targetDataRaw[cat] || 0));
 
       allPerformanceRows.push([
         order.date, order.order_booker, order.ob_contact, order.route,
         order.total_shops, order.visited_shops, order.productive_shops,
         order.total_shops > 0 ? ((order.visited_shops / order.total_shops) * 100).toFixed(1) + '%' : '0%',
         order.visited_shops > 0 ? ((order.productive_shops / order.visited_shops) * 100).toFixed(1) + '%' : '0%',
-        ...CATEGORIES.map(cat => Number(ach[cat] || 0).toFixed(2)),
+        ...CATEGORIES.map(cat => (ach[cat]?.value || 0).toFixed(2)),
         Number(totalAch).toFixed(2), Number(totalTarget).toFixed(2),
         Number(totalTarget) > 0 ? ((Number(totalAch) / Number(totalTarget)) * 100).toFixed(1) + '%' : '0%'
       ]);
@@ -2155,10 +2182,22 @@ async function startServer() {
       
       username = username.trim();
       if (password) password = password.trim();
+
+      // [CRITICAL] User specifically requested to reload mapping from Google Sheets on EVERY login
+      // Disable any cached user list (real-time sync)
+      console.log(`[LOGIN] Real-time mapping refresh for ${username}...`);
+      try {
+        const client = await getGoogleSheetsClient();
+        if (client) {
+          await pullUsersData(client.sheets, client.spreadsheetId);
+        }
+      } catch (syncErr) {
+        console.error("[LOGIN] Real-time user sync failed:", syncErr);
+      }
       
-      let user = db.prepare("SELECT * FROM users WHERE LOWER(username) = LOWER(?) OR LOWER(email) = LOWER(?)").get(username, username) as any;
+      let user = db.prepare("SELECT * FROM users WHERE LOWER(TRIM(username)) = LOWER(TRIM(?)) OR LOWER(TRIM(email)) = LOWER(TRIM(?))").get(username, username) as any;
       
-      const lowerUsername = (username || '').toLowerCase();
+      const lowerUsername = (username || '').toLowerCase().trim();
       const isManagementEmail = MANAGEMENT_ROLES[lowerUsername];
 
       if (user && isManagementEmail) {
@@ -3952,13 +3991,25 @@ async function startServer() {
         const std = (val: any) => val?.toString().trim() || '';
         const proper = (val: any) => toProperCase(val);
 
+        let obName = proper(getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name']));
+        const townName = proper(getVal(['Town', 'town', 'town name']));
+        const distName = proper(getVal(['Distributor', 'distributor', 'distributor name']));
+
+        // [DATA FIX] Abdullah replacement request
+        if (townName === 'Nowshera' && distName === 'Fazal Munir Traders') {
+          if (obName === 'Abbas' || obName === 'Farhan') {
+            console.log(`[DATA FIX] Replacing ${obName} with Abdullah in Nowshera Fazal Munir Traders`);
+            obName = 'Abdullah';
+          }
+        }
+
         const rawRegion = std(getVal(['Region', 'region', 'territory', 'territory/region']));
 
         return {
-          name: proper(getVal(['Name', 'OB Name', 'name', 'ob name', 'ob_name'])),
+          name: obName,
           contact: std(getVal(['ID', 'OB ID', 'id', 'Contact', 'contact', 'ob id', 'ob_id'])),
-          town: proper(getVal(['Town', 'town', 'town name'])),
-          distributor: proper(getVal(['Distributor', 'distributor', 'distributor name'])),
+          town: townName,
+          distributor: distName,
           distributor_code: std(getVal(['Distributor Code', 'distributor_code', 'dist_code'])),
           tsm: proper(getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm'])),
           zone: proper(getVal(['Zone', 'zone'])),
@@ -3990,6 +4041,12 @@ async function startServer() {
         db.prepare("DELETE FROM national_hierarchy").run();
         
         for (const item of team) {
+          // [CORRECTION] Nowshera OB is Abdullah - replace Abbas and Farhan
+          if (item.distributor && item.distributor.includes("Fazal Munir Traders") && (item.name === "Abbas" || item.name === "Farhan")) {
+            console.log(`[SYNC] Replacing ${item.name} with Abdullah for Fazal Munir Traders`);
+            item.name = "Abdullah";
+          }
+
           if (item.email && item.role) {
             // Determine name based on role if OB Name is empty
             let userName = item.name;
@@ -4616,70 +4673,72 @@ async function startServer() {
     const targetMonth = month || new Date().toISOString().slice(0, 7);
     console.log(`[SYNC] Starting full sync for month: ${targetMonth}`);
     
-    // 1. Ensure all sheets exist
-    console.log("[SYNC] Step 1/8: Ensuring sheets exist...");
-    await ensureSheetsExist(sheets, spreadsheetId);
+    try {
+      // 1. Ensure all sheets exist
+      console.log("[SYNC] Step 1/8: Ensuring sheets exist...");
+      await ensureSheetsExist(sheets, spreadsheetId);
 
-    // 2. Pull Product Config (Weights etc)
-    console.log("[SYNC] Step 2/8: Pulling product config...");
-    await pullProductConfig(sheets, spreadsheetId);
+      // 2. Pull Product Config (Weights etc)
+      console.log("[SYNC] Step 2/8: Pulling product config...");
+      await pullProductConfig(sheets, spreadsheetId);
 
-    // 3. Pull Team Data (Hierarchy & Targets)
-    console.log("[SYNC] Step 3/8: Pulling team data...");
-    const pullTeamResult = await pullTeamData(sheets, spreadsheetId, targetMonth);
+      // 3. Pull Team Data (Hierarchy & Targets)
+      console.log("[SYNC] Step 3/8: Pulling team data...");
+      const pullTeamResult = await pullTeamData(sheets, spreadsheetId, targetMonth);
 
-    // 3.5 Pull TSM Assignments
-    console.log("[SYNC] Step 3.5: Pulling TSM assignments...");
-    await pullTsmAssignments(sheets, spreadsheetId);
+      // 3.5 Pull TSM Assignments
+      console.log("[SYNC] Step 3.5: Pulling TSM assignments...");
+      await pullTsmAssignments(sheets, spreadsheetId);
 
-    // 4. Pull Users Data
-    console.log("[SYNC] Step 4/8: Pulling users data...");
-    const pullUsersResult = await pullUsersData(sheets, spreadsheetId);
+      // 4. Pull Users Data
+      console.log("[SYNC] Step 4/8: Pulling users data...");
+      const pullUsersResult = await pullUsersData(sheets, spreadsheetId);
 
-    // 5. Pull Sales History
-    console.log("[SYNC] Step 5/8: Pulling sales history...");
-    const pullSalesResult = await pullSalesHistory(sheets, spreadsheetId);
+      // 5. Pull Sales History - Force ignoreLock for Master Sync to ensure accuracy
+      console.log("[SYNC] Step 5/8: Pulling sales history...");
+      const pullSalesResult = await pullSalesHistory(sheets, spreadsheetId, true);
 
-    // 5.1 Pull Primary Orders & Stock Reports (as requested to use Master Sheet as source)
-    console.log("[SYNC] Step 5.1: Pulling primary orders...");
-    const pullPrimaryResult = await pullPrimaryOrders(sheets, spreadsheetId);
+      // 5.1 Pull Primary Orders & Stock Reports
+      console.log("[SYNC] Step 5.1: Pulling primary orders...");
+      const pullPrimaryResult = await pullPrimaryOrders(sheets, spreadsheetId);
 
-    console.log("[SYNC] Step 5.2: Pulling stock reports...");
-    const pullStockResult = await pullStockReports(sheets, spreadsheetId);
+      console.log("[SYNC] Step 5.2: Pulling stock reports...");
+      const pullStockResult = await pullStockReports(sheets, spreadsheetId);
 
-    console.log("[SYNC] Step 5.3: Pulling primary targets...");
-    const pullPrimaryTargetsResult = await pullPrimaryTargets(sheets, spreadsheetId);
+      console.log("[SYNC] Step 5.3: Pulling primary targets...");
+      const pullPrimaryTargetsResult = await pullPrimaryTargets(sheets, spreadsheetId);
 
-    // 6. Push Product Config (to ensure format is there)
-    console.log("[SYNC] Step 6/8: Pushing product config...");
-    await pushProductConfig(sheets, spreadsheetId);
+      // 6. Push Product Config
+      console.log("[SYNC] Step 6/8: Pushing product config...");
+      await pushProductConfig(sheets, spreadsheetId);
 
-    // 7. Refresh summary sheets
-    console.log("[SYNC] Step 7/8: Refreshing summary sheets...");
-    await refreshSummarySheets(sheets, spreadsheetId);
+      // 7. Refresh summary sheets
+      console.log("[SYNC] Step 7/8: Refreshing summary sheets...");
+      await refreshSummarySheets(sheets, spreadsheetId, targetMonth);
 
-    // Step 7.5: SKIPPED repushSalesData as per user request to use Master Sheet as source of truth.
-    // We already pulled data in Step 5. Pushing back might overwrite user restored data incorrectly.
+      // 8. Push Primary Orders
+      console.log("[SYNC] Step 8/8: Pushing primary orders...");
+      await pushPrimaryOrders(sheets, spreadsheetId);
 
-    // 8. Push Primary Orders
-    console.log("[SYNC] Step 8/8: Pushing primary orders...");
-    await pushPrimaryOrders(sheets, spreadsheetId);
+      // Update Last Sync
+      const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
+      console.log(`[SYNC] Sync complete at ${now}. Updating app_config.`);
+      db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("last_sync_at", now);
 
-    // Update Last Sync
-    const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
-    console.log(`[SYNC] Sync complete at ${now}. Updating app_config.`);
-    db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("last_sync_at", now);
-
-    return {
-      pulledTeam: pullTeamResult.success ? pullTeamResult.count : 0,
-      pulledUsers: pullUsersResult.success ? pullUsersResult.count : 0,
-      pulledSales: pullSalesResult.success ? pullSalesResult.count : 0,
-      pulledPrimary: pullPrimaryResult.success ? pullPrimaryResult.count : 0,
-      pulledStock: pullStockResult.success ? pullStockResult.count : 0,
-      pulledPrimaryTargets: pullPrimaryTargetsResult.success ? pullPrimaryTargetsResult.count : 0,
-      pushedSales: 0,
-      lastSync: now
-    };
+      return {
+        pulledTeam: pullTeamResult.success ? pullTeamResult.count : 0,
+        pulledUsers: pullUsersResult.success ? pullUsersResult.count : 0,
+        pulledSales: pullSalesResult.success ? pullSalesResult.count : 0,
+        pulledPrimary: pullPrimaryResult.success ? pullPrimaryResult.count : 0,
+        pulledStock: pullStockResult.success ? pullStockResult.count : 0,
+        pulledPrimaryTargets: pullPrimaryTargetsResult.success ? pullPrimaryTargetsResult.count : 0,
+        pushedSales: 0,
+        lastSync: now
+      };
+    } catch (err: any) {
+      console.error("[SYNC] CRITICAL FAILURE in performFullSync:", err);
+      throw err;
+    }
   }
 
   app.post("/api/admin/push-historical-targets", authenticateToken, async (req, res) => {
