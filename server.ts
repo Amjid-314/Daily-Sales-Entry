@@ -650,6 +650,72 @@ async function startServer() {
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
+  // [NEW] Full System Recovery & Cleanup
+  async function runFullSystemRecovery() {
+    console.log("[RECOVERY] Starting Full System Recovery...");
+    try {
+      db.transaction(() => {
+        // 1. Remove obvious duplicates in submitted_orders (same OB, Route, Date with different ID)
+        db.prepare(`
+          DELETE FROM submitted_orders 
+          WHERE id NOT IN (
+            SELECT MIN(id) 
+            FROM submitted_orders 
+            GROUP BY ob_contact, date, route
+          )
+        `).run();
+
+        // 2. Refresh User Mapping - Ensure lowercase and trimmed
+        const users = db.prepare("SELECT * FROM users").all() as any[];
+        for (const user of users) {
+          const cleanEmail = (user.email || '').trim().toLowerCase();
+          if (cleanEmail !== user.email) {
+            db.prepare("UPDATE users SET email = ? WHERE id = ?").run(cleanEmail, user.id);
+          }
+        }
+
+        // 3. Normalize Region Names (Peshwar -> Peshawar etc)
+        db.prepare("UPDATE users SET region = 'Peshawar' WHERE LOWER(region) IN ('peshwer', 'peshwar', 'pesh')").run();
+        db.prepare("UPDATE users SET region = 'Mardan' WHERE LOWER(region) IN ('merdan', 'mrd')").run();
+        db.prepare("UPDATE national_hierarchy SET territory_region = 'Peshawar' WHERE LOWER(territory_region) IN ('peshwer', 'peshwar', 'pesh')").run();
+        
+        // 4. Force Targets Sync across tables
+        // Find mismatched targets between brand_targets and national_hierarchy
+        const mismatches = db.prepare(`
+          SELECT h.ob_id, h.month, h.target_ctn, SUM(b.target_ctn) as brand_sum
+          FROM national_hierarchy h
+          JOIN brand_targets b ON h.ob_id = b.ob_contact AND h.month = b.month
+          GROUP BY h.ob_id, h.month
+          HAVING ABS(h.target_ctn - SUM(b.target_ctn)) > 0.1
+        `).all() as any[];
+
+        for (const m of mismatches) {
+          console.log(`[RECOVERY] Fixing target mismatch for OB ${m.ob_id} month ${m.month}`);
+          // If mismatch is found, we can't be sure which is right, but usually brand_targets are set by users
+          // and h.target_ctn is from sync. We'll prioritize brand_targets for consistency.
+          db.prepare("UPDATE national_hierarchy SET target_ctn = ? WHERE ob_id = ? AND month = ?")
+            .run(m.brand_sum, m.ob_id, m.month);
+        }
+
+        console.log("[RECOVERY] Database constraints and metadata fixed.");
+      })();
+      return { success: true, message: "System recovery completed successfully." };
+    } catch (err: any) {
+      console.error("[RECOVERY] Failed:", err);
+      throw err;
+    }
+  }
+
+  // API Endpoints
+  app.post("/api/admin/system-recovery", authenticateToken, authorizeRoles('Admin', 'Super Admin'), async (req, res) => {
+    try {
+      const result = await runFullSystemRecovery();
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", timestamp: new Date().toISOString() });
   });
@@ -1436,6 +1502,7 @@ async function startServer() {
       "TSM_Performance": ['Month', 'Region', 'RSM', 'TSM Name', 'Total OBs', 'Active OBs', 'Target', 'Achievement', 'Achievement %', 'RPD', 'Avg Sales', 'Projected Sales', 'Productivity %'],
       "Product_Config": ['SKU ID', 'SKU Name', 'Category', 'Units Per Carton', 'Units Per Dozen', 'Weight (Kg)'],
       "Users": ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town'],
+      "Stock_Reports": ['Date', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Submitted At'],
       "Primary_Orders": ['Order ID', 'Order Date', 'Region', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Total Val', 'Tonnage', 'Gross (Match)', 'Status', 'Remarks', 'Dispatched Date', 'Submitted At'],
       "Error_Log": ['Timestamp', 'Error Message', 'Context', 'User', 'Role']
     };
@@ -1989,11 +2056,17 @@ async function startServer() {
     return fixedCount;
   }
 
-  async function repushSalesData() {
+  async function repushSalesData(passedSheets?: any, passedSpreadsheetId?: string) {
     try {
-      const client = await getGoogleSheetsClient();
-      if (!client) return;
-      const { sheets, spreadsheetId } = client;
+      let sheets = passedSheets;
+      let spreadsheetId = passedSpreadsheetId;
+
+      if (!sheets || !spreadsheetId) {
+        const client = await getGoogleSheetsClient();
+        if (!client) return;
+        sheets = client.sheets;
+        spreadsheetId = client.spreadsheetId;
+      }
 
       console.log("Starting full Sales_Data recalculation and repush...");
       
@@ -3949,20 +4022,29 @@ async function startServer() {
       } catch (err: any) {
         const errMsg = err.message || String(err);
         if (err.code === 400 || (typeof errMsg === 'string' && errMsg.includes("not found"))) {
-          // Fallback to base Team_Data if month-specific sheet is missing
-          if (sheetName !== "Team_Data") {
-            console.log(`Sheet '${sheetName}' not found, falling back to 'Team_Data'...`);
-            sheetName = "Team_Data";
+          // Robust Fallback sequence
+          const fallbacks = ["Team_Data", "Staff_Hierarchy", "Hierarchy", "Team", "Sales_Team"];
+          let found = false;
+          
+          for (const fbName of fallbacks) {
+            if (sheetName === fbName) continue;
+            console.log(`[SYNC] Trying fallback sheet: ${fbName}...`);
             try {
               response = await sheets.spreadsheets.values.get({
                 spreadsheetId,
-                range: `${sheetName}!A1:ZZ1000`,
+                range: `${fbName}!A1:ZZ1000`,
               });
-            } catch (fallbackErr: any) {
-              throw new Error(`Sheet '${sheetName}' not found. Please ensure the sheet exists in your Google Spreadsheet.`);
+              sheetName = fbName;
+              found = true;
+              console.log(`[SYNC] Found data in fallback sheet: ${fbName}`);
+              break;
+            } catch (fbErr) {
+              // Not found, try next
             }
-          } else {
-            throw new Error(`Sheet '${sheetName}' not found. Please ensure the sheet exists in your Google Spreadsheet.`);
+          }
+
+          if (!found) {
+            throw new Error(`Sheet '${sheetName}' (and common fallbacks) not found. Please ensure your Google Spreadsheet has a sheet named 'Team_Data' or 'Staff_Hierarchy'.`);
           }
         } else {
           throw err;
@@ -4011,7 +4093,7 @@ async function startServer() {
           town: townName,
           distributor: distName,
           distributor_code: std(getVal(['Distributor Code', 'distributor_code', 'dist_code'])),
-          tsm: proper(getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm/tsm name', 'asm_tsm_name', 'asm / tsm'])),
+          tsm: proper(getVal(['ASM/TSM', 'TSM', 'ASM', 'tsm', 'asm', 'asm_tsm_name', 'asm_tsm_name', 'asm / tsm'])),
           zone: proper(getVal(['Zone', 'zone'])),
           region: normalizeRegion(rawRegion),
           nsm: proper(getVal(['NSM', 'nsm', 'nsm name'])),
@@ -4034,18 +4116,40 @@ async function startServer() {
         };
       }).filter(t => (t.name && t.contact) || t.email || (t.town && t.distributor));
 
+      // Step 8: Remove duplicates based on Region + TSM + OB ID
+      const uniqueTeam: any[] = [];
+      const seenTeamKeys = new Set();
+      for (const t of team) {
+        // Construct unique key for OB (if has contact) or Email (if staff)
+        let key = "";
+        if (t.contact) key = `OB|${t.region}|${t.tsm}|${t.contact}`.toLowerCase();
+        else if (t.email) key = `STAFF|${t.email}`.toLowerCase();
+        else key = `OTHER|${t.town}|${t.distributor}|${t.name}`.toLowerCase();
+
+        if (seenTeamKeys.has(key)) {
+          console.log(`[SYNC] Skipping duplicate team entry: ${key}`);
+          continue;
+        }
+        seenTeamKeys.add(key);
+        uniqueTeam.push(t);
+      }
+
+      console.log(`[SYNC] Processing ${uniqueTeam.length} unique team entries.`);
+
       const transaction = db.transaction(() => {
         // Clear tables to ensure total sync with Master Sheet
         db.prepare("DELETE FROM ob_assignments").run();
         db.prepare("DELETE FROM users WHERE role != 'Super Admin'").run(); // Keep Super Admins to prevent lockout
         db.prepare("DELETE FROM national_hierarchy").run();
         
-        for (const item of team) {
+        for (const item of uniqueTeam) {
           // [CORRECTION] Nowshera OB is Abdullah - replace Abbas and Farhan
           if (item.distributor && item.distributor.includes("Fazal Munir Traders") && (item.name === "Abbas" || item.name === "Farhan")) {
             console.log(`[SYNC] Replacing ${item.name} with Abdullah for Fazal Munir Traders`);
             item.name = "Abdullah";
           }
+
+          const finalObId = item.contact || `NA-${item.town}-${item.distributor}`.toUpperCase();
 
           if (item.email && item.role) {
             // Determine name based on role if OB Name is empty
@@ -4061,10 +4165,10 @@ async function startServer() {
             db.prepare(`
               INSERT OR REPLACE INTO users (username, email, role, name, contact, region, town, password)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            `).run(item.email, item.email, item.role, userName || item.email.split('@')[0], item.contact || '', item.region, item.town, 'nopassword');
+            `).run(item.email, item.email, item.role, userName || item.email.split('@')[0], finalObId, item.region, item.town, 'nopassword');
           }
 
-          if (item.contact) {
+          if (finalObId) {
             db.prepare(`
               INSERT INTO ob_assignments (name, contact, town, distributor, tsm, zone, region, nsm, rsm, sc, director, total_shops, routes, off_day)
               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -4082,24 +4186,23 @@ async function startServer() {
                 total_shops = COALESCE(NULLIF(excluded.total_shops, 0), total_shops),
                 routes = COALESCE(NULLIF(excluded.routes, '[]'), routes),
                 off_day = COALESCE(NULLIF(excluded.off_day, ''), off_day)
-            `).run(item.name, item.contact, item.town, item.distributor, item.tsm, item.zone, item.region, item.nsm, item.rsm, item.sc || '', item.director, item.total_shops, JSON.stringify(item.routes), item.off_day);
+            `).run(item.name, finalObId, item.town, item.distributor, item.tsm, item.zone, item.region, item.nsm, item.rsm, item.sc || '', item.director, item.total_shops, JSON.stringify(item.routes), item.off_day);
 
             for (const [brand, targetValue] of Object.entries(item.targets)) {
               const target = Number(targetValue);
-              if (target > 0) {
-                db.prepare(`
-                  INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
-                  VALUES (?, ?, ?, ?)
-                  ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET 
-                    target_ctn = excluded.target_ctn
-                `).run(item.contact, brand, target, targetMonth);
-              }
+              // [FIX] Allow 0 targets to update, to reflect reductions
+              db.prepare(`
+                INSERT INTO brand_targets (ob_contact, brand_name, target_ctn, month)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(ob_contact, brand_name, month) DO UPDATE SET 
+                  target_ctn = excluded.target_ctn
+              `).run(finalObId, brand, target, targetMonth);
             }
           }
 
           // Also update national_hierarchy
           // If no ob_id, use a synthetic ID to allow multiple towns/distributors
-          const finalObId = item.contact || `NA-${item.town}-${item.distributor}`.toUpperCase();
+          const hierarchyObId = item.contact || `NA-${item.town}-${item.distributor}`.toUpperCase();
           
           db.prepare(`
             INSERT INTO national_hierarchy (
@@ -4118,11 +4221,11 @@ async function startServer() {
               distributor_code = COALESCE(NULLIF(excluded.distributor_code, ''), distributor_code),
               ob_name = COALESCE(NULLIF(excluded.ob_name, ''), ob_name),
               territory_region = COALESCE(NULLIF(excluded.territory_region, ''), territory_region),
-              target_ctn = COALESCE(NULLIF(excluded.target_ctn, 0), target_ctn),
+              target_ctn = excluded.target_ctn,
               email = COALESCE(NULLIF(excluded.email, ''), email)
           `).run(
             item.director, item.nsm, item.rsm, item.sc || '', item.tsm,
-            item.town, item.distributor, item.distributor_code, item.name, finalObId, 
+            item.town, item.distributor, item.distributor_code, item.name, hierarchyObId, 
             item.region, item.target_ctn, targetMonth, item.email
           );
         }
@@ -4225,11 +4328,28 @@ async function startServer() {
         };
       }).filter(u => u !== null);
 
-      console.log(`[SYNC] Found ${users.length} valid users in sheet.`);
+      // Filter out nulls and remove duplicates by email/username
+      const uniqueUsers: any[] = [];
+      const seenEmails = new Set();
+      const seenUsernames = new Set();
+
+      for (const u of users) {
+        if (!u) continue;
+        const emailKey = u.email.trim().toLowerCase();
+        const usernameKey = u.username.trim().toLowerCase();
+        
+        if (emailKey && seenEmails.has(emailKey)) continue;
+        if (usernameKey && seenUsernames.has(usernameKey)) continue;
+        
+        if (emailKey) seenEmails.add(emailKey);
+        if (usernameKey) seenUsernames.add(usernameKey);
+        uniqueUsers.push(u);
+      }
+
+      console.log(`[SYNC] Found ${uniqueUsers.length} unique valid users in sheet.`);
 
       const transaction = db.transaction(() => {
-        for (const user of users) {
-          if (!user) continue;
+        for (const user of uniqueUsers) {
           try {
             db.prepare(`
               INSERT OR REPLACE INTO users (username, email, role, name, contact, region, town, password)
@@ -4241,8 +4361,8 @@ async function startServer() {
         }
       });
       transaction();
-      console.log(`[SYNC] Successfully synced ${users.length} users to database.`);
-      return { success: true, count: users.length };
+      console.log(`[SYNC] Successfully synced ${uniqueUsers.length} users to database.`);
+      return { success: true, count: uniqueUsers.length };
     } catch (e) {
       console.error("[SYNC] pullUsersData Error:", e);
       return { success: false, count: 0 };
@@ -4309,6 +4429,36 @@ async function startServer() {
       });
     } catch (e) {
       console.error("pushPrimaryOrders Error:", e);
+    }
+  }
+
+  async function pushStockReports(sheets: any, spreadsheetId: string) {
+    try {
+      const reports = db.prepare("SELECT * FROM stock_reports ORDER BY date DESC, submitted_at DESC").all() as any[];
+      const headers = ['Date', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Submitted At'];
+      
+      const rows = reports.map(r => {
+        const stockData = JSON.parse(r.stock_data || '{}');
+        const skuCells = SKUS.map(s => stockData[s.id] || 0);
+        return [r.date, r.tsm, r.town, r.distributor, ...skuCells, r.submitted_at];
+      });
+
+      console.log(`[SYNC] Pushing ${rows.length} Stock Reports to Google Sheets...`);
+      
+      // Clear existing to avoid trailing data
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId,
+        range: 'Stock_Reports!A:ZZ',
+      });
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "Stock_Reports!A1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [headers, ...rows] },
+      });
+    } catch (e) {
+      console.error("pushStockReports Error:", e);
     }
   }
 
@@ -4716,8 +4866,10 @@ async function startServer() {
       console.log("[SYNC] Step 7/8: Refreshing summary sheets...");
       await refreshSummarySheets(sheets, spreadsheetId, targetMonth);
 
-      // 8. Push Primary Orders
-      console.log("[SYNC] Step 8/8: Pushing primary orders...");
+      // 8. Push Local Data (Secondary Sales & Stocks)
+      console.log("[SYNC] Step 8/8: Pushing Secondary Sales & Stocks...");
+      await repushSalesData(sheets, spreadsheetId);
+      await pushStockReports(sheets, spreadsheetId);
       await pushPrimaryOrders(sheets, spreadsheetId);
 
       // Update Last Sync
@@ -4740,6 +4892,121 @@ async function startServer() {
       throw err;
     }
   }
+
+  async function validateSheetStructure(sheets: any, spreadsheetId: string) {
+    const requiredSheets = ["Users", "Team_Data", "Sales_Data", "Brand_Targets"];
+    const response = await sheets.spreadsheets.get({ spreadsheetId });
+    const existingSheets = response.data.sheets.map((s: any) => s.properties.title);
+    
+    const missing = requiredSheets.filter(s => !existingSheets.includes(s));
+    if (missing.length > 0) {
+      console.warn(`[RECOVERY] Missing sheets: ${missing.join(", ")}`);
+      return { valid: false, missing };
+    }
+    return { valid: true };
+  }
+
+  async function RUN_FULL_SYSTEM_RECOVERY(sheets: any, spreadsheetId: string, targetMonth: string) {
+    console.log(`[RECOVERY] Starting Full System Recovery for ${targetMonth}...`);
+    const logs: string[] = [];
+    const addLog = (msg: string) => {
+      console.log(`[RECOVERY] ${msg}`);
+      logs.push(msg);
+    };
+
+    try {
+      // Step 1 & 2: Clear Logic Cache (Not deleting orders)
+      addLog("Step 2: Clearing system cache tables...");
+      db.prepare("DELETE FROM ob_assignments").run();
+      db.prepare("DELETE FROM brand_targets").run();
+      db.prepare("DELETE FROM tsm_assignments").run();
+      db.prepare("DELETE FROM national_hierarchy").run();
+      // Keep Super Admins in user table but clear others to refresh mappings
+      db.prepare("DELETE FROM users WHERE email NOT IN (SELECT value FROM json_each(?))").run(JSON.stringify(SUPER_ADMIN_EMAILS));
+      
+      // Aggressive deduplication of tables with unique constraints
+      addLog("[RECOVERY] Cleaning up potential duplicate records...");
+      db.prepare(`
+        DELETE FROM ob_assignments 
+        WHERE rowid NOT IN (
+          SELECT MIN(rowid) FROM ob_assignments GROUP BY ob_contact, month, town, distributor
+        )
+      `).run();
+      db.prepare(`
+        DELETE FROM national_hierarchy 
+        WHERE rowid NOT IN (
+          SELECT MIN(rowid) FROM national_hierarchy GROUP BY ob_id, month
+        )
+      `).run();
+
+      // Step 3 & 4: Validate & Reload
+      addLog("Step 4: Validating Google Sheet structure...");
+      const validation = await validateSheetStructure(sheets, spreadsheetId);
+      if (!validation.valid) {
+        addLog(`Warning: Missing sheets ${validation.missing?.join(", ")}. Attempting to ensure they exist.`);
+        await ensureSheetsExist(sheets, spreadsheetId);
+      }
+
+      // Step 5 & 8: Rebuild Hierarchy & Remove Duplicates
+      addLog("Step 5 & 8: Rebuilding team hierarchy and removing duplicates...");
+      await pullTeamData(sheets, spreadsheetId, targetMonth);
+      await pullTsmAssignments(sheets, spreadsheetId);
+
+      // Step 1: Refresh Users
+      addLog("Step 1: Refreshing user mapping with strict validation...");
+      await pullUsersData(sheets, spreadsheetId);
+
+      // Step 3 & 6: Reload Sales & Rebuild Calculations
+      addLog("Step 3 & 6: Reloading sales history and rebuilding calculations...");
+      await pullSalesHistory(sheets, spreadsheetId, true);
+      await pullPrimaryOrders(sheets, spreadsheetId);
+      await pullStockReports(sheets, spreadsheetId);
+      await pullPrimaryTargets(sheets, spreadsheetId);
+
+      // Step 6, 7 & 11: Refresh Summary Sheets (Aggregates + WhatsApp Logic)
+      addLog("Step 7 & 11: Finalizing summaries and target linking...");
+      await refreshSummarySheets(sheets, spreadsheetId, targetMonth);
+
+      // Step 12: Final Validation
+      addLog("Step 12: System validation check...");
+      const userCount = (db.prepare("SELECT COUNT(*) as count FROM users").get() as any).count;
+      const obCount = (db.prepare("SELECT COUNT(*) as count FROM ob_assignments").get() as any).count;
+      addLog(`Validation: Found ${userCount} users and ${obCount} Order Bookers.`);
+
+      const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
+      db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("last_sync_at", now);
+      db.prepare("INSERT OR REPLACE INTO app_config (key, value) VALUES (?, ?)").run("last_recovery_at", now);
+
+      return { success: true, logs };
+    } catch (err: any) {
+      addLog(`CRITICAL ERROR during recovery: ${err.message}`);
+      return { success: false, logs };
+    }
+  }
+
+  app.post("/api/admin/system-recovery", authenticateToken, async (req, res) => {
+    if (req.user.role !== 'Admin' && req.user.role !== 'Super Admin') return res.status(403).json({ error: 'Access denied' });
+    
+    try {
+      const client = await getGoogleSheetsClient();
+      if (!client) return res.status(400).json({ error: "Google Sheets not configured" });
+      const { sheets, spreadsheetId } = client;
+      
+      const { month } = req.body;
+      const targetMonth = month || new Date().toISOString().slice(0, 7);
+      
+      const result = await RUN_FULL_SYSTEM_RECOVERY(sheets, spreadsheetId, targetMonth);
+      
+      if (result.success) {
+        res.json({ message: "System Recovery Completed Successfully", logs: result.logs });
+      } else {
+        res.status(500).json({ message: "Completed with Warnings (Check Logs)", logs: result.logs });
+      }
+    } catch (error: any) {
+      console.error("Recovery API Error:", error);
+      res.status(500).json({ error: error.message });
+    }
+  });
 
   app.post("/api/admin/push-historical-targets", authenticateToken, async (req, res) => {
     try {

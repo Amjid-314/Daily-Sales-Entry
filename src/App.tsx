@@ -28,6 +28,7 @@ import { Calendar as CalendarComponent } from './components/Calendar';
 import { EntryForm } from './components/EntryForm';
 import { MissingEntriesReport } from './components/MissingEntriesReport';
 import { SubmissionModals } from './components/SubmissionModals';
+import { MTDPerformance } from './components/MTDPerformance';
 import { Login } from './components/Login';
 import { WhatsAppIcon } from './components/WhatsAppIcon';
 import { 
@@ -83,7 +84,11 @@ import {
   Edit2,
   Maximize2,
   FileSpreadsheet,
-  LogOut
+  LogOut,
+  Home,
+  ShoppingBag,
+  RotateCcw,
+  Layers
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
 import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry, calculateOrderAge, calculateTonnage, calculateGross } from './lib/utils';
@@ -225,6 +230,15 @@ const PWAInstallPrompt = () => {
 
 const HomeHub = ({ setView, userRole, userName, logo, tabs, userEmail, onLogout }: any) => {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1200);
+
+  useEffect(() => {
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobile = windowWidth < 768;
   
   const menuItems = tabs.filter((tab: any) => {
     const email = (userEmail || '').toLowerCase();
@@ -237,8 +251,10 @@ const HomeHub = ({ setView, userRole, userName, logo, tabs, userEmail, onLogout 
     if (!userRole) return false;
     const normalizedRole = userRole.toUpperCase();
 
+    const isManagement = ['ADMIN', 'SUPER ADMIN', 'DIRECTOR', 'NSM', 'RSM', 'SC', 'ASM', 'TSM'].includes(normalizedRole);
+
     if (!isSuperAdmin) {
-      if (['admin', 'settings'].includes(tab.id)) return false;
+      if (['admin', 'settings', 'user_management'].includes(tab.id)) return false;
       return tab.roles.map((r: string) => r.toUpperCase()).includes(normalizedRole);
     }
 
@@ -246,109 +262,164 @@ const HomeHub = ({ setView, userRole, userName, logo, tabs, userEmail, onLogout 
   });
 
   return (
-    <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      {/* Background Glows */}
-      <div className="absolute top-1/4 left-1/4 w-64 h-64 bg-seablue/20 rounded-full blur-[100px] animate-pulse"></div>
-      <div className="absolute bottom-1/4 right-1/4 w-64 h-64 bg-indigo-500/20 rounded-full blur-[100px] animate-pulse delay-1000"></div>
+    <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 relative overflow-hidden">
+      {/* Dynamic Grid Background */}
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808012_1px,transparent_1px),linear-gradient(to_bottom,#80808012_1px,transparent_1px)] bg-[size:40px_40px]"></div>
+      
+      {/* High-End Ambient Lighting */}
+      <div className="absolute -top-[10%] -left-[10%] w-[50%] h-[50%] bg-seablue/20 rounded-full blur-[120px] animate-pulse"></div>
+      <div className="absolute -bottom-[10%] -right-[10%] w-[50%] h-[50%] bg-indigo-500/10 rounded-full blur-[120px] animate-pulse delay-700"></div>
 
-      {/* Welcome Section */}
+      {/* Floating Status Bar */}
       <motion.div 
         initial={{ opacity: 0, y: -20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="text-center mb-20 z-10"
+        className="absolute top-4 md:top-8 px-4 md:px-6 py-1.5 md:py-2 bg-white/5 backdrop-blur-md rounded-full border border-white/10 flex items-center gap-3 md:gap-6 z-30"
       >
-        {logo ? (
-          <img src={logo} alt="Logo" className="w-20 h-20 mx-auto mb-6 rounded-2xl shadow-2xl border border-white/10" referrerPolicy="no-referrer" />
-        ) : (
-          <div className="w-20 h-20 bg-seablue rounded-2xl mx-auto mb-6 flex items-center justify-center shadow-2xl">
-            <LayoutDashboard className="w-10 h-10 text-white" />
-          </div>
-        )}
-        <h1 className="text-3xl font-black text-white uppercase tracking-tighter leading-none">SalesPulse</h1>
-        <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.3em] mt-3">Welcome back, {userName}</p>
+        <div className="flex items-center gap-2">
+          <div className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-ping"></div>
+          <span className="text-[8px] md:text-[9px] font-black text-white uppercase tracking-widest hidden xs:inline">Network <span className="hidden sm:inline">Live</span></span>
+        </div>
+        <div className="h-3 w-px bg-white/10 hidden xs:block"></div>
+        <div className="flex items-center gap-2">
+          <span className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest">USER: <span className="text-seablue truncate max-w-[80px] md:max-w-none">{userName}</span></span>
+        </div>
+        <div className="h-3 w-px bg-white/10"></div>
+        <div className="flex items-center gap-2">
+           <span className="text-[8px] md:text-[9px] font-black text-slate-400 uppercase tracking-widest">{new Date().toLocaleDateString('en-PK', { weekday: 'short', day: '2-digit', month: 'short' })}</span>
+        </div>
       </motion.div>
 
-      {/* Radial Menu Container */}
-      <div className="relative w-80 h-80 flex items-center justify-center z-20">
-        {/* Central Button */}
-        <motion.button
-          onClick={() => setIsMenuOpen(!isMenuOpen)}
-          whileHover={{ scale: 1.05 }}
-          whileTap={{ scale: 0.95 }}
-          className="w-24 h-24 bg-white rounded-full shadow-[0_0_50px_rgba(255,255,255,0.2)] flex flex-col items-center justify-center z-30 border-4 border-seablue/20 group"
-        >
-          <div className={`transition-transform duration-500 ${isMenuOpen ? 'rotate-180' : ''}`}>
-            {isMenuOpen ? <Plus className="w-8 h-8 text-seablue rotate-45" /> : <Activity className="w-8 h-8 text-seablue animate-pulse" />}
-          </div>
-          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mt-1">Menu</span>
-        </motion.button>
+      {/* Hero Welcome Unit */}
+      <motion.div 
+        initial={{ opacity: 0, scale: 0.95 }}
+        animate={{ opacity: 1, scale: 1 }}
+        className="text-center mb-10 md:mb-16 z-10"
+      >
+        <div className="relative inline-block mb-6 md:mb-8">
+          <div className="absolute inset-0 bg-seablue/40 blur-[40px] rounded-full animate-pulse"></div>
+          {logo ? (
+            <img src={logo} alt="Logo" className="relative w-16 h-16 md:w-28 md:h-28 mx-auto rounded-2xl md:rounded-3xl shadow-2xl border-2 border-white/20 p-1.5 md:p-2 bg-white/5 backdrop-blur-xl" referrerPolicy="no-referrer" />
+          ) : (
+            <div className="relative w-16 h-16 md:w-28 md:h-28 bg-gradient-to-br from-seablue to-indigo-600 rounded-2xl md:rounded-3xl mx-auto flex items-center justify-center shadow-2xl border-2 border-white/20">
+              <LayoutDashboard className="w-8 h-8 md:w-12 md:h-12 text-white" />
+            </div>
+          )}
+        </div>
+        <h1 className="text-3xl md:text-5xl font-black text-white uppercase tracking-tighter leading-none mb-4 drop-shadow-[0_5px_15px_rgba(0,0,0,0.5)]">
+          SALES<span className="text-seablue">PULSE</span>
+        </h1>
+        <div className="flex items-center justify-center gap-2 md:gap-3">
+          <div className="h-[2px] w-8 md:w-12 bg-gradient-to-r from-transparent to-seablue"></div>
+          <p className="text-[8px] md:text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] md:tracking-[0.4em]">Executive Operations Center</p>
+          <div className="h-[2px] w-8 md:w-12 bg-gradient-to-l from-transparent to-seablue"></div>
+        </div>
+      </motion.div>
 
-        {/* Menu Items (Radial) */}
-        <AnimatePresence>
-          {isMenuOpen && menuItems.map((item: any, idx: number) => {
-            const angle = (idx * (360 / menuItems.length)) - 90;
-            const radius = 120;
-            const x = radius * Math.cos(angle * (Math.PI / 180));
-            const y = radius * Math.sin(angle * (Math.PI / 180));
-
-            return (
+      {/* Main Core Menu */}
+      <div className="relative w-full aspect-square max-w-[320px] md:max-w-[450px] flex items-center justify-center z-20">
+        {/* Core Pulsing Ring */}
+        <div className="absolute w-40 h-40 md:w-64 md:h-64 border border-white/5 rounded-full animate-[ping_4s_linear_infinite]"></div>
+        
+        {/* Navigation Orbitals */}
+        <AnimatePresence mode="wait">
+          {!isMenuOpen ? (
+            <motion.button
+              key="start"
+              initial={{ opacity: 0, scale: 0.8 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 1.2 }}
+              onClick={() => setIsMenuOpen(true)}
+              className="group relative w-24 h-24 md:w-32 md:h-32 bg-white rounded-full shadow-[0_0_80px_rgba(0,186,227,0.3)] flex flex-col items-center justify-center z-30 transition-all hover:bg-seablue"
+            >
+              <Activity className="w-8 h-8 md:w-10 md:h-10 text-seablue group-hover:text-white transition-colors animate-pulse" />
+              <span className="text-[8px] md:text-[9px] font-black text-slate-400 group-hover:text-white uppercase tracking-widest mt-2">Activate</span>
+            </motion.button>
+          ) : (
+            <div className="relative w-full h-full flex items-center justify-center">
+              {/* Back to Core button */}
               <motion.button
-                key={item.id}
-                initial={{ opacity: 0, scale: 0, x: 0, y: 0 }}
-                animate={{ opacity: 1, scale: 1, x, y }}
-                exit={{ opacity: 0, scale: 0, x: 0, y: 0 }}
-                transition={{ type: 'spring', stiffness: 200, damping: 20, delay: idx * 0.05 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setView(item.id);
-                }}
-                type="button"
-                className="absolute w-16 h-16 bg-slate-800 border border-white/10 rounded-2xl flex flex-col items-center justify-center shadow-2xl hover:bg-seablue hover:scale-110 transition-all group z-50 cursor-pointer"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                onClick={() => setIsMenuOpen(false)}
+                className="w-12 h-12 md:w-16 md:h-16 bg-slate-800 border border-white/20 rounded-full flex items-center justify-center z-40 text-white hover:bg-rose-500 transition-colors shadow-xl"
               >
-                <item.icon className="w-6 h-6 text-white group-hover:scale-110 transition-transform" />
-                <span className="text-[7px] font-black text-slate-400 group-hover:text-white uppercase tracking-tighter mt-1 text-center px-1 leading-none">{item.label}</span>
+                <Plus className="w-5 h-5 md:w-6 md:h-6 rotate-45" />
               </motion.button>
-            );
-          })}
+
+              {menuItems.map((item: any, idx: number) => {
+                const angle = (idx * (360 / menuItems.length)) - 90;
+                const radius = isMobile ? 115 : 160;
+                const x = radius * Math.cos(angle * (Math.PI / 180));
+                const y = radius * Math.sin(angle * (Math.PI / 180));
+
+                return (
+                  <motion.button
+                    key={item.id}
+                    initial={{ opacity: 0, scale: 0, x: 0, y: 0 }}
+                    animate={{ opacity: 1, scale: 1, x, y }}
+                    exit={{ opacity: 0, scale: 0, x: 0, y: 0 }}
+                    transition={{ type: 'spring', stiffness: 260, damping: 20, delay: idx * 0.04 }}
+                    onClick={() => setView(item.id)}
+                    className="absolute w-14 h-14 md:w-20 md:h-20 bg-slate-900 border-2 border-white/5 rounded-2xl md:rounded-3xl flex flex-col items-center justify-center shadow-2xl hover:border-seablue hover:bg-seablue/10 transition-all group z-50 overflow-hidden"
+                  >
+                    <div className="absolute inset-0 bg-gradient-to-br from-white/10 to-transparent opacity-0 group-hover:opacity-100 transition-opacity"></div>
+                    <item.icon className="w-5 h-5 md:w-8 md:h-8 text-white group-hover:scale-110 group-hover:text-seablue transition-all mb-1 md:mb-2" />
+                    <span className="text-[7px] md:text-[8px] font-black text-slate-400 group-hover:text-white uppercase tracking-tighter text-center px-1 leading-none">{item.label}</span>
+                  </motion.button>
+                );
+              })}
+            </div>
+          )}
         </AnimatePresence>
 
-        {/* Decorative Rings */}
-        <div className="absolute inset-0 border border-white/5 rounded-full animate-[spin_20s_linear_infinite]"></div>
-        <div className="absolute inset-4 border border-white/5 rounded-full animate-[spin_15s_linear_infinite_reverse]"></div>
+        {/* Cinematic Rings */}
+        <div className="absolute inset-0 border-[3px] border-white/5 rounded-full animate-[spin_40s_linear_infinite]"></div>
+        <div className="absolute inset-4 md:inset-10 border border-seablue/5 rounded-full animate-[spin_30s_linear_infinite_reverse]"></div>
+        <div className="absolute inset-10 md:inset-32 border border-white/10 rounded-full"></div>
       </div>
 
-      {/* Quick Stats Footer */}
+      {/* Enterprise Metrics Summary */}
       <motion.div 
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.5 }}
-        className="mt-20 grid grid-cols-3 gap-8 text-center"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.6 }}
+        className="mt-12 md:mt-16 grid grid-cols-1 md:grid-cols-3 gap-6 md:gap-12 text-center relative z-10 w-full md:w-auto overflow-y-auto max-h-[30vh] md:max-h-none no-scrollbar p-2"
       >
-        <div>
-          <p className="text-xl font-black text-white">24/7</p>
-          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Active</p>
+        <div className="space-y-1">
+          <p className="text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest">Monthly Status</p>
+          <p className="text-xl md:text-2xl font-black text-white italic">OPERATIONAL</p>
+          <div className="h-1 w-8 bg-emerald-500 mx-auto rounded-full"></div>
         </div>
-        <div className="px-8 border-x border-white/10">
-          <p className="text-xl font-black text-seablue">LIVE</p>
-          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Status</p>
+        <div className="space-y-1 md:px-12 md:border-x md:border-white/10">
+          <p className="text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest">Network Load</p>
+          <p className="text-xl md:text-2xl font-black text-seablue">OPTIMAL</p>
+          <div className="h-1 w-8 bg-seablue mx-auto rounded-full"></div>
         </div>
-        <div>
-          <p className="text-xl font-black text-white">MTD</p>
-          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-widest">Ready</p>
+        <div className="space-y-1">
+          <p className="text-[9px] md:text-[10px] font-black text-slate-500 uppercase tracking-widest">Data Health</p>
+          <p className="text-xl md:text-2xl font-black text-white">SYNCED</p>
+          <div className="h-1 w-8 bg-indigo-500 mx-auto rounded-full"></div>
         </div>
       </motion.div>
 
-      {/* Logout Button */}
-      <motion.button
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8 }}
-        onClick={onLogout}
-        className="mt-8 flex items-center gap-2 px-6 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-500 rounded-full border border-rose-500/20 transition-all font-black text-[10px] uppercase tracking-[0.2em]"
-      >
-        <LogOut className="w-3.5 h-3.5" />
-        Logout System
-      </motion.button>
+      {/* System Actions Footer */}
+      <div className="w-full mt-12 md:mt-0 md:absolute md:bottom-10 md:left-10 md:right-10 flex flex-col md:flex-row justify-between items-center gap-6 z-10 pb-12 md:pb-0">
+        <div className="flex items-center gap-4">
+           <div className="flex flex-col items-center md:items-start text-center md:text-left">
+              <span className="text-[8px] font-black text-slate-500 uppercase tracking-[0.2em] mb-1">Role Authority</span>
+              <span className="px-3 py-1 bg-white/5 rounded-lg border border-white/10 text-[9px] font-black text-white uppercase tracking-widest">{userRole}</span>
+           </div>
+        </div>
+
+        <button 
+          onClick={onLogout}
+          className="group flex items-center gap-3 px-6 py-2.5 bg-rose-500/5 hover:bg-rose-500/20 text-rose-500 rounded-2xl border border-rose-500/10 transition-all font-black text-[11px] uppercase tracking-widest hover:shadow-[0_0_20px_rgba(244,63,94,0.2)]"
+        >
+          <LogOut className="w-4 h-4 group-hover:-translate-x-1 transition-transform" />
+          End Session
+        </button>
+      </div>
     </div>
   );
 };
@@ -373,6 +444,7 @@ interface NationalDashboardProps {
   selectedMonth: string;
   setSelectedMonth: (m: string) => void;
   apiFetch: any;
+  history: any[];
   backupLogs?: any[];
   stockHistory?: any[];
   missingEntriesReport: any[];
@@ -392,18 +464,46 @@ const NationalDashboard = ({
   view, setView, stats, hierarchy, categories, skus, isSyncing, onRefresh,
   userRole, userEmail, userRegion, userName, userContact, 
   timeGone, holidays, lastSync, selectedMonth, setSelectedMonth, 
-  apiFetch, backupLogs = [], stockHistory = [],
+  apiFetch, history = [], backupLogs = [], stockHistory = [],
   missingEntriesReport, fetchMissingEntriesReport, isLoadingMissingEntries,
   dailyStatus = [], fetchDailyStatus = () => {}, isLoadingDailyStatus = false,
   users = [], obAssignments = [],
   selectedHeadCountDetail, setSelectedHeadCountDetail,
   obTargets
 }: NationalDashboardProps) => {
-  const getPSTDate = () => {
-    return new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
-  };
-  
   const currentPSTDay = new Date(getPSTDate()).toISOString().split('T')[0];
+
+  const handleShareGlobal = useCallback((statsSummary: any) => {
+    const today = getPSTDate();
+    const passed = timeGone?.passed || 0;
+    const total = timeGone?.total || 0;
+    const remaining = timeGone?.remaining || 0;
+    const monthProgress = timeGone?.percentage?.toFixed(1) || '0';
+    
+    let msg = `*Global Sales Summary - ${today}*\n`;
+    msg += `*Month Progress:* ${monthProgress}% (${passed}/${total} Days)\n`;
+    msg += `------------------\n\n`;
+    
+    if (statsSummary && statsSummary.brandWiseStats) {
+      statsSummary.brandWiseStats.forEach((b: any) => {
+        const ach = Number(b.achievement || 0);
+        const tgt = Number(b.target || 0);
+        const perc = tgt > 0 ? (ach / tgt) * 100 : 0;
+        const rpd = remaining > 0 ? (tgt - ach) / remaining : 0;
+        
+        msg += `*${b.name}* (${perc.toFixed(0)}%)\n`;
+        msg += `Ach: ${ach.toFixed(2)} | Tgt: ${tgt.toFixed(2)}\n`;
+        msg += `RPD: ${rpd.toFixed(2)} ${b.unit === 'C' ? 'Ctns' : 'Bags'}\n\n`;
+      });
+    }
+    
+    msg += `------------------\n`;
+    msg += `*Total Today Volume:* ${Number(statsSummary?.totalSales || 0).toFixed(2)}\n`;
+    msg += `*Overall Achievement:* ${Number(statsSummary?.achievementPerc || 0).toFixed(1)}%\n`;
+    msg += `*Unique OBs Active:* ${statsSummary?.uniqueOBs || 0}`;
+    
+    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
+  }, [timeGone]);
 
   const tsmList = useMemo(() => {
     return Array.from(new Set(hierarchy.map(h => h.asm_tsm_name))).filter(Boolean).sort() as string[];
@@ -563,8 +663,33 @@ const NationalDashboard = ({
     }
   };
   const [targetView, setTargetView] = useState('Brand');
-  const [topCategoryFilter, setTopCategoryFilter] = useState('All');
-  const [topBrandFilter, setTopBrandFilter] = useState('All');
+  const [topCategoryFilter, setTopCategoryFilter] = useState<string[]>(['All']);
+  const [topBrandFilter, setTopBrandFilter] = useState<string[]>(['All']);
+
+  const toggleCategory = (cat: string) => {
+    setTopCategoryFilter(prev => {
+      if (cat === 'All') return ['All'];
+      const filtered = prev.filter(c => c !== 'All');
+      if (filtered.includes(cat)) {
+        const next = filtered.filter(c => c !== cat);
+        return next.length === 0 ? ['All'] : next;
+      }
+      return [...filtered, cat];
+    });
+    setTopBrandFilter(['All']);
+  };
+
+  const toggleBrand = (brand: string) => {
+    setTopBrandFilter(prev => {
+      if (brand === 'All') return ['All'];
+      const filtered = prev.filter(b => b !== 'All');
+      if (filtered.includes(brand)) {
+        const next = filtered.filter(b => b !== brand);
+        return next.length === 0 ? ['All'] : next;
+      }
+      return [...filtered, brand];
+    });
+  };
   const [heatmapView, setHeatmapView] = useState('Total');
   const [tsmCategoryFilter, setTsmCategoryFilter] = useState('All');
   const [tsmBrandFilter, setTsmBrandFilter] = useState('All');
@@ -643,8 +768,8 @@ const NationalDashboard = ({
   }, [users, obAssignments, stats, selectedMonth]);
 
   const brands = useMemo(() => {
-    if (topBrandFilter !== 'All') return [topBrandFilter];
-    if (topCategoryFilter !== 'All') return BRAND_GROUPS[topCategoryFilter] || [];
+    if (!topBrandFilter.includes('All')) return topBrandFilter;
+    if (!topCategoryFilter.includes('All')) return topCategoryFilter.flatMap(tg => BRAND_GROUPS[tg] || []);
     return categories;
   }, [topCategoryFilter, topBrandFilter, categories]);
 
@@ -708,12 +833,12 @@ const NationalDashboard = ({
         const ctns = Number(sku.unitsPerCarton || 0) > 0 ? packs / Number(sku.unitsPerCarton) : 0;
         
         let matchesFilter = true;
-        if (topCategoryFilter !== 'All') {
-          const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
-          matchesFilter = brandsInGroup.includes(sku.category);
+        if (!topCategoryFilter.includes('All')) {
+          const brandsInGroups = topCategoryFilter.flatMap(tg => BRAND_GROUPS[tg] || []);
+          matchesFilter = brandsInGroups.includes(sku.category);
         }
-        if (matchesFilter && topBrandFilter !== 'All') {
-          matchesFilter = sku.category === topBrandFilter;
+        if (matchesFilter && !topBrandFilter.includes('All')) {
+          matchesFilter = topBrandFilter.includes(sku.category);
         }
         
         if (matchesFilter) {
@@ -1088,12 +1213,12 @@ const NationalDashboard = ({
     const totalTarget = filteredHierarchy.reduce((sum, h) => {
       return sum + CATEGORIES.reduce((bSum, cat) => {
         let isMatch = true;
-        if (topCategoryFilter !== 'All') {
-          const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
-          isMatch = brandsInGroup.includes(cat);
+        if (!topCategoryFilter.includes('All')) {
+          const brandsInSelectedGroups = topCategoryFilter.flatMap(tg => BRAND_GROUPS[tg] || []);
+          isMatch = brandsInSelectedGroups.includes(cat);
         }
-        if (isMatch && topBrandFilter !== 'All') {
-          isMatch = cat === topBrandFilter;
+        if (isMatch && !topBrandFilter.includes('All')) {
+          isMatch = topBrandFilter.includes(cat);
         }
 
         if (isMatch) {
@@ -1576,6 +1701,10 @@ const NationalDashboard = ({
     }));
   }, [monthStats]);
 
+  // Redirect if view is stats to the improved StatsView further down, BUT wait, 
+  // actually we need to remove the early return at 1809 to let it fall through 
+  // to the main return which has the full StatsView.
+
   if (view === 'geo_map') {
     return (
       <div className="p-4 space-y-6">
@@ -1806,41 +1935,6 @@ const NationalDashboard = ({
     );
   }
 
-  if (view === 'stats') {
-    return (
-      <div className="p-4 space-y-6">
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <div className="card-clean p-6 bg-white border border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6">Sales by Category</h3>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={categoryStats}>
-                  <XAxis dataKey="category" hide />
-                  <YAxis hide />
-                  <Tooltip />
-                  <Bar dataKey="totalSales" fill="#0ea5e9" radius={[4, 4, 0, 0]} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-          <div className="card-clean p-6 bg-white border border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest mb-6">Sales Trend (MTD)</h3>
-            <div className="h-[300px]">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={trendData}>
-                  <XAxis dataKey="month" hide />
-                  <YAxis hide />
-                  <Tooltip />
-                  <Bar dataKey="totalSales" fill="#0ea5e9" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="p-4 space-y-6 bg-slate-50 min-h-screen">
       <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-100 space-y-4">
@@ -1861,7 +1955,7 @@ const NationalDashboard = ({
                 const rows = monthStats.map(s => {
                   const h = hierarchy.find(h => h.ob_id === s.ob_contact);
                   return [
-                    s.date, s.month, h?.director_sales || '', h?.nsm_name || '', h?.rsm_name || '', h?.sc_name || '', s.tsm, s.town, s.distributor, s.ob_name, s.ob_contact, s.route,
+                    s.date, s.month, h?.director_sales || '', h?.nsm_name || '', h?.rsm_name || '', h?.rsm_name || '', s.tsm, s.town, s.distributor, s.ob_name, s.ob_contact, s.route,
                     s.total_shops, s.visited_shops, s.productive_shops, s.visit_type,
                     ...CATEGORIES.flatMap(cat => [(s.brandSales[cat] || 0).toFixed(2), (s.brandTonnage[cat] || 0).toFixed(3)]),
                     s.totalBags.toFixed(2),
@@ -1887,7 +1981,7 @@ const NationalDashboard = ({
               className="flex items-center gap-2 bg-seablue text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/90 transition-all shadow-lg shadow-seablue/20 disabled:opacity-50"
             >
               <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Syncing...' : 'Sync'}
+              {isSyncing ? 'Syncing...' : 'Master Sync Now'}
             </button>
             {backupLogs && backupLogs.length > 0 && (
               <div className="flex flex-col justify-center mr-2 border-r border-slate-200 pr-3">
@@ -1991,34 +2085,48 @@ const NationalDashboard = ({
           )}
         </div>
 
-        <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-50">
-          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Category:</span>
-            <select 
-              value={topCategoryFilter} 
-              onChange={(e) => { setTopCategoryFilter(e.target.value); setTopBrandFilter('All'); }}
-              className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
-            >
-              <option value="All">All Categories</option>
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 items-center">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Cat:</span>
+            <div className="flex gap-1 overflow-x-auto max-w-[200px] no-scrollbar">
+              <button 
+                onClick={() => toggleCategory('All')} 
+                className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${topCategoryFilter.includes('All') ? 'bg-seablue text-white' : 'text-slate-400 hover:bg-slate-100'}`}
+              >
+                All
+              </button>
               {BRAND_GROUP_NAMES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
+                <button 
+                  key={cat} 
+                  onClick={() => toggleCategory(cat)} 
+                  className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md whitespace-nowrap ${topCategoryFilter.includes(cat) ? 'bg-seablue text-white' : 'text-slate-400 hover:bg-slate-100'}`}
+                >
+                  {cat}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 items-center">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Brand:</span>
-            <select 
-              value={topBrandFilter} 
-              onChange={(e) => setTopBrandFilter(e.target.value)}
-              className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
-            >
-              <option value="All">All Brands</option>
-              {(topCategoryFilter === 'All' ? CATEGORIES : BRAND_GROUPS[topCategoryFilter] || []).map(brand => (
-                <option key={brand} value={brand}>{brand}</option>
+            <div className="flex gap-1 overflow-x-auto max-w-[300px] no-scrollbar">
+              <button 
+                onClick={() => toggleBrand('All')} 
+                className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md ${topBrandFilter.includes('All') ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-100'}`}
+              >
+                All
+              </button>
+              {(topCategoryFilter.includes('All') ? CATEGORIES : topCategoryFilter.flatMap(tg => BRAND_GROUPS[tg] || [])).map(brand => (
+                <button 
+                  key={brand} 
+                  onClick={() => toggleBrand(brand)} 
+                  className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md whitespace-nowrap ${topBrandFilter.includes(brand) ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-100'}`}
+                >
+                  {brand}
+                </button>
               ))}
-            </select>
+            </div>
           </div>
-          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
+
+          <div className="flex items-center gap-2 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100 mt-2 sm:mt-0">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Level:</span>
             <select 
               value={filterLevel} 
@@ -2064,7 +2172,6 @@ const NationalDashboard = ({
             </span>
           </div>
         </div>
-      </div>
 
       {view === 'dashboard' && (
         <>
@@ -2478,7 +2585,7 @@ const NationalDashboard = ({
       </div>
 
       {/* Productivity Section */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
           <div className="flex items-center justify-between mb-2">
             <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Total Shops (T)</div>
@@ -2502,6 +2609,14 @@ const NationalDashboard = ({
           </div>
           <div className="text-3xl font-black text-seablue">{summary.totalProductive.toLocaleString()}</div>
           <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Productivity: {summary.productivity.toFixed(1)}%</div>
+        </div>
+        <div className="card-clean p-5 bg-white border border-slate-100 flex flex-col justify-between">
+          <div className="flex items-center justify-between mb-2">
+            <div className="text-[10px] uppercase font-black text-slate-400 tracking-widest">Drop Size (D)</div>
+            <ShoppingBag className="w-4 h-4 text-orange-500" />
+          </div>
+          <div className="text-3xl font-black text-orange-600">{(summary.dropSize || 0).toFixed(1)}</div>
+          <div className="text-[10px] font-bold text-slate-400 mt-2 uppercase tracking-widest">Avg Units / Creative Shop</div>
         </div>
       </div>
 
@@ -2627,6 +2742,17 @@ const NationalDashboard = ({
           onRefresh={fetchMissingEntriesReport}
           isLoading={isLoadingMissingEntries}
           selectedMonth={selectedMonth}
+        />
+      )}
+
+      {view === 'mtd_performance' && (
+        <MTDPerformance 
+          history={history}
+          hierarchy={hierarchy}
+          selectedMonth={selectedMonth}
+          userRole={userRole}
+          userName={userName}
+          userRegion={userRegion}
         />
       )}
 
@@ -2928,631 +3054,99 @@ const NationalDashboard = ({
 
       {view === 'insights' && (
         <>
-      {/* Geospatial Sales Distribution Map */}
-      <div className="card-clean bg-white overflow-hidden mb-6">
-        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex flex-col gap-3">
-          <div className="flex justify-between items-center">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Geospatial Sales Distribution</h3>
-            <div className="flex bg-white rounded-lg p-1 border border-slate-200">
-              <button 
-                onClick={() => setMapLevel('region')}
-                className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${mapLevel === 'region' ? 'bg-seablue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                Region
-              </button>
-              <button 
-                onClick={() => setMapLevel('town')}
-                className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-md transition-all ${mapLevel === 'town' ? 'bg-seablue text-white shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
-              >
-                Town
-              </button>
+        <div className="p-4 space-y-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-6 rounded-3xl border border-slate-100 shadow-sm">
+            <div>
+              <h2 className="text-xl font-black text-seablue uppercase tracking-tight leading-none">Operational Insights</h2>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-2 px-1">Advanced Analytics & Distribution Mapping</p>
             </div>
           </div>
           
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-            <select 
-              value={mapFilterBrand} 
-              onChange={e => setMapFilterBrand(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
-            >
-              <option value="All">All Brands</option>
-              {CATEGORIES.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
-            <select 
-              value={mapFilterRegion} 
-              onChange={e => setMapFilterRegion(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
-            >
-              <option value="All">All Regions</option>
-              {Array.from(new Set(monthStats.filter(s => !s.isTSMEntry).map(s => s.region))).filter(Boolean).sort().map(r => (
-                <option key={r} value={r}>{r}</option>
-              ))}
-            </select>
-            <select 
-              value={mapFilterTSM} 
-              onChange={e => setMapFilterTSM(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
-            >
-              <option value="All">All TSMs</option>
-              {Array.from(new Set(monthStats.filter(s => !s.isTSMEntry && (mapFilterRegion === 'All' || s.region === mapFilterRegion)).map(s => s.tsm))).filter(Boolean).sort().map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-            <select 
-              value={mapFilterTown} 
-              onChange={e => setMapFilterTown(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
-            >
-              <option value="All">All Towns</option>
-              {Array.from(new Set(monthStats.filter(s => !s.isTSMEntry && (mapFilterRegion === 'All' || s.region === mapFilterRegion) && (mapFilterTSM === 'All' || s.tsm === mapFilterTSM)).map(s => s.town))).filter(Boolean).sort().map(t => (
-                <option key={t} value={t}>{t}</option>
-              ))}
-            </select>
-            <select 
-              value={mapFilterOB} 
-              onChange={e => setMapFilterOB(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 focus:outline-none focus:ring-2 focus:ring-seablue/20"
-            >
-              <option value="All">All OBs</option>
-              {Array.from(new Set(monthStats.filter(s => !s.isTSMEntry && (mapFilterRegion === 'All' || s.region === mapFilterRegion) && (mapFilterTSM === 'All' || s.tsm === mapFilterTSM) && (mapFilterTown === 'All' || s.town === mapFilterTown)).map(s => s.ob_name))).filter(Boolean).sort().map(o => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="h-[450px] w-full z-0 relative">
-          <MapContainer center={[30.3753, 69.3451]} zoom={5} style={{ height: '100%', width: '100%', zIndex: 0 }}>
-            <TileLayer
-              url="https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png"
-              attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
-            />
-            {(() => {
-              const filteredMapStats = monthStats.filter(s => {
-                if (s.isTSMEntry) return false;
-                if (mapFilterRegion !== 'All' && s.region !== mapFilterRegion) return false;
-                if (mapFilterTSM !== 'All' && s.tsm !== mapFilterTSM) return false;
-                if (mapFilterTown !== 'All' && s.town !== mapFilterTown) return false;
-                if (mapFilterOB !== 'All' && s.ob_name !== mapFilterOB) return false;
-                return true;
-              });
-
-              const getSalesForSpecificBrand = (s: any, brand: string) => {
-                const orderData = typeof s.order_data === 'string' ? JSON.parse(s.order_data) : (s.order_data || {});
-                const brandSkus = SKUS.filter((sku: any) => sku.category === brand);
-                return brandSkus.reduce((sum: number, sku: any) => {
-                  const item = orderData[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                  const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                  return sum + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                }, 0);
-              };
-
-              const brandsToShow = mapFilterBrand === 'All' ? CATEGORIES : [mapFilterBrand];
-
-              if (mapLevel === 'region') {
-                const regionData: Record<string, any> = {};
-                
-                filteredMapStats.forEach(s => {
-                  const coords = TOWN_COORDINATES[s.town] || (s.latitude && s.longitude ? [s.latitude, s.longitude] : null);
-                  if (!coords) return;
-
-                  if (!regionData[s.region]) {
-                    regionData[s.region] = { region: s.region, totalSales: 0, brandSales: {}, lats: [], lngs: [], towns: new Set() };
-                  }
-
-                  let addedAny = false;
-                  brandsToShow.forEach(brand => {
-                    const sales = getSalesForSpecificBrand(s, brand);
-                    if (sales > 0) {
-                      regionData[s.region].brandSales[brand] = (regionData[s.region].brandSales[brand] || 0) + sales;
-                      regionData[s.region].totalSales += sales;
-                      addedAny = true;
-                    }
-                  });
-
-                  if (addedAny) {
-                    regionData[s.region].lats.push(coords[0]);
-                    regionData[s.region].lngs.push(coords[1]);
-                    regionData[s.region].towns.add(s.town);
-                  }
-                });
-
-                return Object.values(regionData).filter(r => r.totalSales > 0).map((r: any, i) => {
-                  const avgLat = r.lats.reduce((a:any,b:any)=>a+b,0)/r.lats.length;
-                  const avgLng = r.lngs.reduce((a:any,b:any)=>a+b,0)/r.lngs.length;
-                  
-                  const color = mapFilterBrand !== 'All' ? (CATEGORY_COLORS[mapFilterBrand] || '#0ea5e9') : '#0ea5e9';
-
-                  return (
-                    <CircleMarker 
-                      key={`region-${r.region}-${i}`} 
-                      center={[avgLat, avgLng]} 
-                      radius={Math.max(8, Math.min(30, r.totalSales / 50))}
-                      pathOptions={{ color: color, fillColor: color, fillOpacity: 0.6, weight: 2 }}
-                    >
-                      <MapTooltip direction="top" offset={[0, -10]} className="bg-white/95 backdrop-blur-sm border-none shadow-xl rounded-xl p-2 min-w-[120px]">
-                        <div className="text-[10px] font-black text-slate-800 uppercase text-center mb-1 border-b border-slate-100 pb-1">{r.region}</div>
-                        <div className="space-y-1 mt-1">
-                          {Object.entries(r.brandSales).sort(([,a]:any, [,b]:any) => b - a).slice(0, 4).map(([brand, sales]: any) => (
-                            <div key={brand} className="flex justify-between items-center text-[9px]">
-                              <div className="flex items-center gap-1">
-                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
-                                <span className="font-bold text-slate-600 truncate max-w-[60px]">{brand}</span>
-                              </div>
-                              <span className="font-black text-slate-800">{Math.round(sales)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </MapTooltip>
-                      <Popup>
-                        <div className="p-2 min-w-[150px]">
-                          <h4 className="text-sm font-black text-slate-800 uppercase mb-2">{r.region} Region</h4>
-                          <div className="space-y-1 mb-3">
-                            <div className="flex justify-between text-[10px] border-b border-slate-100 pb-1">
-                              <span className="text-slate-400 font-bold uppercase">Total Sales:</span>
-                              <span className="font-black text-seablue">{Math.round(r.totalSales)}</span>
-                            </div>
-                            <div className="flex justify-between text-[10px]">
-                              <span className="text-slate-400 font-bold uppercase">Active Towns:</span>
-                              <span className="font-black text-slate-700">{r.towns.size}</span>
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-1">
-                            <h5 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Brand Breakdown</h5>
-                            {Object.entries(r.brandSales).sort(([,a]:any, [,b]:any) => b - a).map(([brand, sales]: any) => (
-                              <div key={brand} className="flex justify-between items-center text-[10px]">
-                                <div className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
-                                  <span className="font-bold text-slate-600">{brand}</span>
-                                </div>
-                                <span className="font-black text-slate-800">{Math.round(sales)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </Popup>
-                    </CircleMarker>
-                  );
-                });
-              } else {
-                const townData: Record<string, any> = {};
-                
-                filteredMapStats.forEach(s => {
-                  const coords = TOWN_COORDINATES[s.town] || (s.latitude && s.longitude ? [s.latitude, s.longitude] : null);
-                  if (!coords) return;
-
-                  if (!townData[s.town]) {
-                    townData[s.town] = { town: s.town, region: s.region, totalSales: 0, brandSales: {}, lats: [], lngs: [], obs: new Set() };
-                  }
-
-                  let addedAny = false;
-                  brandsToShow.forEach(brand => {
-                    const sales = getSalesForSpecificBrand(s, brand);
-                    if (sales > 0) {
-                      townData[s.town].brandSales[brand] = (townData[s.town].brandSales[brand] || 0) + sales;
-                      townData[s.town].totalSales += sales;
-                      addedAny = true;
-                    }
-                  });
-
-                  if (addedAny) {
-                    if (TOWN_COORDINATES[s.town]) {
-                      townData[s.town].lats = [TOWN_COORDINATES[s.town][0]];
-                      townData[s.town].lngs = [TOWN_COORDINATES[s.town][1]];
-                    } else {
-                      townData[s.town].lats.push(coords[0]);
-                      townData[s.town].lngs.push(coords[1]);
-                    }
-                    townData[s.town].obs.add(s.ob_name);
-                  }
-                });
-
-                return Object.values(townData).filter(t => t.totalSales > 0).map((t: any, i) => {
-                  const avgLat = t.lats.reduce((a:any,b:any)=>a+b,0)/t.lats.length;
-                  const avgLng = t.lngs.reduce((a:any,b:any)=>a+b,0)/t.lngs.length;
-                  
-                  const color = mapFilterBrand !== 'All' ? (CATEGORY_COLORS[mapFilterBrand] || '#006994') : '#006994';
-
-                  return (
-                    <CircleMarker 
-                      key={`town-${t.town}-${i}`} 
-                      center={[avgLat, avgLng]} 
-                      radius={Math.max(5, Math.min(20, t.totalSales / 20))}
-                      pathOptions={{ color: color, fillColor: color, fillOpacity: 0.6, weight: 1 }}
-                    >
-                      <MapTooltip direction="top" offset={[0, -10]} className="bg-white/95 backdrop-blur-sm border-none shadow-xl rounded-xl p-2 min-w-[120px]">
-                        <div className="text-[10px] font-black text-slate-800 uppercase text-center mb-1 border-b border-slate-100 pb-1">{t.town}</div>
-                        <div className="space-y-1 mt-1">
-                          {Object.entries(t.brandSales).sort(([,a]:any, [,b]:any) => b - a).slice(0, 4).map(([brand, sales]: any) => (
-                            <div key={brand} className="flex justify-between items-center text-[9px]">
-                              <div className="flex items-center gap-1">
-                                <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
-                                <span className="font-bold text-slate-600 truncate max-w-[60px]">{brand}</span>
-                              </div>
-                              <span className="font-black text-slate-800">{Math.round(sales)}</span>
-                            </div>
-                          ))}
-                        </div>
-                      </MapTooltip>
-                      <Popup>
-                        <div className="p-2 min-w-[150px]">
-                          <h4 className="text-sm font-black text-slate-800 uppercase mb-1">{t.town}</h4>
-                          <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-3">{t.region} Region</p>
-                          
-                          <div className="space-y-1 mb-3">
-                            <div className="flex justify-between text-[10px] border-b border-slate-100 pb-1">
-                              <span className="text-slate-400 font-bold uppercase">Total Sales:</span>
-                              <span className="font-black text-seablue">{Math.round(t.totalSales)}</span>
-                            </div>
-                            <div className="flex justify-between text-[10px]">
-                              <span className="text-slate-400 font-bold uppercase">Active OBs:</span>
-                              <span className="font-black text-slate-700">{t.obs.size}</span>
-                            </div>
-                          </div>
-
-                          <div className="space-y-1">
-                            <h5 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-1">Brand Breakdown</h5>
-                            {Object.entries(t.brandSales).sort(([,a]:any, [,b]:any) => b - a).map(([brand, sales]: any) => (
-                              <div key={brand} className="flex justify-between items-center text-[10px]">
-                                <div className="flex items-center gap-1.5">
-                                  <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[brand] || '#ccc' }}></div>
-                                  <span className="font-bold text-slate-600">{brand}</span>
-                                </div>
-                                <span className="font-black text-slate-800">{Math.round(sales)}</span>
-                              </div>
-                            ))}
-                          </div>
-                        </div>
-                      </Popup>
-                    </CircleMarker>
-                  );
-                });
-              }
-            })()}
-          </MapContainer>
-          
-          {/* Map Legend */}
-          <div className="absolute bottom-4 right-4 bg-white/90 backdrop-blur-sm p-3 rounded-xl border border-slate-200 shadow-lg z-[1000] space-y-2">
-            <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-2">Brands</h4>
-            {Object.entries(CATEGORY_COLORS).map(([brand, color]) => (
-              <div key={brand} className="flex items-center gap-2">
-                <div className="w-3 h-3 rounded-full" style={{ backgroundColor: color }}></div>
-                <span className="text-[9px] font-bold text-slate-600 uppercase tracking-wider">{brand}</span>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Geo Map Section */}
+            <div className="card-clean p-0 bg-white border border-slate-100 overflow-hidden h-[500px]">
+              <div className="p-6 border-b border-slate-50 flex items-center justify-between">
+                <div>
+                   <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Geospatial Distribution</h3>
+                   <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">Live mapping of field submissions</p>
+                </div>
+                <div className="w-8 h-8 rounded-xl bg-seablue/10 flex items-center justify-center text-seablue">
+                   <Map className="w-4 h-4" />
+                </div>
               </div>
-            ))}
-          </div>
-        </div>
-      </div>
-
-      <div className="card-clean bg-white overflow-hidden mb-6">
-        <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-            OB Performance Report (Target vs Achievement)
-          </h3>
-          <div className="flex items-center gap-2">
-            <select 
-              value={offDayFilter} 
-              onChange={(e) => setOffDayFilter(e.target.value)}
-              className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1 focus:outline-none focus:ring-1 focus:ring-slate-400"
-            >
-              <option value="All">All Off Days</option>
-              <option value="Sunday">Sunday</option>
-              <option value="Friday">Friday</option>
-            </select>
-            <select 
-              value={obReportCategoryFilter} 
-              onChange={(e) => setObReportCategoryFilter(e.target.value)}
-              className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1 focus:outline-none focus:ring-1 focus:ring-slate-400"
-            >
-              <option value="All">All Categories</option>
-              {BRAND_GROUP_NAMES.map(group => (
-                <option key={group} value={group}>{group}</option>
-              ))}
-            </select>
-            <select 
-              value={obReportBrandFilter} 
-              onChange={(e) => setObReportBrandFilter(e.target.value)}
-              className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-full px-3 py-1 focus:outline-none focus:ring-1 focus:ring-slate-400"
-            >
-              <option value="All">All Brands</option>
-              {CATEGORIES.map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
-        </div>
-        <div className="overflow-x-auto max-h-[400px]">
-          <table className="w-full text-left min-w-[800px]">
-            <thead className="sticky top-0 z-10">
-              <tr className="border-b border-slate-100 bg-slate-50">
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">TSM</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Target (Ctns)</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Achieved (Ctns)</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Ach %</th>
-                <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Trend</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {(() => {
-                const obData = filteredOBs.map(ob => {
-                  let sales = 0;
-                  let target = 0;
-                  
-                  const obStats = monthStats.filter(s => s.ob_contact === ob.ob_id && !s.isTSMEntry);
-                  
-                  obStats.forEach(s => {
-                    if (obReportCategoryFilter !== 'All') {
-                      const brandsInGroup = BRAND_GROUPS[obReportCategoryFilter] || [];
-                      sales += brandsInGroup.reduce((sum, brand) => sum + (s.brandSales[brand] || 0), 0);
-                    } else if (obReportBrandFilter !== 'All') {
-                      sales += (s.brandSales[obReportBrandFilter] || 0);
-                    } else {
-                      sales += s.totalBags;
-                    }
-                  });
-
-                  target = Number(ob.target_ctn) || 0;
-                  const perc = target > 0 ? (sales / target) * 100 : 0;
-                  
-                  const recentSales = obStats.slice(-3).reduce((sum, s) => sum + s.totalBags, 0);
-                  const prevSales = obStats.slice(-6, -3).reduce((sum, s) => sum + s.totalBags, 0);
-                  const trend = recentSales >= prevSales ? 'up' : 'down';
-
-                  return { ...ob, sales, target, perc, trend };
-                }).sort((a, b) => b.sales - a.sales);
-
-                return obData.map((row, idx) => (
-                  <React.Fragment key={row.ob_id}>
-                    <tr 
-                      className={`hover:bg-slate-50 transition-colors cursor-pointer ${selectedOBForRoute === row.ob_id ? 'bg-seablue/5' : ''}`}
-                      onClick={() => setSelectedOBForRoute(selectedOBForRoute === row.ob_id ? null : row.ob_id)}
+              <div className="h-[calc(500px-80px)] w-full">
+                <MapContainer center={[30.3753, 69.3451]} zoom={5} style={{ height: '100%', width: '100%' }}>
+                  <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
+                  {history.filter(h => h.latitude && h.longitude && !h.isTSMEntry).map((h, i) => (
+                    <CircleMarker 
+                      key={i} 
+                      center={[h.latitude, h.longitude]} 
+                      radius={6} 
+                      pathOptions={{ color: '#1e3a8a', fillColor: '#3b82f6', fillOpacity: 0.6, weight: 2 }}
                     >
-                      <td className="px-6 py-3 text-xs font-black text-slate-700">
-                        <div className="flex items-center gap-2">
-                          <div className={`w-2 h-2 rounded-full ${selectedOBForRoute === row.ob_id ? 'bg-seablue animate-pulse' : 'bg-slate-200'}`} />
-                          {row.ob_name}
-                        </div>
-                        <span className="text-[9px] text-slate-400 font-normal block ml-4">{row.ob_id}</span>
-                      </td>
-                      <td className="px-6 py-3 text-xs font-bold text-slate-500">{row.town_name}</td>
-                      <td className="px-6 py-3 text-xs font-bold text-slate-500">{row.asm_tsm_name}</td>
-                      <td className="px-6 py-3 text-xs font-bold text-slate-600 text-right">{Math.round(row.target).toLocaleString()}</td>
-                      <td className="px-6 py-3 text-xs font-black text-seablue text-right">{Math.round(row.sales).toLocaleString()}</td>
-                      <td className={`px-6 py-3 text-xs font-black text-right ${row.perc >= 100 ? 'text-emerald-600' : row.perc >= 80 ? 'text-amber-500' : 'text-rose-600'}`}>
-                        {row.perc.toFixed(1)}%
-                      </td>
-                      <td className="px-6 py-3 text-right">
-                        {row.trend === 'up' ? (
-                          <span className="inline-flex items-center text-emerald-500"><TrendingUp className="w-4 h-4" /></span>
-                        ) : (
-                          <span className="inline-flex items-center text-rose-500"><TrendingDown className="w-4 h-4" /></span>
-                        )}
-                      </td>
-                    </tr>
-                    {selectedOBForRoute === row.ob_id && (
-                      <tr>
-                        <td colSpan={7} className="px-6 py-4 bg-slate-50/50">
-                          <motion.div 
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            className="bg-white rounded-2xl border border-slate-100 shadow-sm overflow-hidden"
-                          >
-                            <div className="px-4 py-3 border-b border-slate-50 bg-slate-50/30 flex justify-between items-center">
-                              <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em]">Route Performance: {row.ob_name}</h4>
-                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{obRoutePerformance.length} Routes Found</span>
-                            </div>
-                            <table className="w-full text-left">
-                              <thead>
-                                <tr className="text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                                  <th className="px-4 py-2">Route Name</th>
-                                  <th className="px-4 py-2 text-right">Sales</th>
-                                  <th className="px-4 py-2 text-right">Productivity</th>
-                                  <th className="px-4 py-2 text-right">Visits</th>
-                                </tr>
-                              </thead>
-                              <tbody className="divide-y divide-slate-50">
-                                {obRoutePerformance.map((route: any) => (
-                                  <tr key={route.name} className="hover:bg-slate-50/30 transition-colors">
-                                    <td className="px-4 py-2 text-[10px] font-bold text-slate-700">{route.name}</td>
-                                    <td className="px-4 py-2 text-right text-[10px] font-black text-seablue">{Math.round(route.sales)}</td>
-                                    <td className="px-4 py-2 text-right">
-                                      <span className="text-[10px] font-bold text-emerald-600">
-                                        {route.visited > 0 ? ((route.productive / route.visited) * 100).toFixed(0) : 0}%
-                                      </span>
-                                    </td>
-                                    <td className="px-4 py-2 text-right text-[10px] font-medium text-slate-500">{route.visited}</td>
-                                  </tr>
-                                ))}
-                                {obRoutePerformance.length === 0 && (
-                                  <tr>
-                                    <td colSpan={4} className="px-4 py-6 text-center text-[10px] font-black text-slate-400 uppercase">No route data available</td>
-                                  </tr>
-                                )}
-                              </tbody>
-                            </table>
-                          </motion.div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                ));
-              })()}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                      <Popup>
+                         <div className="text-[10px] p-2 min-w-[150px]">
+                           <div className="font-black text-seablue uppercase mb-1">{h.order_booker}</div>
+                           <div className="text-slate-400 font-bold mb-2">{h.town} | {h.date}</div>
+                           <div className="space-y-1">
+                             <div className="flex justify-between"><span>Visited:</span> <span className="font-black">{h.visited_shops}</span></div>
+                             <div className="flex justify-between"><span>Productive:</span> <span className="font-black">{h.productive_shops}</span></div>
+                           </div>
+                         </div>
+                      </Popup>
+                    </CircleMarker>
+                  ))}
+                </MapContainer>
+              </div>
+            </div>
 
-      <div className="card-clean p-6 bg-white border border-slate-100 mb-6">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Sales by Day of Week</h3>
-        </div>
-        <div className="h-[300px] min-h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={dayOfWeekData}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis 
-                dataKey="name" 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }} 
-                dy={10}
-              />
-              <YAxis 
-                yAxisId="left"
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }}
-                dx={-10}
-                tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value}
-              />
-              <YAxis 
-                yAxisId="right"
-                orientation="right"
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }}
-                dx={10}
-              />
-              <Tooltip 
-                cursor={{ fill: '#f8fafc' }}
-                contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', padding: '12px 16px' }}
-                labelStyle={{ fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}
-                itemStyle={{ fontSize: '12px', fontWeight: 700, padding: '2px 0' }}
-              />
-              <Legend verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '10px', fontWeight: 700, color: '#1e3a8a', paddingTop: '20px' }} />
-              <Bar yAxisId="left" dataKey="sales" name="Total Sales (Bags)" fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={30} />
-              <Line yAxisId="right" type="monotone" dataKey="dropSize" name="Drop Size" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      <div className="card-clean p-6 bg-white border border-slate-100 lg:col-span-2">
-        <div className="flex items-center justify-between mb-6">
-          <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Top 10 TSM Performance</h3>
-          <div className="flex gap-2">
-            <select 
-              value={tsmCategoryFilter}
-              onChange={(e) => setTsmCategoryFilter(e.target.value)}
-              className="text-[8px] font-black text-seablue uppercase bg-slate-50 px-2 py-1 rounded border-none focus:ring-0"
-            >
-              <option value="All">All Categories</option>
-              {BRAND_GROUP_NAMES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
-            <select 
-              value={tsmBrandFilter}
-              onChange={(e) => setTsmBrandFilter(e.target.value)}
-              className="text-[8px] font-black text-seablue uppercase bg-slate-50 px-2 py-1 rounded border-none focus:ring-0"
-            >
-              <option value="All">All Brands</option>
-              {brands.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
+            {/* Sales by Week Section */}
+            <div className="card-clean p-6 bg-white border border-slate-100 flex flex-col h-[500px]">
+              <div className="flex items-center justify-between mb-6">
+                <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Sales by Day of Week</h3>
+              </div>
+              <div className="flex-1 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={dayOfWeekData}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis 
+                      dataKey="name" 
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }} 
+                      dy={10}
+                    />
+                    <YAxis 
+                      yAxisId="left"
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }}
+                      dx={-10}
+                      tickFormatter={(value) => value >= 1000 ? `${(value / 1000).toFixed(1)}k` : value}
+                    />
+                    <YAxis 
+                      yAxisId="right"
+                      orientation="right"
+                      axisLine={false} 
+                      tickLine={false} 
+                      tick={{ fontSize: 10, fill: '#94a3b8', fontWeight: 700 }}
+                      dx={10}
+                    />
+                    <Tooltip 
+                      cursor={{ fill: '#f8fafc' }}
+                      contentStyle={{ borderRadius: '16px', border: 'none', boxShadow: '0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)', padding: '12px 16px' }}
+                      labelStyle={{ fontSize: '10px', fontWeight: 900, color: '#64748b', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '8px' }}
+                      itemStyle={{ fontSize: '12px', fontWeight: 700, padding: '2px 0' }}
+                    />
+                    <Legend verticalAlign="bottom" align="center" wrapperStyle={{ fontSize: '10px', fontWeight: 700, color: '#1e3a8a', paddingTop: '20px' }} />
+                    <Bar yAxisId="left" dataKey="sales" name="Total Sales (Bags)" fill="#1e3a8a" radius={[4, 4, 0, 0]} barSize={30} />
+                    <Line yAxisId="right" type="monotone" dataKey="dropSize" name="Drop Size" stroke="#10b981" strokeWidth={3} dot={{ r: 4, strokeWidth: 2 }} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="h-[300px] min-h-[300px] w-full">
-          <ResponsiveContainer width="100%" height="100%">
-            <BarChart data={(() => {
-              const filteredTSMs = tsmPerformance.map(tsm => {
-                let sales = 0;
-                let target = 0;
-                const tsmStats = monthStats.filter(s => s.tsm === tsm.name && !s.isTSMEntry);
-                
-                tsmStats.forEach(s => {
-                  if (tsmCategoryFilter !== 'All') {
-                    const brandsInGroup = BRAND_GROUPS[tsmCategoryFilter] || [];
-                    sales += brandsInGroup.reduce((sum, brand) => sum + (s.brandSales[brand] || 0), 0);
-                  } else if (tsmBrandFilter !== 'All') {
-                    sales += (s.brandSales[tsmBrandFilter] || 0);
-                  } else {
-                    sales += s.totalBags;
-                  }
-                });
 
-                // Calculate target for filtered view
-                const tsmOBs = hierarchy.filter(h => h.asm_tsm_name === tsm.name);
-                tsmOBs.forEach(h => {
-                  if (tsmCategoryFilter !== 'All') {
-                    const brandsInGroup = BRAND_GROUPS[tsmCategoryFilter] || [];
-                    target += (Number(h.target_ctn) || 0); 
-                  } else if (tsmBrandFilter !== 'All') {
-                    target += (Number(h.target_ctn) || 0);
-                  } else {
-                    target += (Number(h.target_ctn) || 0);
-                  }
-                });
-
-                const perc = target > 0 ? (sales / target) * 100 : 0;
-                return { ...tsm, totalSales: sales, achievementPerc: perc };
-              }).sort((a, b) => a.achievementPerc - b.achievementPerc); // Bottom to top
-              return filteredTSMs.slice(0, 10);
-            })()}>
-              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-              <XAxis 
-                dataKey="name" 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fontSize: 8, fontWeight: 'bold', fill: '#94a3b8' }}
-              />
-              <YAxis 
-                axisLine={false} 
-                tickLine={false} 
-                tick={{ fontSize: 8, fontWeight: 'bold', fill: '#94a3b8' }}
-              />
-              <Tooltip 
-                cursor={{ fill: '#f8fafc' }}
-                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)' }}
-                formatter={(value: any) => [Math.round(value).toLocaleString(), 'Sales (Ctns)']}
-              />
-              <Bar dataKey="totalSales" fill="#0ea5e9" radius={[4, 4, 0, 0]} barSize={20} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* TSM / ASM Direct Sales Performance */}
-      {tsmDirectPerformance.length > 0 && (
-        <div className="card-clean bg-white overflow-hidden border border-slate-100 mt-6">
-          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">TSM / ASM Direct Sales Performance</h3>
-            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">By Achievement %</span>
-          </div>
-          <div className="overflow-x-auto max-h-[500px]">
-            <table className="w-full text-left">
-              <thead className="sticky top-0 bg-white z-10">
-                <tr className="border-b border-slate-100">
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Name</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Region</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Target</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Ach</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Ach %</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Productivity</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {tsmDirectPerformance.sort((a, b) => b.achievement - a.achievement).map((tsm, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                    <td className="px-6 py-4 text-xs font-bold text-slate-700">
-                      <span className="text-slate-300 mr-2">{idx + 1}.</span>
-                      {tsm.name}
-                    </td>
-                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{tsm.town}</td>
-                    <td className="px-6 py-4 text-[10px] font-black text-seablue uppercase tracking-widest">{tsm.region}</td>
-                    <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right">{Math.round(tsm.target).toLocaleString()}</td>
-                    <td className="px-6 py-4 text-xs font-bold text-slate-700 text-right">{Math.round(tsm.totalSales).toLocaleString()}</td>
-                    <td className="px-6 py-4 text-xs font-black text-emerald-600 text-right">{tsm.achievement.toFixed(1)}%</td>
-                    <td className="px-6 py-4 text-xs font-black text-slate-600 text-right">{tsm.productivityScore.toFixed(1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
 
       {/* Route Analysis Section (Visible when OB or Route is selected) */}
       {(filterLevel === 'OB' || filterLevel === 'Route') && (
@@ -3683,183 +3277,9 @@ const NationalDashboard = ({
         </p>
       </div>
 
-      {/* TSM Quick Review Table */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
-        <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-          <h2 className="text-xs font-black text-seablue uppercase tracking-widest">TSM Quick Review (Bottom 50)</h2>
-          <Users className="w-4 h-4 text-slate-400" />
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm text-left">
-            <thead className="bg-slate-50 text-slate-500 border-b border-slate-200 text-[10px] font-black uppercase tracking-widest">
-              <tr>
-                <th className="px-4 py-3">Hierarchy</th>
-                <th className="px-4 py-3">TSM Name</th>
-                <th className="px-4 py-3 text-right">Active OBs</th>
-                <th className="px-4 py-3 text-right">Target</th>
-                <th className="px-4 py-3 text-right">Achieved</th>
-                <th className="px-4 py-3 text-right">Ach %</th>
-                <th className="px-4 py-3 text-right">RPD</th>
-                <th className="px-4 py-3 text-right">Avg OB Sales</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {tsmPerformance.slice(0, 50).map((tsm, idx) => (
-                <tr key={idx} className="hover:bg-slate-50/50">
-                  <td className="px-4 py-3">
-                    <p className="text-[8px] font-black text-slate-400 uppercase leading-none">National &gt; {tsm.region}</p>
-                    <p className="text-[9px] font-bold text-slate-600 uppercase mt-0.5">{tsm.town}</p>
-                  </td>
-                  <td className="px-4 py-3 font-bold text-slate-700 text-xs">{tsm.name}</td>
-                  <td className="px-4 py-3 text-right text-slate-500 font-mono text-xs">{tsm.activeOBs}</td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-400 font-mono text-xs">{Math.round(tsm.totalTarget).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-700 font-mono text-xs">{Math.round(tsm.totalSales).toLocaleString()}</td>
-                  <td className="px-4 py-3 text-right font-bold text-emerald-600 font-mono text-xs">{tsm.achievementPerc.toFixed(1)}%</td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-600 font-mono text-xs">{tsm.rpd.toFixed(1)}%</td>
-                  <td className="px-4 py-3 text-right font-bold text-seablue font-mono text-xs">{Math.round(tsm.averageOBSales).toLocaleString()}</td>
-                </tr>
-              ))}
-              {tsmPerformance.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="px-4 py-8 text-center text-slate-500 text-xs font-bold uppercase tracking-widest">
-                    No TSM data found.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
 
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card-clean bg-white overflow-hidden">
-          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst Performing OB (Bottom 50)</h3>
-            <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">By Achievement %</span>
-          </div>
-          <div className="overflow-x-auto max-h-[500px]">
-            <table className="w-full text-left">
-              <thead className="sticky top-0 bg-white z-10">
-                <tr className="border-b border-slate-100">
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">TSM</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Target</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Ach</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Ach %</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {worstOBs.map((ob, idx) => (
-                  <tr key={idx} className="hover:bg-rose-50/30 transition-colors">
-                    <td className="px-6 py-4 text-xs font-bold text-slate-700">
-                      <span className="text-slate-300 mr-2">{idx + 1}.</span>
-                      {ob.name}
-                    </td>
-                    <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.town}</td>
-                    <td className="px-6 py-4 text-[10px] font-black text-seablue uppercase tracking-widest">{ob.tsm}</td>
-                    <td className="px-6 py-4 text-xs font-bold text-slate-400 text-right">{Math.round(ob.target).toLocaleString()}</td>
-                    <td className="px-6 py-4 text-xs font-bold text-slate-700 text-right">{Math.round(ob.totalSales).toLocaleString()}</td>
-                    <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{ob.achievement.toFixed(1)}%</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="card-clean bg-white overflow-hidden">
-          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100 flex justify-between items-center">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Worst OB by Brand (Bottom 50)</h3>
-            <select 
-              value={worstBrandFilter}
-              onChange={(e) => setWorstBrandFilter(e.target.value)}
-              className="text-[10px] font-black text-seablue uppercase bg-white px-2 py-1 rounded border border-slate-200 focus:ring-0"
-            >
-              <option value="All">All Brands</option>
-              {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-            </select>
-          </div>
-          <div className="overflow-x-auto max-h-[500px]">
-            <table className="w-full text-left">
-              <thead className="sticky top-0 bg-white z-10">
-                <tr className="border-b border-slate-100">
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB Name</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Town</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Brand</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase text-right">Sales</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {(() => {
-                  let data: any[] = [];
-                  if (worstBrandFilter === 'All') {
-                    CATEGORIES.forEach(cat => {
-                      data = [...data, ...(worstByBrand[cat] || []).map(ob => ({ ...ob, brand: cat }))];
-                    });
-                  } else {
-                    data = (worstByBrand[worstBrandFilter] || []).map(ob => ({ ...ob, brand: worstBrandFilter }));
-                  }
-                  return data.sort((a, b) => a.sales - b.sales).slice(0, 50).map((ob, idx) => (
-                    <tr key={idx} className="hover:bg-rose-50/30 transition-colors">
-                      <td className="px-6 py-4 text-xs font-bold text-slate-700">
-                        <span className="text-slate-300 mr-2">{idx + 1}.</span>
-                        {ob.name}
-                      </td>
-                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.town}</td>
-                      <td className="px-6 py-4 text-[10px] font-black text-seablue uppercase tracking-widest">{ob.brand}</td>
-                      <td className="px-6 py-4 text-xs font-black text-rose-600 text-right">{ob.sales.toFixed(1)}</td>
-                    </tr>
-                  ));
-                })()}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="card-clean bg-white overflow-hidden">
-          <div className="bg-slate-50 px-6 py-3 border-b border-slate-100">
-            <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">Route Weakness Detection</h3>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="border-b border-slate-100">
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">OB / Route</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Sales Trend</th>
-                  <th className="px-6 py-3 text-[10px] font-black text-slate-400 uppercase">Alerts</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {routeWeakness.map((rw, idx) => (
-                  <tr key={idx} className="hover:bg-rose-50 transition-colors">
-                    <td className="px-6 py-4">
-                      <p className="text-xs font-bold text-slate-700">{rw.ob}</p>
-                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-widest">{rw.route}</p>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs font-black text-rose-600">{rw.latestSales.toFixed(1)}</span>
-                        <ArrowDownRight className="w-3 h-3 text-rose-500" />
-                        <span className="text-[10px] text-slate-400 font-bold">vs {rw.prevSales.toFixed(1)}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4">
-                      <div className="flex flex-wrap gap-1">
-                        {rw.reasons.map((r: string) => (
-                          <span key={r} className="text-[8px] font-black bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded uppercase tracking-tighter">{r}</span>
-                        ))}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
 
         <div className="card-clean bg-white p-6">
           <div className="flex items-center justify-between border-b pb-2 mb-4">
@@ -3936,52 +3356,10 @@ const NationalDashboard = ({
             </LineChart>
           </ResponsiveContainer>
         </div>
-      </div>
-    </>
-  )}
-      <section className="card-clean bg-white p-6 shadow-xl shadow-slate-200/40">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-500" />
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Weakest Routes</h3>
-          </div>
-          <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Bottom to Top</span>
         </div>
-        <div className="space-y-4">
-          {data.weakestRoutes.map((wr: any, idx: number) => (
-            <motion.div 
-              key={wr.route}
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: idx * 0.1 }}
-              className="p-4 rounded-2xl bg-slate-50 border border-slate-100 flex items-center justify-between group hover:border-rose-200 transition-all"
-            >
-              <div className="space-y-1">
-                <div className="text-[11px] font-black text-slate-800 uppercase tracking-tight">{wr.route}</div>
-                <div className="flex flex-wrap gap-1">
-                  {wr.reasons.map((reason: string) => (
-                    <span key={reason} className="px-1.5 py-0.5 bg-rose-100 text-rose-600 text-[7px] font-black uppercase tracking-widest rounded">
-                      {reason}
-                    </span>
-                  ))}
-                </div>
-                <div className="text-[8px] font-bold text-slate-400 uppercase tracking-widest">{wr.ob}</div>
-              </div>
-              <div className="text-right">
-                <div className="text-[11px] font-black text-rose-600">{wr.avgSales.toFixed(1)} <span className="text-[8px] text-slate-400">Avg</span></div>
-                <div className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">{wr.efficiency.toFixed(0)}% Efficiency</div>
-              </div>
-            </motion.div>
-          ))}
-          {data.weakestRoutes.length === 0 && (
-            <div className="py-10 text-center text-slate-400">
-              <CheckCircle2 className="w-10 h-10 mx-auto mb-2 opacity-20" />
-              <p className="text-[10px] font-black uppercase tracking-widest">All routes performing well!</p>
-            </div>
-          )}
         </div>
-      </section>
-
+      </>
+    )}
       {/* Head Count Detail Modal */}
       <AnimatePresence>
         {selectedHeadCountDetail && (
@@ -4248,7 +3626,15 @@ const StatsView = ({
         rrDetails: rrOBs.map(ob => ({
           name: ob.ob_name,
           tsm: ob.tsm
-        }))
+        })),
+        absentDetails: visibleDayStats.filter(s => s.visit_type === 'Absent').map(ob => {
+          const actualOB = obAssignments.find((a: any) => a.contact === ob.ob_contact);
+          return {
+            name: actualOB ? actualOB.name : ob.ob_name,
+            ob_id: ob.ob_contact,
+            tsm: ob.tsm
+          };
+        })
       };
     }).slice(0, 10); // Show last 10 days
   }, [history, filteredOBs, currentMonth]);
@@ -4382,179 +3768,6 @@ const StatsView = ({
         </div>
       </div>
 
-      {/* Daily Submission Status (Moved from Admin) */}
-      <section className="bg-white rounded-3xl shadow-xl shadow-slate-200/40 border-none overflow-hidden">
-        <div className="bg-slate-900 text-white px-6 py-4 flex justify-between items-center">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-white/10 rounded-xl">
-              <ShieldCheck className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-sm font-black uppercase tracking-widest">Daily Submission Status</h2>
-              <p className="text-[8px] text-white/40 uppercase font-bold tracking-widest">Real-time Field Monitoring</p>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <input 
-              type="date" 
-              defaultValue={getPSTDate()} 
-              onChange={(e) => fetchDailyStatus(e.target.value)}
-              className="bg-white/10 text-white text-[10px] font-bold px-3 py-1.5 rounded-xl border border-white/20 focus:outline-none focus:ring-2 focus:ring-white/20 transition-all"
-            />
-            <button 
-              onClick={() => fetchDailyStatus(getPSTDate())} 
-              className="p-2 hover:bg-white/10 rounded-xl transition-colors group"
-            >
-              <RefreshCw className={`w-4 h-4 ${isLoadingDailyStatus ? 'animate-spin' : 'group-active:rotate-180 transition-transform'}`} />
-            </button>
-          </div>
-        </div>
-
-        <div className="p-6">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-            {/* Submitted Box */}
-            <div className="p-6 bg-emerald-50 rounded-3xl border border-emerald-100 shadow-sm">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <div className="text-[10px] font-black text-emerald-500 uppercase tracking-widest mb-1">Submitted OBs</div>
-                  <div className="text-3xl font-black text-emerald-700">{dailyStatus.filter(s => s.submitted && s.visit_type !== 'Absent').length}</div>
-                </div>
-                <div className="p-2 bg-emerald-100 rounded-xl text-emerald-600">
-                  <CheckCircle2 className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                {dailyStatus.filter(s => s.submitted && s.visit_type !== 'Absent').map(s => (
-                  <div key={s.contact} className="flex flex-col p-2 bg-white/60 rounded-xl border border-emerald-100/50">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[11px] font-black text-slate-700">{s.name}</span>
-                      <span className="text-[9px] font-bold text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-lg">{s.visit_type}</span>
-                    </div>
-                    <div className="flex justify-between items-center mt-1">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{s.tsm}</span>
-                      <span className="text-[9px] font-black text-rose-500">Missed: {Math.max(0, workingDaysTillDate - (s.entryDaysCount || 0))} Days</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Pending Box */}
-            <div className="p-6 bg-amber-50 rounded-3xl border border-amber-100 shadow-sm">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <div className="text-[10px] font-black text-amber-500 uppercase tracking-widest mb-1">Pending OBs</div>
-                  <div className="text-3xl font-black text-amber-700">{dailyStatus.filter(s => !s.submitted).length}</div>
-                </div>
-                <div className="p-2 bg-amber-100 rounded-xl text-amber-600">
-                  <Clock className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                {dailyStatus.filter(s => !s.submitted).map(s => (
-                  <div key={s.contact} className="flex flex-col p-2 bg-white/60 rounded-xl border border-amber-100/50">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[11px] font-black text-slate-700">{s.name}</span>
-                      <span className="text-[9px] font-bold text-amber-600 bg-amber-100 px-2 py-0.5 rounded-lg">PENDING</span>
-                    </div>
-                    <div className="flex justify-between items-center mt-1">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{s.tsm}</span>
-                      <span className="text-[9px] font-black text-rose-500">Missed: {Math.max(0, workingDaysTillDate - (s.entryDaysCount || 0))} Days</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* Absent Box */}
-            <div className="p-6 bg-rose-50 rounded-3xl border border-rose-100 shadow-sm">
-              <div className="flex justify-between items-start mb-4">
-                <div>
-                  <div className="text-[10px] font-black text-rose-500 uppercase tracking-widest mb-1">Absent OBs</div>
-                  <div className="text-3xl font-black text-rose-700">{dailyStatus.filter(s => s.visit_type === 'Absent').length}</div>
-                </div>
-                <div className="p-2 bg-rose-100 rounded-xl text-rose-600">
-                  <AlertCircle className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="max-h-60 overflow-y-auto space-y-2 pr-2 custom-scrollbar">
-                {dailyStatus.filter(s => s.visit_type === 'Absent').map(s => (
-                  <div key={s.contact} className="flex flex-col p-2 bg-white/60 rounded-xl border border-rose-100/50">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[11px] font-black text-slate-700">{s.name}</span>
-                      <span className="text-[9px] font-bold text-rose-600 bg-rose-100 px-2 py-0.5 rounded-lg">ABSENT</span>
-                    </div>
-                    <div className="flex justify-between items-center mt-1">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-tighter">{s.tsm}</span>
-                      <span className="text-[9px] font-black text-rose-500">Missed: {Math.max(0, workingDaysTillDate - (s.entryDaysCount || 0))} Days</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-          
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-[10px]">
-              <thead>
-                <tr className="border-b border-slate-100 text-slate-400 uppercase font-black tracking-widest">
-                  <th className="py-4 px-2">OB Name</th>
-                  <th className="py-4 px-2">TSM</th>
-                  <th className="py-4 px-2 text-center">Status</th>
-                  <th className="py-4 px-2 text-center">Visit Type</th>
-                  <th className="py-4 px-2 text-center">Missed Days</th>
-                  <th className="py-4 px-2 text-right">Last Entry</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-50">
-                {dailyStatus.map(ob => {
-                  const totalWorkingDays = Number(appConfig.total_working_days) || 26;
-                  const missedDays = Math.max(0, totalWorkingDays - (ob.entryDaysCount || 0));
-                  
-                  return (
-                    <tr key={ob.contact} className="hover:bg-slate-50 transition-colors">
-                      <td className="py-4 px-2">
-                        <div className="font-black text-slate-800">{ob.name}</div>
-                        <div className="text-[8px] text-slate-400 font-bold">{ob.contact}</div>
-                      </td>
-                      <td className="py-4 px-2 text-slate-500 font-bold">{ob.tsm}</td>
-                      <td className="py-4 px-2 text-center">
-                        {ob.submitted ? (
-                          ob.visit_type === 'Absent' ? (
-                            <span className="px-2 py-1 rounded-lg bg-rose-50 text-rose-600 font-black text-[8px] uppercase tracking-widest border border-rose-100">Absent</span>
-                          ) : ob.visit_type === 'RR' ? (
-                            <span className="px-2 py-1 rounded-lg bg-amber-400 text-white font-black text-[8px] uppercase tracking-widest shadow-sm">Route Riding</span>
-                          ) : ob.visit_type === 'V' ? (
-                            <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-600 font-black text-[8px] uppercase tracking-widest border border-emerald-100">Van Sales</span>
-                          ) : (
-                            <span className="px-2 py-1 rounded-lg bg-slate-50 text-slate-600 font-black text-[8px] uppercase tracking-widest border border-slate-100">Alone</span>
-                          )
-                        ) : (
-                          <span className="px-2 py-1 rounded-lg bg-slate-100 text-slate-400 font-black text-[8px] uppercase tracking-widest">Pending</span>
-                        )}
-                      </td>
-                      <td className="py-4 px-2 text-center">
-                        {ob.submitted && ob.visit_type !== 'Absent' ? (
-                          <span className="font-black text-slate-600">{ob.visit_type}</span>
-                        ) : '-'}
-                      </td>
-                      <td className="py-4 px-2 text-center">
-                        <span className={`font-black ${missedDays > 3 ? 'text-rose-600' : 'text-slate-600'}`}>
-                          {missedDays}
-                        </span>
-                      </td>
-                      <td className="py-4 px-2 text-right font-mono text-slate-400 font-bold">
-                        {ob.submitted_at ? new Date(ob.submitted_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '-'}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </section>
-
       {/* Date-wise Summary */}
       <section className="bg-white rounded-3xl shadow-xl shadow-slate-200/40 border-none overflow-hidden">
         <div className="bg-emerald-600 text-white px-6 py-4 flex items-center gap-3">
@@ -4568,7 +3781,7 @@ const StatsView = ({
         </div>
         <div className="p-6">
           <div className="space-y-4">
-            {dateWiseSummary.map((day) => (
+            {dateWiseSummary.map((day: any) => (
               <div key={day.date} className="p-4 bg-slate-50 rounded-2xl border border-slate-100 hover:border-emerald-200 transition-all">
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                   <div className="flex items-center gap-4">
@@ -4587,19 +3800,37 @@ const StatsView = ({
                   </div>
                 </div>
                 
-                <div className="mt-4 pt-4 border-t border-slate-200/50">
-                  <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
-                    Date : # of Route Riding OB ({day.rrCount})
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    {day.rrDetails.map((rr, idx) => (
-                      <div key={idx} className="px-3 py-1.5 bg-white border border-slate-100 rounded-xl text-[9px] font-bold text-slate-600 shadow-sm">
-                        <span className="text-amber-600 font-black">{rr.tsm}</span>
-                        <ChevronRight className="w-3 h-3 inline mx-1 text-slate-300" />
-                        <span className="text-slate-800">{rr.name}</span>
-                      </div>
-                    ))}
-                    {day.rrDetails.length === 0 && <span className="text-[9px] text-slate-400 italic">No Route Riding entries</span>}
+                <div className="mt-4 pt-4 border-t border-slate-200/50 space-y-4">
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                      Date : # of Route Riding OB ({day.rrCount})
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {day.rrDetails.map((rr: any, idx: number) => (
+                        <div key={idx} className="px-3 py-1.5 bg-white border border-slate-100 rounded-xl text-[9px] font-bold text-slate-600 shadow-sm">
+                          <span className="text-amber-600 font-black">{rr.tsm}</span>
+                          <ChevronRight className="w-3 h-3 inline mx-1 text-slate-300" />
+                          <span className="text-slate-800">{rr.name}</span>
+                        </div>
+                      ))}
+                      {day.rrDetails.length === 0 && <span className="text-[9px] text-slate-400 italic">No Route Riding entries</span>}
+                    </div>
+                  </div>
+
+                  <div>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2">
+                      Absent OBs ({day.absentCount})
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      {day.absentDetails?.map((abs: any, idx: number) => (
+                        <div key={idx} className="px-3 py-1.5 bg-white border border-slate-100 rounded-xl text-[9px] font-bold text-slate-600 shadow-sm flex items-center gap-2">
+                          <span className="text-rose-600 font-black">{abs.name}</span>
+                          <span className="text-slate-300">|</span>
+                          <span className="text-slate-400">{abs.ob_id}</span>
+                        </div>
+                      ))}
+                      {(!day.absentDetails || day.absentDetails.length === 0) && <span className="text-[9px] text-slate-400 italic">No Absent OBs recorded</span>}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4610,258 +3841,6 @@ const StatsView = ({
               </div>
             )}
           </div>
-        </div>
-      </section>
-
-      {/* TSM Activity Report */}
-      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
-        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex items-center gap-3">
-          <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-            <Logo className="w-4 h-4" />
-          </div>
-          <div>
-            <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">TSM Activity Report</h3>
-            <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Performance overview for the selected month</p>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-6 py-4 whitespace-nowrap">Hierarchy</th>
-                <th className="px-6 py-4 whitespace-nowrap">TSM Name</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">
-                  Active OBs
-                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">With entries this month</p>
-                </th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">
-                  Total Sales
-                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Bags (Cartons + Dozens)</p>
-                </th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">
-                  Avg Productivity
-                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Productive / Visited Shops</p>
-                </th>
-                <th className="px-6 py-4 text-right whitespace-nowrap">
-                  Activity Score
-                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Based on active OBs & prod.</p>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filteredTSMList.map((tsm: string, idx: number) => {
-                const tsmOBs = obAssignments.filter((ob: any) => ob.tsm === tsm && !isTSMEntry(ob.name, ob.tsm));
-                const region = tsmOBs[0]?.region || 'Unassigned';
-                const tsmOrders = history.filter((h: any) => h.tsm === tsm && h.date.startsWith(currentMonth) && !isTSMEntry(h.order_booker, h.tsm));
-                const activeOBs = new Set(tsmOrders.map((h: any) => h.ob_contact)).size;
-                const totalSales = tsmOrders.reduce((sum: number, h: any) => {
-                  const data = h.order_data || {};
-                  const bags = SKUS.reduce((s, sku) => {
-                    const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                    const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                    return s + (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                  }, 0);
-                  return sum + bags;
-                }, 0);
-                const avgProd = tsmOrders.length > 0 ? tsmOrders.reduce((sum: number, h: any) => sum + (h.visited_shops > 0 ? (h.productive_shops / h.visited_shops) * 100 : 0), 0) / tsmOrders.length : 0;
-                const score = (activeOBs / Math.max(1, tsmOBs.length) * 40) + (avgProd * 0.6);
-                
-                return (
-                  <tr key={tsm || `tsm-${idx}`} className="group hover:bg-slate-50/80 transition-all duration-200">
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <p className="text-[8px] font-black text-slate-400 uppercase leading-none">National &gt; {region}</p>
-                      <p className="text-[9px] font-bold text-slate-600 uppercase mt-0.5">{tsmOBs[0]?.town || 'Unassigned'}</p>
-                    </td>
-                    <td className="px-6 py-4 text-xs font-black text-slate-700 group-hover:text-seablue transition-colors whitespace-nowrap">{tsm}</td>
-                    <td className="px-6 py-4 text-center whitespace-nowrap">
-                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-1 rounded-lg">{activeOBs}/{tsmOBs.length}</span>
-                    </td>
-                    <td className="px-6 py-4 text-center text-xs font-black text-seablue font-mono whitespace-nowrap">{totalSales.toFixed(1)}</td>
-                    <td className="px-6 py-4 text-center whitespace-nowrap">
-                      <div className="flex flex-col items-center gap-1 w-24 mx-auto">
-                        <span className="text-xs font-black text-emerald-600">{avgProd.toFixed(0)}%</span>
-                        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full rounded-full bg-emerald-500"
-                            style={{ width: `${Math.min(100, avgProd)}%` }}
-                          />
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 text-right whitespace-nowrap">
-                      <span className={`text-xs font-black px-3 py-1 rounded-full ${score > 70 ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
-                        {score.toFixed(1)}
-                      </span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      {/* OB Submission Status Report */}
-      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
-        <div className="px-6 py-5 border-b border-slate-50 flex justify-between items-center bg-slate-50/30">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-              <ClipboardList className="w-4 h-4" />
-            </div>
-            <div>
-              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">
-                {userRole === 'OB' ? 'My Activity Status' : 'Missing Entries Report'}
-              </h3>
-              <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-0.5">Report based on your assigned hierarchy</p>
-            </div>
-          </div>
-          <div className="flex gap-4 items-center">
-            <div className="flex flex-col items-end">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1">Filter Off Day</span>
-              <select 
-                value={offDayFilter} 
-                onChange={(e) => setOffDayFilter(e.target.value)}
-                className="text-[10px] font-black text-slate-600 bg-white border border-slate-200 rounded-lg px-2 py-1 focus:outline-none focus:ring-1 focus:ring-seablue"
-              >
-                <option value="All">All Days</option>
-                <option value="Sunday">Sunday</option>
-                <option value="Friday">Friday</option>
-              </select>
-            </div>
-            <div className="flex flex-col items-end bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Working Days</span>
-              <span className="text-xs font-black text-seablue">{workingDaysTillDate}</span>
-            </div>
-            <div className="flex flex-col items-end bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-100">
-              <span className="text-[8px] font-black text-slate-400 uppercase tracking-widest">Target Days</span>
-              <span className="text-xs font-black text-slate-600">{totalWorkingDays}</span>
-            </div>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-6 py-4 whitespace-nowrap">Hierarchy</th>
-                <th className="px-6 py-4 whitespace-nowrap">OB Name</th>
-                <th className="px-6 py-4 whitespace-nowrap text-center">Off Day</th>
-                <th className="px-6 py-4 whitespace-nowrap">TSM</th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">
-                  OB Entries
-                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Submitted by OB</p>
-                </th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">
-                  TSM Entries
-                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Submitted by TSM</p>
-                </th>
-                <th className="px-6 py-4 text-center whitespace-nowrap">
-                  Missing
-                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Days without entry</p>
-                </th>
-                <th className="px-6 py-4 whitespace-nowrap">Last Entry</th>
-                <th className="px-6 py-4 text-right whitespace-nowrap">
-                  Efficiency
-                  <p className="text-[8px] text-slate-400 font-medium normal-case tracking-normal mt-0.5">Entries / Working Days</p>
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filteredOBs.map((ob: any, idx: number) => {
-                const obStats = history.filter((h: any) => h.ob_contact === ob.contact && h.date.startsWith(currentMonth));
-                const obEntries = obStats.filter((h: any) => !isTSMEntry(h.order_booker, h.tsm));
-                const tsmEntries = obStats.filter((h: any) => isTSMEntry(h.order_booker, h.tsm));
-                
-                const uniqueEntryDays = new Set(obStats.map((h: any) => h.date)).size;
-                const uniqueEntryDaysTillYesterday = new Set(obStats.filter((h: any) => h.date < today).map((h: any) => h.date)).size;
-                const now = new Date(today);
-                const obWorkingDaysTillDate = getWorkingDays(now.getFullYear(), now.getMonth(), appConfig.holidays || '', dayOfMonth, ob.off_day || 'Sunday');
-                const obWorkingDaysTillYesterday = getWorkingDays(now.getFullYear(), now.getMonth(), appConfig.holidays || '', Math.max(0, dayOfMonth - 1), ob.off_day || 'Sunday');
-                const missing = Math.max(0, obWorkingDaysTillYesterday - uniqueEntryDaysTillYesterday);
-                const lastEntry = obStats.sort((a: any, b: any) => b.date.localeCompare(a.date))[0];
-                const efficiency = obWorkingDaysTillDate > 0 ? (uniqueEntryDays / obWorkingDaysTillDate) * 100 : 0;
-                
-                // Identify improperly uploaded data (e.g., missing targets, 0 sales but productive shops, etc.)
-                const improperEntries = obStats.filter((h: any) => {
-                  const data = h.order_data || {};
-                  let totalSales = 0;
-                  SKUS.forEach((sku: any) => {
-                    const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                    totalSales += (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                  });
-                  return (h.productive_shops > 0 && totalSales === 0) || (h.visited_shops === 0 && h.productive_shops > 0);
-                });
-
-                return (
-                  <React.Fragment key={ob.contact || `ob-${idx}`}>
-                    <tr className="group hover:bg-slate-50/80 transition-all duration-200">
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <p className="text-[8px] font-black text-slate-400 uppercase leading-none">National &gt; {ob.region}</p>
-                        <p className="text-[9px] font-bold text-slate-600 uppercase mt-0.5">{ob.town}</p>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <p className="text-xs font-black text-slate-700 group-hover:text-seablue transition-colors">{ob.name}</p>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{ob.contact}</p>
-                      </td>
-                      <td className="px-6 py-4 text-center whitespace-nowrap">
-                        <span className={`text-[9px] font-black px-2 py-1 rounded-lg uppercase tracking-widest ${
-                          (ob.off_day || 'Sunday') === 'Sunday' ? 'bg-rose-50 text-rose-600' : 'bg-amber-50 text-amber-600'
-                        }`}>
-                          {ob.off_day || 'Sunday'}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.tsm}</td>
-                      <td className="px-6 py-4 text-center">
-                        <span className="text-xs font-black text-emerald-600 bg-emerald-50 px-2 py-1 rounded-lg">{obEntries.length}</span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`text-xs font-black px-2 py-1 rounded-lg ${tsmEntries.length > 0 ? 'bg-indigo-50 text-indigo-600' : 'bg-slate-50 text-slate-300'}`}>
-                          {tsmEntries.length}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-center">
-                        <span className={`text-xs font-black px-2 py-1 rounded-lg ${missing > 0 ? 'bg-rose-50 text-rose-600' : 'bg-slate-50 text-slate-400'}`}>
-                          {missing}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500 font-mono">{lastEntry?.date || 'Never'}</td>
-                      <td className="px-6 py-4 text-right">
-                        <div className="flex flex-col items-end gap-1 w-24 ml-auto">
-                          <span className={`text-[10px] font-black ${efficiency < 80 ? 'text-rose-500' : 'text-emerald-500'}`}>
-                            {efficiency.toFixed(0)}%
-                          </span>
-                          <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden">
-                            <div 
-                              className={`h-full rounded-full ${efficiency < 80 ? 'bg-rose-500' : 'bg-emerald-500'}`}
-                              style={{ width: `${Math.min(100, efficiency)}%` }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                    {improperEntries.length > 0 && (
-                      <tr className="bg-rose-50/30">
-                        <td colSpan={8} className="px-6 py-2">
-                          <div className="flex items-start gap-2">
-                            <AlertTriangle className="w-4 h-4 text-rose-500 mt-0.5 flex-shrink-0" />
-                            <div>
-                              <p className="text-[10px] font-black text-rose-700 uppercase">Improper Data Uploads Detected</p>
-                              <div className="flex flex-wrap gap-2 mt-1">
-                                {improperEntries.map((entry: any, i: number) => (
-                                  <span key={i} className="text-[9px] font-bold text-rose-600 bg-white px-2 py-1 rounded border border-rose-100">
-                                    {entry.date}: {entry.productive_shops > 0 && entry.totalSales === 0 ? 'Productive shops with 0 sales' : 'Productive shops > Visited shops'}
-                                  </span>
-                                ))}
-                              </div>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
         </div>
       </section>
     </div>
@@ -5141,36 +4120,6 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
   const uniqueRegions = useMemo(() => Array.from(new Set(obPerformanceData.map(d => d.region))).sort(), [obPerformanceData]);
   const uniqueTSMs = useMemo(() => Array.from(new Set(obPerformanceData.map(d => d.tsmName))).sort(), [obPerformanceData]);
 
-  const handleShareGlobal = useCallback(() => {
-    const today = getPSTDate();
-    const passed = timeGone?.passed || 0;
-    const total = timeGone?.total || 0;
-    const remaining = timeGone?.remaining || 0;
-    const monthProgress = timeGone?.percentage?.toFixed(1) || '0';
-    
-    let msg = `*Global Sales Summary - ${today}*\n`;
-    msg += `*Month Progress:* ${monthProgress}% (${passed}/${total} Days)\n`;
-    msg += `------------------\n\n`;
-    
-    data.brandWiseStats.forEach((b: any) => {
-      const ach = Number(b.achievement || 0);
-      const tgt = Number(b.target || 0);
-      const perc = tgt > 0 ? (ach / tgt) * 100 : 0;
-      const rpd = remaining > 0 ? (tgt - ach) / remaining : 0;
-      
-      msg += `*${b.name}* (${perc.toFixed(0)}%)\n`;
-      msg += `Ach: ${ach.toFixed(2)} | Tgt: ${tgt.toFixed(2)}\n`;
-      msg += `RPD: ${rpd.toFixed(2)} ${b.unit === 'C' ? 'Ctns' : 'Bags'}\n\n`;
-    });
-    
-    msg += `------------------\n`;
-    msg += `*Total Today Volume:* ${Number(data.totalSales || 0).toFixed(2)}\n`;
-    msg += `*Overall Achievement:* ${Number(data.achievementPerc || 0).toFixed(1)}%\n`;
-    msg += `*Unique OBs Active:* ${data.uniqueOBs || 0}`;
-    
-    window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, '_blank');
-  }, [timeGone, data]);
-
   const handleTSMClick = (tsmName: string) => {
     // We need to set some global filter for command center, but for now we can just navigate
     // A better way is to pass the TSM name to the command center view.
@@ -5197,9 +4146,6 @@ const TSMPerformanceView = ({ history, hierarchy, CATEGORIES, SKUS, userRole, us
           />
           <button onClick={onRefresh} disabled={isSyncing} className="p-2 bg-slate-50 text-slate-600 rounded-xl hover:bg-slate-100 transition-colors disabled:opacity-50">
             <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : ''}`} />
-          </button>
-          <button onClick={handleShareGlobal} className="p-2 bg-emerald-50 text-emerald-600 rounded-xl hover:bg-emerald-100 transition-colors">
-            <Send className="w-5 h-5" />
           </button>
         </div>
       </div>
@@ -5580,8 +4526,8 @@ const ReportsView = ({
       >
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Performance Reports</h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Detailed Analysis & Sales Matrix</p>
+            <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Reports & Analytics</h1>
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em] mt-2">Field Performance Review</p>
           </div>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-2 bg-slate-100/50 px-3 py-1.5 rounded-xl border border-white/60">
@@ -5599,193 +4545,66 @@ const ReportsView = ({
               className="flex items-center gap-2 bg-seablue text-white px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest hover:bg-seablue/90 transition-all shadow-lg shadow-seablue/20 disabled:opacity-50"
             >
               <RefreshCw className={`w-3 h-3 ${isSyncing ? 'animate-spin' : ''}`} />
-              {isSyncing ? 'Syncing...' : 'Sync'}
+              {isSyncing ? 'Syncing...' : 'Sync Data'}
             </button>
+          </div>
+        </div>
+
+        {/* Global Filters */}
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-100">
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Hierarchy Level</label>
+            <select 
+              value={filterLevel} 
+              onChange={e => { setFilterLevel(e.target.value); setFilterValue(''); }}
+              className="w-full input-clean py-2 text-[10px]"
+            >
+              {visibleFilterLevels.map(l => <option key={l} value={l}>{l}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Select {filterLevel}</label>
+            <select 
+              value={filterValue} 
+              onChange={e => setFilterValue(e.target.value)}
+              className="w-full input-clean py-2 text-[10px]"
+              disabled={filterLevel === 'National'}
+            >
+              <option value="">{filterLevel === 'National' ? 'Global' : `All ${filterLevel}s`}</option>
+              {filterLevel === 'OB' ? (
+                filterOptions.OB.map((ob: any) => <option key={ob.contact} value={ob.contact}>{ob.name}</option>)
+              ) : (
+                (filterOptions[filterLevel] || []).map((v: string) => <option key={v} value={v}>{v}</option>)
+              )}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Brand Categories</label>
+            <select 
+              value={topCategoryFilter} 
+              onChange={e => setTopCategoryFilter(e.target.value)}
+              className="w-full input-clean py-2 text-[10px]"
+            >
+              <option value="All">All Categories</option>
+              {Object.keys(BRAND_GROUPS).map(g => <option key={g} value={g}>{g}</option>)}
+            </select>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-[9px] font-black text-slate-400 uppercase tracking-widest ml-1">Specific Brand</label>
+            <select 
+              value={topBrandFilter} 
+              onChange={e => setTopBrandFilter(e.target.value)}
+              className="w-full input-clean py-2 text-[10px]"
+            >
+              <option value="All">All Brands</option>
+              {CATEGORIES.map(b => <option key={b} value={b}>{b}</option>)}
+            </select>
           </div>
         </div>
       </motion.div>
 
       {userRole !== 'OB' && (
         <>
-
-      {/* OB Date-wise Sales Matrix (MTD) */}
-      <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
-        <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-col gap-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-                <LayoutDashboard className="w-4 h-4" />
-              </div>
-              <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">OB Date-wise Sales Matrix (MTD)</h3>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-bold text-slate-400 uppercase">View:</span>
-              <select 
-                className="input-clean text-[10px] py-1 px-2 rounded-lg"
-                value={matrixView}
-                onChange={(e) => setMatrixView(e.target.value)}
-              >
-                <option value="Total">Total Bags/Ctns</option>
-                <optgroup label="Category-wise">
-                  {BRAND_GROUP_NAMES.map(cat => <option key={`cat_${cat}`} value={`cat_${cat}`}>{cat}</option>)}
-                </optgroup>
-                <optgroup label="Brand-wise">
-                  {CATEGORIES.map(cat => <option key={cat} value={cat}>{cat}</option>)}
-                </optgroup>
-              </select>
-            </div>
-          </div>
-
-          {/* Hierarchy Filters */}
-          <div className="flex flex-wrap gap-3 pt-4 border-t border-slate-100">
-            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Category:</span>
-              <select 
-                value={topCategoryFilter} 
-                onChange={(e) => { setTopCategoryFilter(e.target.value); setTopBrandFilter('All'); }}
-                className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
-              >
-                <option value="All">All Categories</option>
-                {BRAND_GROUP_NAMES.map(cat => (
-                  <option key={cat} value={cat}>{cat}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Brand:</span>
-              <select 
-                value={topBrandFilter} 
-                onChange={(e) => setTopBrandFilter(e.target.value)}
-                className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
-              >
-                <option value="All">All Brands</option>
-                {(topCategoryFilter === 'All' ? CATEGORIES : BRAND_GROUPS[topCategoryFilter] || []).map(brand => (
-                  <option key={brand} value={brand}>{brand}</option>
-                ))}
-              </select>
-            </div>
-            <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
-              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Level:</span>
-              <select 
-                value={filterLevel} 
-                onChange={(e) => { setFilterLevel(e.target.value as any); setFilterValue(''); }}
-                className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none"
-              >
-                {visibleFilterLevels.map(level => (
-                  <option key={level} value={level}>{level}</option>
-                ))}
-              </select>
-            </div>
-            {filterLevel !== 'National' && (
-              <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Select:</span>
-                <select 
-                  value={filterValue} 
-                  onChange={(e) => setFilterValue(e.target.value)}
-                  className="bg-transparent text-[10px] font-black text-seablue uppercase focus:outline-none max-w-[150px]"
-                >
-                  <option value="">All {filterLevel}s</option>
-                  {filterLevel === 'OB' ? (
-                    (filterOptions['OB'] as any[]).map(ob => (
-                      <option key={ob.contact} value={ob.contact}>{ob.name} ({ob.contact})</option>
-                    ))
-                  ) : (
-                    (filterOptions[filterLevel as keyof typeof filterOptions] || []).map(opt => (
-                      <option key={opt as string} value={opt as string}>{opt as string}</option>
-                    ))
-                  )}
-                </select>
-              </div>
-            )}
-          </div>
-        </div>
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full text-left min-w-[1200px] border-collapse">
-            <thead>
-              <tr className="bg-slate-50/50 text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-50">
-                <th className="px-4 py-3 sticky left-0 bg-slate-50/90 backdrop-blur-sm z-10 border-r border-slate-100 whitespace-nowrap w-24 sm:w-32 truncate" title="OB Name">OB Name</th>
-                <th className="px-4 py-3 text-center border-r border-slate-100/50 whitespace-nowrap">Hierarchy</th>
-                {Array.from({ length: 31 }, (_, i) => i + 1).map(day => (
-                  <th key={day} className="px-2 py-3 text-center border-r border-slate-100/50 whitespace-nowrap">{day}</th>
-                ))}
-                <th className="px-4 py-3 text-right bg-slate-50/90 backdrop-blur-sm sticky right-0 z-10 border-l border-slate-100 whitespace-nowrap">Total</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50">
-              {filteredOBs.map((ob: any, idx: number) => {
-                const obStats = reportsMonthStats.filter((h: any) => h.ob_contact === ob.contact);
-                let total = 0;
-                return (
-                  <tr key={ob.contact || `ob-matrix-${idx}`} className="group hover:bg-slate-50/80 transition-all">
-                    <td className="px-4 py-3 sticky left-0 bg-white group-hover:bg-slate-50 z-10 text-[10px] font-black text-slate-700 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)] whitespace-nowrap w-24 sm:w-32 truncate" title={ob.name}>{ob.name}</td>
-                    <td className="px-4 py-3 text-center border-r border-slate-100/50 whitespace-nowrap">
-                      <p className="text-[8px] font-black text-slate-400 uppercase leading-none">National &gt; {ob.region || 'N/A'}</p>
-                      <p className="text-[9px] font-black text-seablue uppercase mt-0.5">{ob.town || 'N/A'}</p>
-                    </td>
-                    {Array.from({ length: 31 }, (_, i) => i + 1).map((day, dIdx) => {
-                      const dateStr = `${currentMonth}-${String(day).padStart(2, '0')}`;
-                      const dayOrders = obStats.filter((h: any) => h.date === dateStr);
-                      const daySales = dayOrders.reduce((acc, h) => {
-                        const data = h.order_data || {};
-                        
-                        // Apply Hierarchy Filters (Category/Brand)
-                        let targetSKUs = SKUS;
-                        if (topBrandFilter !== 'All') {
-                          targetSKUs = SKUS.filter(s => s.category === topBrandFilter);
-                        } else if (topCategoryFilter !== 'All') {
-                          const brandsInGroup = BRAND_GROUPS[topCategoryFilter] || [];
-                          targetSKUs = SKUS.filter(s => brandsInGroup.includes(s.category));
-                        }
-
-                        // Further filter based on matrixView
-                        if (matrixView !== 'Total') {
-                          if (matrixView.startsWith('cat_')) {
-                            const categoryName = matrixView.replace('cat_', '');
-                            const brandsInGroup = BRAND_GROUPS[categoryName] || [];
-                            targetSKUs = targetSKUs.filter(s => brandsInGroup.includes(s.category));
-                          } else {
-                            targetSKUs = targetSKUs.filter(s => s.category === matrixView);
-                          }
-                        }
-
-                        targetSKUs.forEach(sku => {
-                          const item = data[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                          const packs = (Number(item.ctn || 0) * sku.unitsPerCarton) + (Number(item.dzn || 0) * sku.unitsPerDozen) + Number(item.pks || 0);
-                          const val = (sku.unitsPerCarton > 0 ? packs / sku.unitsPerCarton : 0);
-                          if (sku.unit === 'Bags') acc.bags += val;
-                          else acc.ctns += val;
-                        });
-                        return acc;
-                      }, { bags: 0, ctns: 0 });
-
-                      total += (daySales.bags + daySales.ctns);
-                      const hasRR = dayOrders.some((h: any) => h.visit_type === 'RR');
-                      const hasNormal = dayOrders.some((h: any) => h.visit_type !== 'RR' && h.visit_type !== 'Absent');
-                      const cellBg = hasRR ? 'bg-yellow-100' : (hasNormal ? 'bg-green-50' : '');
-                      const hasBags = daySales.bags > 0;
-                      const hasCtns = daySales.ctns > 0;
-
-                      return (
-                        <td key={`${ob.contact}-${day}-${dIdx}`} className={`px-1 py-2 text-center text-[9px] border-r border-slate-100/30 font-mono ${cellBg} min-w-[45px]`}>
-                          {hasBags && <p className="font-black text-emerald-600 leading-none">{daySales.bags.toFixed(1)}<span className="text-[7px] opacity-60 ml-0.5">B</span></p>}
-                          {hasCtns && <p className="font-black text-seablue leading-none mt-0.5">{daySales.ctns.toFixed(1)}<span className="text-[7px] opacity-60 ml-0.5">C</span></p>}
-                          {!hasBags && !hasCtns && <span className="text-slate-200">-</span>}
-                        </td>
-                      );
-                    })}
-                    <td className="px-4 py-3 text-right text-[10px] font-black text-emerald-600 sticky right-0 bg-white group-hover:bg-slate-50 z-10 border-l border-slate-100 shadow-[-2px_0_5px_rgba(0,0,0,0.02)]">{total.toFixed(1)}</td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-        <div className="px-6 py-3 bg-slate-50/30 border-t border-slate-50">
-          <p className="text-[8px] text-slate-400 italic font-medium uppercase tracking-wider">
-            * Matrix shows {matrixView === 'Total' ? 'total bags/cartons' : matrixView + ' sales'} per day for the current month. Scroll horizontally to see all dates.
-          </p>
-        </div>
-      </section>
 
       {/* Route Analysis Section */}
       <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
@@ -5942,10 +4761,14 @@ const ReportsView = ({
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                <th className="px-6 py-3">Route Name</th>
-                <th className="px-6 py-3">OB Name</th>
-                <th className="px-6 py-3 text-center">T/V/P</th>
+              <tr className="bg-slate-50 text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 italic">
+                <th className="px-6 py-3 whitespace-nowrap">Region</th>
+                <th className="px-6 py-3 whitespace-nowrap">RSM / NSM</th>
+                <th className="px-6 py-3 whitespace-nowrap">Director</th>
+                <th className="px-6 py-3 whitespace-nowrap">TSM</th>
+                <th className="px-4 py-3 whitespace-nowrap">OB Name</th>
+                <th className="px-4 py-3 whitespace-nowrap">Route Name</th>
+                <th className="px-4 py-3 text-center whitespace-nowrap">T/V/P</th>
                 {CATEGORIES
                   .filter(cat => {
                     if (topBrandFilter !== 'All') return cat === topBrandFilter;
@@ -5955,7 +4778,7 @@ const ReportsView = ({
                     }
                     return true;
                   })
-                  .map(cat => <th key={cat} className="px-6 py-3 text-center">{cat}</th>)}
+                  .map(cat => <th key={cat} className="px-4 py-3 text-center whitespace-nowrap">{cat}</th>)}
                 <th className="px-6 py-3 text-right">Total Ach</th>
               </tr>
             </thead>
@@ -5983,10 +4806,17 @@ const ReportsView = ({
                   });
 
                   return (
-                    <tr key={`${ob.contact}-${route}`} className="hover:bg-slate-50/50 transition-colors">
-                      <td className="px-6 py-4 text-xs font-bold text-slate-700">{route}</td>
-                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500">{ob.name}</td>
-                      <td className="px-6 py-4 text-center text-[10px] font-mono text-slate-600">{t}/{v}/{p}</td>
+                    <tr key={`${ob.contact}-${route}`} className="hover:bg-slate-50/50 transition-colors border-b border-slate-50">
+                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500 whitespace-nowrap">{ob.region}</td>
+                      <td className="px-6 py-4 text-[10px] whitespace-nowrap">
+                        <div className="font-black text-slate-700">{ob.rsm || 'N/A'}</div>
+                        <div className="text-slate-400 font-bold">{ob.nsm || 'N/A'}</div>
+                      </td>
+                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500 whitespace-nowrap">{ob.director || 'N/A'}</td>
+                      <td className="px-6 py-4 text-[10px] font-black text-seablue whitespace-nowrap">{ob.tsm || 'N/A'}</td>
+                      <td className="px-4 py-4 text-[10px] font-bold text-slate-600 whitespace-nowrap">{ob.name}</td>
+                      <td className="px-4 py-4 text-xs font-bold text-slate-900 border-l border-slate-100 whitespace-nowrap">{route}</td>
+                      <td className="px-4 py-4 text-center text-[10px] font-mono text-slate-600 whitespace-nowrap">{t}/{v}/{p}</td>
                       {CATEGORIES
                         .filter(cat => {
                           if (topBrandFilter !== 'All') return cat === topBrandFilter;
@@ -5997,9 +4827,9 @@ const ReportsView = ({
                           return true;
                         })
                         .map(cat => (
-                          <td key={cat} className="px-6 py-4 text-center text-xs font-mono text-slate-500">{brandSales[cat].toFixed(1)}</td>
+                          <td key={cat} className="px-4 py-4 text-center text-xs font-mono text-slate-500 whitespace-nowrap">{brandSales[cat].toFixed(1)}</td>
                         ))}
-                      <td className="px-6 py-4 text-right text-xs font-black text-seablue">
+                      <td className="px-6 py-4 text-right text-xs font-black text-seablue whitespace-nowrap">
                         {Object.entries(brandSales)
                           .filter(([cat]) => {
                             if (topBrandFilter !== 'All') return cat === topBrandFilter;
@@ -6834,6 +5664,8 @@ function App() {
   const [showUserManual, setShowUserManual] = useState(false);
   const [showWelcome, setShowWelcome] = useState(false);
   const [selectedHeadCountDetail, setSelectedHeadCountDetail] = useState<any>(null);
+  const [primaryExpandedBrands, setPrimaryExpandedBrands] = useState<Record<string, boolean>>({});
+  const [stockExpandedBrands, setStockExpandedBrands] = useState<Record<string, boolean>>({});
 
   const handleLogin = (token: string, userData: any) => {
     const email = (userData.email || '').toLowerCase();
@@ -6879,6 +5711,67 @@ function App() {
     setUserEmail(null);
     setUserRegion(null);
     window.location.href = '/';
+  };
+
+  const FloatingQuickMenu = () => {
+    const [isOpen, setIsOpen] = useState(false);
+    
+    // Only show when not in home/intro view
+    if (view === 'home' || view === 'intro' || !userRole) return null;
+
+    const items = APP_TABS.filter(tab => {
+       const email = (userEmail || '').toLowerCase();
+       const isSuperAdmin = SUPER_ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email);
+       if (['admin', 'settings'].includes(tab.id)) return isSuperAdmin;
+       if (!userRole) return false;
+       return tab.roles.map((r: string) => r.toUpperCase()).includes(userRole.toUpperCase()) || isSuperAdmin;
+    }).slice(0, 10);
+
+    return (
+      <div className="fixed bottom-6 right-6 z-[100]">
+        <AnimatePresence>
+          {isOpen && (
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="absolute bottom-20 right-0 bg-white rounded-3xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-slate-100 p-4 min-w-[220px]"
+            >
+              <div className="flex flex-col gap-1">
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-2 px-3">Pulse Core Navigation</p>
+                {items.map(item => (
+                  <button
+                    key={item.id}
+                    onClick={() => { setView(item.id); setIsOpen(false); }}
+                    className={`flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all ${view === item.id ? 'bg-seablue text-white shadow-lg shadow-seablue/20' : 'hover:bg-slate-50 text-slate-600'}`}
+                  >
+                    <item.icon className={`w-4 h-4 ${view === item.id ? 'text-white' : 'text-seablue'}`} />
+                    <span className="text-[10px] font-black uppercase tracking-widest">{item.label}</span>
+                  </button>
+                ))}
+                <div className="h-px bg-slate-100 my-2"></div>
+                <button
+                  onClick={() => { setView('home'); setIsOpen(false); }}
+                  className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 text-slate-600 rounded-xl transition-all group"
+                >
+                  <Home className="w-4 h-4 text-rose-500 group-hover:scale-110 transition-transform" />
+                  <span className="text-[10px] font-black uppercase tracking-widest">Return Home</span>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        <motion.button
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          onClick={() => setIsOpen(!isOpen)}
+          className={`w-14 h-14 rounded-2xl shadow-2xl flex items-center justify-center transition-all border-2 ${isOpen ? 'bg-rose-500 border-rose-400 text-white rotate-45' : 'bg-seablue border-seablue/20 text-white shadow-seablue/30 group'}`}
+        >
+          {isOpen ? <Plus className="w-6 h-6" /> : <Activity className="w-6 h-6 animate-pulse" />}
+        </motion.button>
+      </div>
+    );
   };
 
   const generateWhatsAppMessage = (orderData: any, isFromHistory: boolean = false) => {
@@ -7365,6 +6258,27 @@ function App() {
     });
   }, [allDistributors, selectedStockTSM, selectedStockRegion, selectedStockTown]);
 
+  const currentDistributorStock = useMemo(() => {
+    if (!order.distributor || !stockHistory || !Array.isArray(stockHistory)) return {};
+    
+    const normalizedSelectedDist = (order.distributor || '').trim().toLowerCase();
+    
+    const latestDistStock = [...stockHistory]
+      .filter(s => s && (s.distributor || '').trim().toLowerCase() === normalizedSelectedDist)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0];
+    
+    if (!latestDistStock) return {};
+    try {
+      const stocks = typeof latestDistStock.stocks === 'string' 
+        ? JSON.parse(latestDistStock.stocks) 
+        : (latestDistStock.stocks || {});
+      return stocks;
+    } catch (e) {
+      console.error("Error parsing stock history", e);
+      return {};
+    }
+  }, [order.distributor, stockHistory]);
+
   const stockRegions = useMemo(() => Array.from(new Set(allDistributors.map(d => d.region).filter(Boolean))).sort(), [allDistributors]);
   const stockTowns = useMemo(() => Array.from(new Set(allDistributors.map(d => d.town).filter(Boolean))).sort(), [allDistributors]);
   const stockTsms = useMemo(() => Array.from(new Set(allDistributors.map(d => d.tsm).filter(Boolean))).sort(), [allDistributors]);
@@ -7799,6 +6713,26 @@ function App() {
       setTimeout(() => setMessage(null), 3000);
       return;
     }
+
+    // Stock Warning check
+    const exceedingSKUs = SKUS.filter(sku => {
+      const totalOrdered = calculateTotalCartons(sku.id);
+      const available = Number(currentDistributorStock[sku.id]?.ctn || 0);
+      return available > 0 && totalOrdered > available;
+    });
+
+    if (exceedingSKUs.length > 0) {
+      setConfirmModal({
+        message: `WARNING: The following items exceed available stock: ${exceedingSKUs.map(s => s.name).join(', ')}. Do you still want to proceed?`,
+        onConfirm: () => {
+          setConfirmModal(null);
+          setIsConfirming(true);
+        },
+        onCancel: () => setConfirmModal(null)
+      });
+      return;
+    }
+
     setIsConfirming(true);
   };
 
@@ -8108,6 +7042,29 @@ function App() {
     } finally {
       fetchBackupLogs();
       setIsBackingUp(false);
+      setTimeout(() => setMessage(null), 5000);
+    }
+  };
+
+  const runSystemRecovery = async () => {
+    setIsSyncingGlobal(true);
+    try {
+      const res = await apiFetch('/api/admin/system-recovery', { 
+        method: 'POST',
+        body: JSON.stringify({ month: selectedMonth })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Recovery failed');
+      
+      setMessage({ text: data.message, type: 'success' });
+      // Reload everything
+      fetchAdminData();
+      fetchHistory(true);
+      fetchNationalData();
+    } catch (err: any) {
+      setMessage({ text: 'Recovery Error: ' + err.message, type: 'error' });
+    } finally {
+      setIsSyncingGlobal(false);
       setTimeout(() => setMessage(null), 5000);
     }
   };
@@ -9216,107 +8173,118 @@ function App() {
       };
       reader.readAsDataURL(file);
     }
-  };
+  };    const TargetSettingView = () => {
+      const [subView, setSubView] = useState<'primary' | 'ob'>('primary');
+      const [loading, setLoading] = useState(false);
+      const [targetSearch, setTargetSearch] = useState('');
 
-  
+      // Hierarchy State
+      const [selectedRegion, setSelectedRegion] = useState('');
+      const [selectedTSM, setSelectedTSM] = useState('');
+      const [selectedTown, setSelectedTown] = useState('');
 
-  const TargetSettingView = () => {
-    const [subView, setSubView] = useState<'primary' | 'ob'>('primary');
-    const [loading, setLoading] = useState(false);
-    const [targetSearch, setTargetSearch] = useState('');
+      const fetchViewData = async () => {
+        setLoading(true);
+        try {
+          const [pRes, oRes, obList, dList] = await Promise.all([
+            apiFetch(`/api/targets/primary?month=${selectedMonth}`).then(r => r.json()),
+            apiFetch(`/api/targets/ob?month=${selectedMonth}`).then(r => r.json()),
+            apiFetch('/api/admin/obs').then(r => r.json()),
+            apiFetch('/api/admin/distributors').then(r => r.json())
+          ]);
+          setPrimaryTargets(pRes || []);
+          setObTargets(oRes || []);
+          setObAssignments(obList || []);
+          setDistributors(dList || []);
+        } catch (e) {
+          console.error(e);
+        } finally {
+          setLoading(false);
+        }
+      };
 
-    // Hierarchy State
-    const [selectedRegion, setSelectedRegion] = useState('');
-    const [selectedTSM, setSelectedTSM] = useState('');
-    const [selectedTown, setSelectedTown] = useState('');
+      useEffect(() => {
+        fetchViewData();
+      }, [selectedMonth]);
 
-    const fetchViewData = async () => {
-      setLoading(true);
-      try {
-        const [pRes, oRes, obList, dList] = await Promise.all([
-          apiFetch(`/api/targets/primary?month=${selectedMonth}`).then(r => r.json()),
-          apiFetch(`/api/targets/ob?month=${selectedMonth}`).then(r => r.json()),
-          apiFetch('/api/admin/obs').then(r => r.json()),
-          apiFetch('/api/admin/distributors').then(r => r.json())
-        ]);
-        setPrimaryTargets(pRes || []);
-        setObTargets(oRes || []);
-        // No setObs/setDistributors needed as they use top level?
-        // Wait, I saw distributors state was top level 6691.
-        // I should update those.
-        setObAssignments(obList || []);
-        setDistributors(dList || []);
-      } catch (e) {
-        console.error(e);
-      } finally {
-        setLoading(false);
-      }
-    };
+      const canEdit = ['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes((userRole || '').toUpperCase());
 
-    useEffect(() => {
-      fetchViewData();
-    }, [selectedMonth]);
+      // Use a more unified source for hierarchy filtering
+      const filteredDists = distributors.filter(d => 
+        (!selectedRegion || d.region === selectedRegion) && 
+        (!selectedTSM || d.tsm === selectedTSM) && 
+        (!selectedTown || d.town === selectedTown) &&
+        (!targetSearch || d.name.toLowerCase().includes(targetSearch.toLowerCase()))
+      );
 
-    const canEdit = ['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes((userRole || '').toUpperCase());
+      const filteredObs = obAssignments.filter(ob => 
+        (!selectedRegion || ob.region === selectedRegion) && 
+        (!selectedTSM || ob.tsm === selectedTSM) && 
+        (!selectedTown || ob.town === selectedTown) &&
+        (!targetSearch || ob.name.toLowerCase().includes(targetSearch.toLowerCase()) || ob.contact.includes(targetSearch))
+      );
 
-    const regions = [...new Set(distributors.map(d => d.region))].filter(Boolean).sort() as string[];
-    const tsms = [...new Set(distributors.filter(d => !selectedRegion || d.region === selectedRegion).map(d => d.tsm))].filter(Boolean).sort() as string[];
-    const townsList = [...new Set(distributors.filter(d => (!selectedRegion || d.region === selectedRegion) && (!selectedTSM || d.tsm === selectedTSM)).map(d => d.town))].filter(Boolean).sort() as string[];
-    
-    // Use top level obs and distributors
-    const allObs = obAssignments;
-    const allDists = distributors;
+      const regions = [...new Set(distributors.map(d => d.region))].filter(Boolean).sort() as string[];
+      const tsms = [...new Set(distributors.filter(d => !selectedRegion || d.region === selectedRegion).map(d => d.tsm))].filter(Boolean).sort() as string[];
+      const townsList = [...new Set(distributors.filter(d => (!selectedRegion || d.region === selectedRegion) && (!selectedTSM || d.tsm === selectedTSM)).map(d => d.town))].filter(Boolean).sort() as string[];
+      
+      const distCategories = ["Washing Powder", "DWB", "Match"];
+      const obCategories = ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"];
 
-    const filteredDists = allDists.filter(d => 
-      (!selectedRegion || d.region === selectedRegion) && 
-      (!selectedTSM || d.tsm === selectedTSM) && 
-      (!selectedTown || d.town === selectedTown) &&
-      (!targetSearch || d.name.toLowerCase().includes(targetSearch.toLowerCase()))
-    );
-
-    const filteredObs = allObs.filter(ob => 
-      (!selectedRegion || ob.region === selectedRegion) && 
-      (!selectedTSM || ob.tsm === selectedTSM) && 
-      (!selectedTown || ob.town === selectedTown) &&
-      (!targetSearch || ob.name.toLowerCase().includes(targetSearch.toLowerCase()) || ob.contact.includes(targetSearch))
-    );
-
-    const handleSavePrimary = async (type: 'Town' | 'Distributor', key: string, brand: string, val: string) => {
-      if (!canEdit) return;
-      const num = parseFloat(val) || 0;
-      try {
-        await apiFetch('/api/targets/primary', {
-          method: 'POST',
-          body: JSON.stringify({ month: selectedMonth, targets: [{ target_type: type, target_key: key, brand_name: brand, target_ctn: num }] })
+      // --- Aggregation logic for Totals ---
+      const calculatePrimaryTotals = (dists: any[]) => {
+        const totals: Record<string, number> = {};
+        distCategories.forEach(cat => {
+          totals[cat] = dists.reduce((sum, d) => {
+            const t = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === d.name && pt.brand_name === cat);
+            return sum + (t?.target_ctn || 0);
+          }, 0);
         });
-        setPrimaryTargets(prev => {
-          const filtered = prev.filter(t => !(t.target_type === type && t.target_key === key && t.brand_name === brand));
-          return [...filtered, { target_type: type, target_key: key, brand_name: brand, target_ctn: num, month: selectedMonth }];
-        });
-      } catch (e) { alert("Error saving primary target"); }
-    };
+        return totals;
+      };
 
-    const handleSaveOB = async (contact: string, brand: string, val: string) => {
-      if (!canEdit) return;
-      const num = parseFloat(val) || 0;
-      try {
-        await apiFetch('/api/targets/ob', {
-          method: 'POST',
-          body: JSON.stringify({ month: selectedMonth, targets: [{ ob_contact: contact, brand_name: brand, target_ctn: num }] })
+      const calculateOBTotals = (obs: any[]) => {
+        const totals: Record<string, number> = {};
+        obCategories.forEach(cat => {
+          totals[cat] = obs.reduce((sum, ob) => {
+            const t = obTargets.find(ot => ot.ob_contact === ob.contact && ot.brand_name === cat);
+            return sum + (t?.target_ctn || 0);
+          }, 0);
         });
-        setObTargets(prev => {
-          const filtered = prev.filter(t => !(t.ob_contact === contact && t.brand_name === brand));
-          return [...filtered, { ob_contact: contact, brand_name: brand, target_ctn: num, month: selectedMonth }];
-        });
-      } catch (e) { alert("Error saving OB target"); }
-    };
+        return totals;
+      };
 
-    // Distributor Target Categories: Match, DWB, Washing Powder
-    const distCategories = ["Washing Powder", "DWB", "Match"];
-    // OB Target Categories: Full brand list
-    const obCategories = ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"];
+      const handleSavePrimary = async (type: 'Town' | 'Distributor', key: string, brand: string, val: string) => {
+        if (!canEdit) return;
+        const num = parseFloat(val) || 0;
+        try {
+          await apiFetch('/api/targets/primary', {
+            method: 'POST',
+            body: JSON.stringify({ month: selectedMonth, targets: [{ target_type: type, target_key: key, brand_name: brand, target_ctn: num }] })
+          });
+          setPrimaryTargets(prev => {
+            const filtered = prev.filter(t => !(t.target_type === type && t.target_key === key && t.brand_name === brand));
+            return [...filtered, { target_type: type, target_key: key, brand_name: brand, target_ctn: num, month: selectedMonth }];
+          });
+        } catch (e) { alert("Error saving primary target"); }
+      };
 
-    return (
+      const handleSaveOB = async (contact: string, brand: string, val: string) => {
+        if (!canEdit) return;
+        const num = parseFloat(val) || 0;
+        try {
+          await apiFetch('/api/targets/ob', {
+            method: 'POST',
+            body: JSON.stringify({ month: selectedMonth, targets: [{ ob_contact: contact, brand_name: brand, target_ctn: num }] })
+          });
+          setObTargets(prev => {
+            const filtered = prev.filter(t => !(t.ob_contact === contact && t.brand_name === brand));
+            return [...filtered, { ob_contact: contact, brand_name: brand, target_ctn: num, month: selectedMonth }];
+          });
+        } catch (e) { alert("Error saving OB target"); }
+      };
+
+      return (
       <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
         <header className="flex flex-col gap-6 bg-white p-6 rounded-3xl shadow-xl shadow-slate-200/40 border border-slate-100">
            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -9511,6 +8479,19 @@ function App() {
                     ))
                   )}
                 </tbody>
+                <tfoot className="bg-slate-100/80 sticky bottom-0 border-t-2 border-slate-200">
+                  <tr className="font-black text-slate-800">
+                    <td className="px-6 py-4 text-xs uppercase tracking-tight">TOTALS (Filtered)</td>
+                    {(subView === 'primary' ? distCategories : obCategories).map(cat => {
+                      const totals = subView === 'primary' ? calculatePrimaryTotals(filteredDists) : calculateOBTotals(filteredObs);
+                      return (
+                        <td key={cat} className="px-4 py-4 text-center text-xs font-mono">
+                          {totals[cat]?.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 })}
+                        </td>
+                      );
+                    })}
+                  </tr>
+                </tfoot>
              </table>
              {((subView === 'primary' && filteredDists.length === 0 && townsList.length === 0) || (subView === 'ob' && filteredObs.length === 0)) && (
                <div className="p-20 text-center flex flex-col items-center gap-3">
@@ -9578,7 +8559,7 @@ function App() {
     );
   }
 
-  if (['dashboard', 'command_center', 'insights', 'missing_entries', 'stats', 'geo_map', 'target_setting', 'tsm_performance', 'reports', 'stock_reports'].includes(view || '')) {
+  if (['dashboard', 'command_center', 'insights', 'missing_entries', 'stats', 'geo_map', 'target_setting', 'tsm_performance', 'reports', 'stock_reports', 'mtd_performance'].includes(view || '')) {
     try {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
@@ -9597,7 +8578,7 @@ function App() {
       }
 
       // If management role, show NationalDashboard (Management Dashboard)
-      if (['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM', 'ASM', 'OB'].includes((userRole || '').toUpperCase())) {
+      if (['dashboard', 'command_center', 'insights', 'geo_map', 'missing_entries', 'mtd_performance', 'stats', 'reports'].includes(view) && ['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM', 'ASM', 'OB'].includes((userRole || '').toUpperCase())) {
         return (
           <div className="min-h-screen bg-slate-50 pb-40">
             <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
@@ -9630,6 +8611,7 @@ function App() {
                 selectedMonth={selectedMonth}
                 setSelectedMonth={setSelectedMonth}
                 apiFetch={apiFetch}
+                history={history}
                 backupLogs={backupLogs}
                 stockHistory={stockHistory}
                 missingEntriesReport={missingEntriesReport}
@@ -10476,6 +9458,14 @@ function App() {
                   >
                     <Cloud className={`w-4 h-4 ${isSyncingGlobal ? 'animate-spin' : ''}`} />
                     {isSyncingGlobal ? 'Syncing...' : 'Master Sync Now'}
+                  </button>
+                  <button 
+                    onClick={runSystemRecovery}
+                    disabled={isSyncingGlobal || !appConfig.google_spreadsheet_id}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${isSyncingGlobal ? 'bg-rose-500/50 cursor-not-allowed' : 'bg-rose-500 hover:bg-rose-600 shadow-lg shadow-rose-500/20'}`}
+                  >
+                    <RotateCcw className={`w-4 h-4 ${isSyncingGlobal ? 'animate-spin' : ''}`} />
+                    {isSyncingGlobal ? 'Recovering...' : 'System Recovery'}
                   </button>
                 </div>
               </div>
@@ -11685,164 +10675,165 @@ function App() {
     );
   }
 
-
   if (view === 'help') {
     const helpContent = [
       {
         id: 'entry',
-        title: 'Entry (Daily Sales)',
+        title: 'Entry Form (Secondary Sales)',
         roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'SC', 'RSM', 'NSM', 'Director'],
         color: 'border-emerald-500',
         content: (
           <>
-            <p className="text-sm text-slate-600 mb-2">This is where you enter your daily sales data.</p>
+            <p className="text-sm text-slate-600 mb-2">The primary portal for Order Bookers to submit daily secondary sales from the field.</p>
             <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>Date & Location:</strong> Select the date, your town, and distributor.</li>
-              <li><strong>Shops Data:</strong> Enter Total Shops, Visited Shops, and Productive Shops.</li>
-              <li><strong>Sales Quantities:</strong> For each product, enter the number of Cartons (Ctn), Dozens (Dzn), or Packs (Pks) sold.</li>
-              <li><strong>Save as Draft:</strong> If you don't have internet, click "Save as Draft". It will be saved on your phone.</li>
-              <li><strong>Submit:</strong> When you have internet, click "Submit" to send the data to the server.</li>
+              <li><strong>Offline Capability:</strong> Use "Save as Draft" if you lose internet. Drafts sync automatically once reconnected.</li>
+              <li><strong>Location Validation:</strong> Capture GPS coordinates for every submission (National policy).</li>
+              <li><strong>Dzn/Ctn Logic:</strong> System handles conversions automatically based on defined SKU master.</li>
+              <li><strong>Stock Requirement:</strong> Capture current stock at the shop and any received primary stock to maintain accuracy.</li>
             </ul>
           </>
         )
       },
       {
         id: 'dashboard',
-        title: 'Dashboard',
+        title: 'Dashboard (Executive Summary)',
         roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'],
         color: 'border-seablue',
         content: (
           <>
-            <p className="text-sm text-slate-600 mb-2">View your performance and sales statistics at a glance.</p>
+            <p className="text-sm text-slate-600 mb-2">Real-time performance at a glance. Used for daily morning reviews.</p>
             <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>Overview:</strong> Shows a summary of your sales, targets, and achievements.</li>
-              <li><strong>KPIs:</strong> Track key metrics like Productivity %, Drop Size, and Avg Sales.</li>
-              <li><strong>Filters:</strong> Use the breadcrumb navigation to drill down from National to Region, TSM, Town, and OB levels (depending on your role).</li>
+              <li><strong>MTD Achievement:</strong> Track Monthly Target achievement vs current date requirement (RPD).</li>
+              <li><strong>Tonnage Tracking:</strong> View gross weight (Metric Tons) of secondary sales per brand category.</li>
+              <li><strong>Time Gone %:</strong> Understand how much of the working month has passed vs current achievement.</li>
+              <li><strong>Critical Alerts:</strong> Automatic flags for zero-visit routes or low-productivity OBs.</li>
             </ul>
           </>
         )
       },
       {
         id: 'command_center',
-        title: 'SalesPulse',
+        title: 'Command Center (SalesPulse)',
         roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'],
         color: 'border-indigo-500',
         content: (
           <>
-            <p className="text-sm text-slate-600 mb-2">Detailed performance tracking for TSMs and above.</p>
+            <p className="text-sm text-slate-600 mb-2">The operational heart of the system. In-depth OB-level analysis.</p>
             <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>OB Performance:</strong> View detailed metrics for each Order Booker under your supervision.</li>
-              <li><strong>Target vs Achievement:</strong> Compare actual sales against set targets for different brands.</li>
-              <li><strong>Productivity:</strong> Monitor visited vs productive shops for your team.</li>
+              <li><strong>Drill-Down:</strong> Click rows to navigate from National → Region → TSM → OB.</li>
+              <li><strong>Visual Alerts:</strong> Color-coded progress bars indicate achievement health (Red &lt; 80%, Green &gt; 100%).</li>
+              <li><strong>Export:</strong> Direct CSV export for pivot table analysis.</li>
             </ul>
           </>
         )
       },
       {
         id: 'tsm_performance',
-        title: 'Target vs Achievement',
-        roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC'],
+        title: 'Performance (Field Rankings)',
+        roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'],
         color: 'border-violet-500',
         content: (
           <>
-            <p className="text-sm text-slate-600 mb-2">High-level overview of TSM performance for regional and national managers.</p>
+            <p className="text-sm text-slate-600 mb-2">Rankings of TSMs and ASMs based on their team's secondary performance.</p>
             <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>Summary Table:</strong> Compare all TSMs based on achievement %, productivity, and active OBs.</li>
-              <li><strong>Drill Down:</strong> Click on any TSM row to open their specific SalesPulse view.</li>
-              <li><strong>Sorting:</strong> Click column headers to sort by different metrics (e.g., lowest achievement to highest).</li>
+              <li><strong>Target Distribution:</strong> Track which TSMs are overachieving on specific high-margin categories (e.g. Vero/Match).</li>
+              <li><strong>OB Active Ratio:</strong> Monitoring how many OBs are submitting sales vs assigned targets.</li>
+              <li><strong>Projected Sales:</strong> AI-driven forecast of total month-end sales based on current velocity.</li>
             </ul>
           </>
         )
       },
       {
         id: 'insights',
-        title: 'Insights',
+        title: 'Insights (BI & Trends)',
         roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'],
         color: 'border-fuchsia-500',
         content: (
           <>
-            <p className="text-sm text-slate-600 mb-2">Advanced analytics and trends.</p>
+            <p className="text-sm text-slate-600 mb-2">Automated business intelligence for multi-month trend analysis.</p>
             <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>Route Analysis:</strong> Analyze performance by specific routes over the last 3 months.</li>
-              <li><strong>Brand Trends:</strong> View sales trends for different brands and categories.</li>
-              <li><strong>WhatsApp Reporting:</strong> Generate formatted text reports to easily share via WhatsApp.</li>
-            </ul>
-          </>
-        )
-      },
-      {
-        id: 'stats',
-        title: 'Stats',
-        roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'],
-        color: 'border-pink-500',
-        content: (
-          <>
-            <p className="text-sm text-slate-600 mb-2">Detailed statistical breakdown of sales data.</p>
-            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>Category Breakdown:</strong> See sales distribution across different product categories.</li>
-              <li><strong>SKU Performance:</strong> Identify top-selling and low-performing SKUs.</li>
-            </ul>
-          </>
-        )
-      },
-      {
-        id: 'reports',
-        title: 'Reports',
-        roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'],
-        color: 'border-rose-500',
-        content: (
-          <>
-            <p className="text-sm text-slate-600 mb-2">Comprehensive tabular reports for deep data analysis.</p>
-            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>Data Tables:</strong> View raw data organized by date, region, TSM, and OB.</li>
-              <li><strong>Export:</strong> Use these tables to verify data accuracy and track daily submissions.</li>
-            </ul>
-          </>
-        )
-      },
-      {
-        id: 'history',
-        title: 'History',
-        roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'],
-        color: 'border-amber-500',
-        content: (
-          <>
-            <p className="text-sm text-slate-600 mb-2">View your previously submitted orders and drafts.</p>
-            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>Drafts:</strong> Orders saved without internet appear here. They will automatically sync when you connect to the internet.</li>
-              <li><strong>Submitted Orders:</strong> View all orders you have successfully sent.</li>
-              <li><strong>Filters:</strong> Use the quick filters (Today, Yesterday, This Week) to find specific entries.</li>
-              <li><strong>Delete:</strong> You can delete drafts if you made a mistake.</li>
+              <li><strong>Geospatial Map:</strong> Heatmap of sales across towns with circle markers indicating volume.</li>
+              <li><strong>WhatsApp Reports:</strong> Instant one-click reporting tailored for company communication groups.</li>
+              <li><strong>Growth Trends:</strong> Compare current month performance against historical averages.</li>
             </ul>
           </>
         )
       },
       {
         id: 'stocks',
-        title: 'Stocks',
+        title: 'Stocks (Secondary Inventory)',
         roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'],
         color: 'border-orange-500',
         content: (
           <>
-            <p className="text-sm text-slate-600 mb-2">Manage and track distributor stock levels.</p>
+            <p className="text-sm text-slate-600 mb-2">Mandatory reporting for distributor inventory levels to prevent pipeline stock-outs.</p>
             <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>Stock Entry:</strong> Enter current stock levels (in Cartons) for each SKU at the distributor level.</li>
-              <li><strong>Submission:</strong> Submit stock data to keep the central system updated.</li>
+              <li><strong>Stock Days:</strong> Calculated automatically based on current secondary velocity.</li>
+              <li><strong>Gap Analysis:</strong> Dashboard alerts managers when stock levels fall below critical safety thresholds.</li>
+              <li><strong>Distributor Data:</strong> All registered distributors must submit stock balances thrice weekly.</li>
             </ul>
           </>
         )
       },
       {
-        id: 'admin',
-        title: 'Admin',
-        roles: ['Super Admin', 'Admin'],
+        id: 'history',
+        title: 'History (Audit Trail)',
+        roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'],
+        color: 'border-amber-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">Review, edit, or remove past submissions during the allowed grace period.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Admin Override:</strong> Admins can modify any record; OBs can only modify during open windows.</li>
+              <li><strong>Search Filter:</strong> Quick search by OB Name, Distributor, or Route.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'primary_orders',
+        title: 'Primary (Factory to Dist)',
+        roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'],
+        color: 'border-blue-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">Track factory orders and billing status for all distributors.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Order Cycle:</strong> Monitor from "Submitted" to "Dispatched" to "Received".</li>
+              <li><strong>Billing Summary:</strong> View total payment values per distributor for the current cycle.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'reports',
+        title: 'Performance Reports (Hierarchy)',
+        roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'],
+        color: 'border-cyan-500',
+        content: (
+          <>
+            <p className="text-sm text-slate-600 mb-2">Comprehensive data extraction and managerial hierarchy analysis for all secondary sales.</p>
+            <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
+              <li><strong>Export Tool:</strong> Download the MTD report in CSV format for presentation and offline review.</li>
+              <li><strong>Managerial Summary:</strong> High-level cards showing Director, NSM, and RSM achievement percentages.</li>
+              <li><strong>Sales Matrix:</strong> Date-wise grid showing exactly which OB worked on which date and volume sold.</li>
+              <li><strong>Alert Detail:</strong> Deep-dive into specific productivity or inactivity issues flagged by the system.</li>
+            </ul>
+          </>
+        )
+      },
+      {
+        id: 'settings',
+        title: 'System Settings & Integration',
+        roles: ['Super Admin'],
         color: 'border-slate-800',
         content: (
           <>
-            <p className="text-sm text-slate-600 mb-2">System configuration and data management.</p>
+            <p className="text-sm text-slate-600 mb-2">Configure core system protocols and external integrations.</p>
             <ul className="list-disc list-inside text-sm text-slate-600 space-y-1">
-              <li><strong>Data Sync:</strong> Manually trigger sync with Google Sheets.</li>
-              <li><strong>Configuration:</strong> Manage users, hierarchy, targets, and product configurations.</li>
+              <li><strong>Master Sync:</strong> Trigger manual pull from Google Sheets to refresh all hierarchy and sales data.</li>
+              <li><strong>Credentials:</strong> Manage Google API keys and Spreadsheet IDs.</li>
+              <li><strong>User Management:</strong> Add or remove system users and assign roles.</li>
             </ul>
           </>
         )
@@ -11906,14 +10897,10 @@ function App() {
     };
 
     const handleSubmitPrimaryOrders = async () => {
-      if (!selectedPrimaryTSM && userRole !== 'TSM' && userRole !== 'TSM Entry') {
-          // If no TSM selected and not a TSM, use current user name but confirm
-      }
       setIsSubmittingPrimary(true);
       try {
         const promises = Object.entries(primaryOrdersEntry).map(([distributor, items]) => {
           const distInfo = allDistributors.find(d => d.distributor === distributor);
-          // Calculate tonnage and gross for the submission if needed (optional since server does it too)
           return apiFetch('/api/primary-orders', {
             method: 'POST',
             body: JSON.stringify({
@@ -11943,41 +10930,36 @@ function App() {
       }
     };
 
-    const handleUpdatePrimaryOrder = async (orderId: number, data: any) => {
-      try {
-        const res = await apiFetch(`/api/primary-orders/${orderId}`, {
-          method: 'PATCH',
-          body: JSON.stringify(data)
-        });
-        if (res.ok) {
-          setMessage({ text: 'Order updated successfully!', type: 'success' });
-          fetchPrimaryOrders();
-          syncGoogle();
-        }
-      } catch (err) {
-        console.error(err);
-        setMessage({ text: 'Failed to update order', type: 'error' });
-      } finally {
-        setTimeout(() => setMessage(null), 3000);
-      }
-    };
-
     const primaryFilteredDists = allDistributors.filter(d => {
       if (selectedPrimaryRegion && d.region !== selectedPrimaryRegion) return false;
       if (selectedPrimaryTSM && d.tsm !== selectedPrimaryTSM) return false;
       if (selectedPrimaryTown && d.town !== selectedPrimaryTown) return false;
       if (primarySearchQuery && !d.distributor.toLowerCase().includes(primarySearchQuery.toLowerCase()) && !d.town.toLowerCase().includes(primarySearchQuery.toLowerCase())) return false;
       return true;
-    });
+    }).sort((a, b) => (a.town || '').localeCompare(b.town || ''));
+
+    const stockCategories = ["Washing Powder", "DWB", "Match"];
+    const overallStockTotals = stockCategories.reduce((acc, cat) => {
+      let ctn = 0, tons = 0, gross = 0;
+      primaryFilteredDists.forEach(d => {
+        const items = primaryOrdersEntry[d.distributor] || {};
+        SKUS.filter(s => s.category === cat).forEach(s => {
+          const qty = items[s.id] || 0;
+          ctn += qty;
+          tons += (qty * (s.weight_gm_per_pack * (s.unitsPerCarton || 0))) / 1000000;
+          if (cat === 'Match') gross += qty * (s.grossPerCarton || 0);
+        });
+      });
+      acc[cat] = { ctn, tons, gross };
+      return acc;
+    }, {} as Record<string, { ctn: number, tons: number, gross: number }>);
 
     const primaryRegions = [...new Set(allDistributors.map(d => d.region))].filter(Boolean).sort();
-    
     const primaryTsms = (() => {
       let list = allDistributors;
       if (selectedPrimaryRegion) list = list.filter(d => d.region === selectedPrimaryRegion);
       return [...new Set(list.map(d => d.tsm))].filter(Boolean).sort();
     })();
-
     const primaryTowns = (() => {
       let list = allDistributors;
       if (selectedPrimaryRegion) list = list.filter(d => d.region === selectedPrimaryRegion);
@@ -11985,35 +10967,35 @@ function App() {
       return [...new Set(list.map(d => d.town))].filter(Boolean).sort();
     })();
 
+    const [primaryExpandedBrands, setPrimaryExpandedBrands] = useState<Record<string, boolean>>({});
+
     const categorySummaries = CATEGORIES.map(cat => {
+      const catSkus = SKUS.filter(s => s.category === cat);
       let totalQty = 0;
       let totalVal = 0;
       let totalTons = 0;
       let totalGross = 0;
-      const catSkus = SKUS.filter(s => s.category === cat);
       primaryFilteredDists.forEach(d => {
         const items = primaryOrdersEntry[d.distributor] || {};
         catSkus.forEach(s => {
           const qty = items[s.id] || 0;
           totalQty += qty;
           totalVal += qty * (s.pricePerCarton || 0);
-          if (cat === 'DWB' || ['Kite Glow', 'Burq Action', 'Vero'].includes(cat)) {
-            totalTons += (qty * (s.weight_gm_per_pack * (s.unitsPerCarton || 0))) / 1000000;
-          }
-          if (cat === 'Match') {
-            totalGross += qty * (s.grossPerCarton || 0);
-          }
+          if (cat === 'Match') totalGross += qty * (s.grossPerCarton || 0);
+          else totalTons += (qty * (s.weight_gm_per_pack * (s.unitsPerCarton || 0))) / 1000000;
         });
       });
       return { category: cat, qty: totalQty, val: totalVal, tons: totalTons, gross: totalGross };
     });
+
+    const hierarchyTowns = [...new Set(primaryFilteredDists.map(d => d.town))].filter(Boolean).sort();
 
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
         <RegionViewLabel userEmail={userEmail} />
         
-        <div className="p-4 space-y-6 max-w-[1600px] mx-auto">
+        <div className="p-4 space-y-6 max-w-[1700px] mx-auto">
           <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -12022,66 +11004,20 @@ function App() {
             <div>
               <h1 className="text-2xl font-black text-seablue uppercase tracking-tight leading-none">Primary Logistics</h1>
               <div className="flex items-center gap-2 mt-2">
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Matrix & Fulfillment Tracking</p>
-                <div className="flex bg-slate-100 p-1 rounded-lg">
-                  <button 
-                    onClick={() => setPrimarySubView('matrix')}
-                    className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primarySubView === 'matrix' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}
-                  >
-                    Entry Matrix
-                  </button>
-                  <button 
-                    onClick={() => setPrimarySubView('history')}
-                    className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primarySubView === 'history' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}
-                  >
-                    Order History
-                  </button>
-                  <button 
-                    onClick={() => setPrimarySubView('analysis')}
-                    className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primarySubView === 'analysis' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}
-                  >
-                    Analysis Report
-                  </button>
+                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.2em]">Replenishment Matrix</p>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                  <button onClick={() => setPrimarySubView('matrix')} className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primarySubView === 'matrix' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}>Matrix</button>
+                  <button onClick={() => setPrimarySubView('history')} className={`px-3 py-1 text-[9px] font-black uppercase rounded-md transition-all ${primarySubView === 'history' ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}>History</button>
                 </div>
               </div>
             </div>
             
-            <div className="flex flex-wrap items-center gap-2">
-              <button 
-                onClick={() => {
-                  const headers = ['Region', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Total Val', 'Tonnage', 'Gross (Match)'];
-                  const rows = primaryFilteredDists.map(d => {
-                    const items = primaryOrdersEntry[d.distributor] || {};
-                    let totalVal = 0;
-                    const itemsArr = SKUS.map(sku => {
-                        const qty = items[sku.id] || 0;
-                        totalVal += qty * (sku.pricePerCarton || 0);
-                        return qty;
-                    });
-                    const tonnage = calculateTonnage(items, SKUS);
-                    const gross = calculateGross(items, SKUS);
-                    return [ d.region || '', d.tsm, d.town, d.distributor, ...itemsArr, totalVal, tonnage.toFixed(3), gross ];
-                  });
-                  const csv = Papa.unparse({ fields: headers, data: rows });
-                  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                  const url = URL.createObjectURL(blob);
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.setAttribute('download', `Primary_Matrix_${getPSTDate()}.csv`);
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
-                }}
-                className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200/50 rounded-xl"
-              >
-                <Download className="w-3.5 h-3.5" />
-                Export CSV
-              </button>
+            <div className="flex items-center gap-3">
               {primarySubView === 'matrix' && (
                 <button 
                   onClick={handleSubmitPrimaryOrders}
                   disabled={isSubmittingPrimary || Object.keys(primaryOrdersEntry).length === 0}
-                  className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 shadow-lg shadow-seablue/20 rounded-xl"
+                  className="btn-seablue px-6 py-2.5 text-[10px] flex items-center gap-2 shadow-lg shadow-seablue/30 rounded-xl"
                 >
                   {isSubmittingPrimary ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                   Finalize Submission
@@ -12092,247 +11028,105 @@ function App() {
           
           <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
              {categorySummaries.map(summary => (
-               <div key={summary.category} className="card-clean p-4 bg-white border border-slate-100 shadow-sm flex flex-col justify-between">
-                 <div className="flex items-center gap-2 mb-2">
-                   <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[summary.category] }}></div>
-                   <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none">{summary.category}</h3>
-                 </div>
-                 <div className="space-y-1">
-                   <p className="text-sm font-black text-slate-800">{summary.qty.toLocaleString()} <span className="text-[9px] text-slate-400">Ctns</span></p>
-                   {summary.tons > 0 && <p className="text-[10px] font-bold text-emerald-600 leading-none">{summary.tons.toFixed(3)} TO</p>}
-                   {summary.gross > 0 && <p className="text-[10px] font-bold text-indigo-600 leading-none">{summary.gross} GR</p>}
-                 </div>
-               </div>
+                <div key={summary.category} className="card-clean p-4 bg-white border border-slate-100 shadow-sm flex flex-col justify-between group">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[summary.category] }}></div>
+                      <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{summary.category}</h3>
+                    </div>
+                    <button onClick={() => setPrimaryExpandedBrands(prev => ({ ...prev, [summary.category]: prev[summary.category] === false }))} className={`p-1 rounded-md transition-all ${primaryExpandedBrands[summary.category] !== false ? 'bg-seablue/10 text-seablue' : 'text-slate-300'}`}>
+                      <Layers className="w-3 h-3" />
+                    </button>
+                  </div>
+                  <div>
+                    <p className="text-sm font-black text-slate-800">{summary.qty.toLocaleString()} <span className="text-[10px] text-slate-400">{summary.category === 'Washing Powder' ? 'Bags' : 'Ctns'}</span></p>
+                    {summary.tons > 0 && <p className="text-[10px] font-bold text-emerald-600">{summary.tons.toFixed(3)} TO</p>}
+                    {summary.gross > 0 && <p className="text-[10px] font-bold text-indigo-600">{summary.gross} GR</p>}
+                  </div>
+                </div>
              ))}
           </div>
 
           {primarySubView === 'matrix' ? (
             <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
               <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-wrap items-center gap-4">
-                <div className="flex items-center gap-3 mr-auto">
-                  <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
-                    <LayoutDashboard className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">Order Entry Matrix</h3>
-                    <p className="text-[9px] font-bold text-slate-400 mt-1">Populate replenishment orders for all towns</p>
-                  </div>
+                 <div className="relative group">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-300 group-focus-within:text-seablue" />
+                  <input type="text" placeholder="Search Town..." value={primarySearchQuery} onChange={e => setPrimarySearchQuery(e.target.value)} className="input-clean pl-10 pr-4 py-2 text-[10px] w-64 rounded-xl border-slate-100" />
                 </div>
-
-                <div className="relative group">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-300 group-focus-within:text-seablue transition-colors" />
-                  <input 
-                    type="text"
-                    placeholder="Search Town or Distributor..."
-                    value={primarySearchQuery}
-                    onChange={e => setPrimarySearchQuery(e.target.value)}
-                    className="input-clean pl-10 pr-4 py-2 text-[10px] w-64 rounded-xl border-slate-100"
-                  />
-                </div>
-                
-                <div className="flex flex-wrap gap-2">
-                  <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-tighter">Date:</span>
-                    <input 
-                      type="date"
-                      value={primaryEntryDate}
-                      onChange={(e) => {
-                        const selectedDate = e.target.value;
-                        const dateObj = new Date(selectedDate);
-                        const today = new Date();
-                        // Special rule for April: only allow previous dates (or today)
-                        if (dateObj.getMonth() === 3 && dateObj.getFullYear() === 2026) { // Month is 0-indexed, 3=April
-                          const todayDate = getPSTDate();
-                          if (selectedDate > todayDate) {
-                            setMessage({ text: 'April permits only past or current dates', type: 'error' });
-                            return;
-                          }
-                        }
-                        setPrimaryEntryDate(selectedDate);
-                      }}
-                      className="text-[10px] font-black text-seablue outline-none bg-transparent"
-                    />
-                  </div>
-                  <select 
-                    value={selectedPrimaryRegion} 
-                    onChange={e => {
-                      setSelectedPrimaryRegion(e.target.value);
-                      setSelectedPrimaryTSM('');
-                      setSelectedPrimaryTown('');
-                    }}
-                    className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl border-slate-100"
-                  >
-                    <option value="">All Regions</option>
-                    {primaryRegions.map(r => <option key={r} value={r}>{r}</option>)}
-                  </select>
-                  <select 
-                    value={selectedPrimaryTSM} 
-                    onChange={e => {
-                      setSelectedPrimaryTSM(e.target.value);
-                      setSelectedPrimaryTown('');
-                    }}
-                    className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl border-slate-100"
-                  >
-                    <option value="">All TSMs</option>
-                    {primaryTsms.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
-                  <select 
-                    value={selectedPrimaryTown} 
-                    onChange={e => setSelectedPrimaryTown(e.target.value)}
-                    className="input-clean py-1.5 text-[10px] min-w-[120px] rounded-xl border-slate-100"
-                  >
-                    <option value="">All Towns</option>
-                    {primaryTowns.map(t => <option key={t} value={t}>{t}</option>)}
-                  </select>
+                <div className="flex gap-2">
+                  <select value={selectedPrimaryRegion} onChange={e => setSelectedPrimaryRegion(e.target.value)} className="input-clean py-1.5 text-[10px] rounded-xl"><option value="">Regions</option>{primaryRegions.map(r => <option key={r} value={r}>{r}</option>)}</select>
+                  <select value={selectedPrimaryTSM} onChange={e => setSelectedPrimaryTSM(e.target.value)} className="input-clean py-1.5 text-[10px] rounded-xl"><option value="">TSMs</option>{primaryTsms.map(t => <option key={t} value={t}>{t}</option>)}</select>
                 </div>
               </div>
 
-              <div className="md:hidden space-y-4 p-4">
-                {primaryFilteredDists.map((dist, idx) => {
-                  const items = primaryOrdersEntry[dist.distributor] || {};
-                  let subVal = 0;
-                  SKUS.forEach(s => { subVal += (items[s.id] || 0) * (s.pricePerCarton || 0); });
-                  const subTons = calculateTonnage(items, SKUS);
-                  const subGross = calculateGross(items, SKUS);
-
-                  return (
-                    <div key={`${dist.distributor}-${idx}`} className="card-clean p-4 border border-slate-100 shadow-sm bg-white relative overflow-hidden group">
-                      <div className="flex justify-between items-start mb-4">
-                        <div className="flex-1">
-                          <h3 className="text-sm font-black text-seablue uppercase tracking-tight leading-none truncate pr-2">{dist.distributor}</h3>
-                          <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-2">
-                             <span className="text-[9px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md font-bold uppercase tracking-tighter">{dist.town}</span>
-                             <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{dist.tsm}</span>
-                          </div>
-                        </div>
-                        <div className="text-right flex flex-col items-end">
-                           {subTons > 0 && <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-md leading-none mb-1">{subTons.toFixed(3)} TO</span>}
-                           {subGross > 0 && <span className="text-[10px] font-black text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md leading-none">{subGross} GR</span>}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-x-3 gap-y-4 mb-4">
-                        {SKUS.map(sku => (
-                          <div key={sku.id} className="relative">
-                            <div className="flex items-center gap-1.5 mb-1">
-                               <div className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[sku.category] }}></div>
-                               <span className="text-[8px] font-bold text-slate-400 uppercase truncate pr-1">{sku.name}</span>
-                            </div>
-                            <input 
-                              type="number"
-                              min="0"
-                              value={primaryOrdersEntry[dist.distributor]?.[sku.id] || ''}
-                              onChange={(e) => handlePrimaryChange(dist.distributor, sku.id, parseInt(e.target.value) || 0)}
-                              className="w-full bg-slate-50/50 border border-slate-100 rounded-lg px-2 py-2 text-[11px] font-black text-seablue focus:bg-white focus:ring-2 focus:ring-seablue/10 transition-all outline-none"
-                              placeholder="0"
-                            />
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="relative group">
-                         <FileText className="absolute left-3 top-2.5 w-3 h-3 text-slate-300" />
-                         <textarea 
-                            value={primaryRemarks[dist.distributor] || ''}
-                            onChange={(e) => handleRemarksChange(dist.distributor, e.target.value)}
-                            rows={1}
-                            className="w-full bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 py-2 text-[10px] font-medium text-slate-600 focus:bg-white transition-all outline-none"
-                            placeholder="Order remarks or special reasons..."
-                         />
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="hidden md:block overflow-x-auto scrollbar-thin max-h-[65vh]">
-                <table className="w-full text-left border-collapse min-w-[1500px]">
+              <div className="overflow-x-auto scrollbar-thin max-h-[70vh]">
+                <table className="w-full text-left border-collapse min-w-[1200px]">
                   <thead className="sticky top-0 z-20">
-                    <tr className="bg-slate-50/95 backdrop-blur-sm text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                      <th className="px-6 py-4 sticky left-0 bg-slate-50/95 z-10 border-r border-slate-100">Distributor / Town</th>
-                      {SKUS.map(sku => (
+                    <tr className="bg-slate-50/95 backdrop-blur-sm text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                      <th className="px-6 py-4 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Hierarchy</th>
+                      {SKUS.filter(s => primaryExpandedBrands[s.category] !== false).map(sku => (
                         <th key={sku.id} className="px-3 py-4 text-center border-r border-slate-100/50">
-                          <div className="flex flex-col items-center gap-1">
-                            <div className="w-1.5 h-1.5 rounded-full mb-1" style={{ backgroundColor: CATEGORY_COLORS[sku.category] }}></div>
-                            <span className="leading-tight whitespace-nowrap">{sku.name}</span>
-                          </div>
+                           <span className="text-indigo-500 text-[7px] block mb-1">{sku.category === 'Washing Powder' ? 'WP' : sku.category}</span>
+                           {sku.name}
                         </th>
                       ))}
-                      <th className="px-6 py-4 text-center border-r border-slate-100 shadow-[-2px_0_5px_rgba(0,0,0,0.02)]">Remarks</th>
-                      <th className="px-6 py-4 text-right bg-slate-50">Summary</th>
+                      <th className="px-6 py-4 text-right">Summary</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-50">
-                    {primaryFilteredDists.map((dist, idx) => {
-                      const items = primaryOrdersEntry[dist.distributor] || {};
-                      let subVal = 0;
-                      SKUS.forEach(s => { subVal += (items[s.id] || 0) * (s.pricePerCarton || 0); });
-                      const subTons = calculateTonnage(items, SKUS);
-                      const subGross = calculateGross(items, SKUS);
-
+                    {hierarchyTowns.map(town => {
+                      const townDists = primaryFilteredDists.filter(d => d.town === town);
                       return (
-                        <tr key={`${dist.distributor}-${idx}`} className="group hover:bg-slate-50/80 transition-all">
-                          <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_10px_rgba(0,0,0,0.03)]">
-                            <p className="text-xs font-black text-slate-700 leading-none truncate max-w-[200px]">{dist.distributor}</p>
-                            <div className="flex items-center gap-2 mt-2">
-                              <span className="text-[9px] px-2 py-0.5 bg-slate-100 text-slate-500 rounded-md font-bold uppercase tracking-tighter">{dist.town}</span>
-                              <span className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{dist.tsm}</span>
-                            </div>
-                          </td>
-                          {SKUS.map(sku => (
-                            <td key={sku.id} className="px-2 py-3 border-r border-slate-100/30">
-                              <input 
-                                type="number" 
-                                min="0"
-                                value={primaryOrdersEntry[dist.distributor]?.[sku.id] || ''}
-                                onChange={(e) => handlePrimaryChange(dist.distributor, sku.id, parseInt(e.target.value) || 0)}
-                                className="w-full bg-slate-50/50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-black text-seablue text-center focus:bg-white focus:ring-2 focus:ring-seablue/20 outline-none transition-all placeholder:text-slate-300"
-                                placeholder="0"
-                              />
-                            </td>
-                          ))}
-                          <td className="px-4 py-3 border-r border-slate-100/30">
-                            <textarea 
-                              value={primaryRemarks[dist.distributor] || ''}
-                              onChange={(e) => handleRemarksChange(dist.distributor, e.target.value)}
-                              rows={1}
-                              className="w-full bg-slate-50/50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-medium text-slate-600 focus:bg-white focus:ring-2 focus:ring-seablue/20 outline-none transition-all min-w-[200px]"
-                              placeholder="Any special reason..."
-                            />
-                          </td>
-                          <td className="px-6 py-4 bg-slate-50/30 whitespace-nowrap min-w-[120px]">
-                             <div className="text-right space-y-1">
-                               {subTons > 0 && <p className="text-[10px] font-black text-emerald-600 leading-none">{subTons.toFixed(3)} TO</p>}
-                               {subGross > 0 && <p className="text-[10px] font-black text-indigo-600 leading-none">{subGross} GR</p>}
-                             </div>
-                          </td>
-                        </tr>
+                        <React.Fragment key={town}>
+                          <tr className="bg-slate-50/50 text-[10px] font-black text-slate-500 uppercase tracking-widest border-y border-slate-100/50">
+                            <td className="px-6 py-2 sticky left-0 bg-slate-50/50 z-10 border-r border-slate-100">Town: {town}</td>
+                            {SKUS.filter(s => primaryExpandedBrands[s.category] !== false).map(sku => {
+                              const total = townDists.reduce((sum, d) => sum + (primaryOrdersEntry[d.distributor]?.[sku.id] || 0), 0);
+                              return <td key={sku.id} className="px-3 py-2 text-center text-slate-400 font-mono">{total > 0 ? total.toLocaleString() : '-'}</td>;
+                            })}
+                            <td className="bg-slate-50/50"></td>
+                          </tr>
+                          {townDists.map((dist, idx) => {
+                            const items = primaryOrdersEntry[dist.distributor] || {};
+                            const subTons = calculateTonnage(items, SKUS);
+                            const subGross = calculateGross(items, SKUS);
+                            return (
+                              <tr key={`${dist.distributor}-${idx}`} className="group hover:bg-slate-50/80">
+                                <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_10px_rgba(0,0,0,0.03)]">
+                                  <p className="text-xs font-black text-slate-700 leading-none">{dist.distributor}</p>
+                                  <p className="text-[9px] text-slate-400 font-bold mt-2 uppercase tracking-tighter">{dist.tsm} | {dist.region}</p>
+                                </td>
+                                {SKUS.filter(s => primaryExpandedBrands[s.category] !== false).map(sku => (
+                                  <td key={sku.id} className="px-2 py-3 border-r border-slate-100/30">
+                                    <input type="number" min="0" value={primaryOrdersEntry[dist.distributor]?.[sku.id] || ''} onChange={(e) => handlePrimaryChange(dist.distributor, sku.id, parseInt(e.target.value) || 0)} className="w-full bg-slate-100/50 border border-slate-200/50 rounded-lg px-2 py-1.5 text-xs font-black text-seablue text-center focus:bg-white focus:ring-2 focus:ring-seablue/20 outline-none" placeholder="0" />
+                                  </td>
+                                ))}
+                                <td className="px-6 py-4 bg-slate-50/30 min-w-[140px] border-l border-slate-100 text-right">
+                                   <div className="space-y-1">
+                                      {subTons > 0 && <p className="text-[10px] font-black text-emerald-600 leading-none">{subTons.toFixed(3)} TO</p>}
+                                      {subGross > 0 && <p className="text-[10px] font-black text-indigo-600 leading-none">{subGross} GR</p>}
+                                      <textarea value={primaryRemarks[dist.distributor] || ''} onChange={(e) => handleRemarksChange(dist.distributor, e.target.value)} rows={1} className="w-full mt-2 bg-white border border-slate-200 rounded-lg px-2 py-1 text-[9px] text-slate-500 outline-none" placeholder="Remarks..." />
+                                   </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
                       );
                     })}
                   </tbody>
-                  <tfoot className="sticky bottom-0 z-20">
-                    <tr className="bg-slate-100/95 backdrop-blur-md font-black text-seablue border-t-2 border-seablue/20">
-                      <td className="px-6 py-4 sticky left-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[2px_0_10px_rgba(0,0,0,0.05)] text-[10px] uppercase tracking-widest">Grand Totals</td>
-                      {SKUS.map(sku => {
-                        const total = primaryFilteredDists.reduce((sum, dist) => sum + (primaryOrdersEntry[dist.distributor]?.[sku.id] || 0), 0);
-                        return (
-                          <td key={sku.id} className="px-3 py-4 text-center text-xs border-r border-slate-200/30">
-                            {total > 0 ? total.toLocaleString() : '-'}
-                          </td>
-                        );
+                  <tfoot className="sticky bottom-0 z-20 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+                    <tr className="bg-slate-800 text-white font-black border-t-2 border-slate-700">
+                      <td className="px-6 py-4 sticky left-0 bg-slate-800 z-10 border-r border-slate-700 text-[10px] uppercase tracking-widest text-right">Grand Total</td>
+                      {SKUS.filter(s => primaryExpandedBrands[s.category] !== false).map(sku => {
+                        const total = primaryFilteredDists.reduce((sum, d) => sum + (primaryOrdersEntry[d.distributor]?.[sku.id] || 0), 0);
+                        return <td key={sku.id} className="px-2 py-4 text-center text-[10px] border-r border-slate-700/30 font-mono font-bold">{total > 0 ? total.toLocaleString() : '-'}</td>;
                       })}
-                      <td colSpan={2} className="px-6 py-4">
-                         <div className="flex flex-wrap justify-end gap-x-8 gap-y-4">
-                           {categorySummaries.map(s => (
-                             <div key={s.category} className="text-right flex flex-col min-w-[100px] border-r border-slate-200 pr-8 last:border-none last:pr-0">
-                               <p className="text-[8px] text-slate-400 font-bold uppercase tracking-[0.2em] mb-1">{s.category}</p>
-                               <div className="space-y-0.5">
-                                 <p className="text-[11px] font-black text-slate-800 leading-none">{s.qty.toLocaleString()} <span className="text-[8px] text-slate-400">Ctns</span></p>
-                                 {s.tons > 0 && <p className="text-[10px] font-black text-emerald-600 leading-none">{s.tons.toFixed(3)} TO</p>}
-                                 {s.gross > 0 && <p className="text-[10px] font-black text-indigo-600 leading-none">{s.gross} GR</p>}
-                               </div>
-                             </div>
-                           ))}
+                      <td className="px-6 py-4 bg-slate-900 border-l border-slate-700 text-right">
+                         <div className="space-y-1">
+                            <p className="text-[11px] font-black text-emerald-400">{categorySummaries.reduce((s, c) => s + c.tons, 0).toFixed(3)} TO</p>
+                            <p className="text-[11px] font-black text-indigo-400">{categorySummaries.reduce((s, c) => s + c.gross, 0).toLocaleString()} GR</p>
                          </div>
                       </td>
                     </tr>
@@ -12827,6 +11621,24 @@ function App() {
   }
 
   if (view === 'stocks') {
+    const stockCategories = ["Washing Powder", "DWB", "Match"];
+    const stockFilteredDists = filteredDistributors.sort((a, b) => (a.town || '').localeCompare(b.town || ''));
+    
+    const overallStockTotals = stockCategories.reduce((acc, cat) => {
+      let ctn = 0, tons = 0, gross = 0;
+      stockFilteredDists.forEach(d => {
+        const stocks = stockOrders[d.distributor] || {};
+        SKUS.filter(s => s.category === cat).forEach(s => {
+          const qty = stocks[s.id]?.ctn || 0;
+          ctn += qty;
+          tons += (qty * (s.weight_gm_per_pack * (s.unitsPerCarton || 0))) / 1000000;
+          if (cat === 'Match') gross += qty * (s.grossPerCarton || 0);
+        });
+      });
+      acc[cat] = { ctn, tons, gross };
+      return acc;
+    }, {} as Record<string, { ctn: number, tons: number, gross: number }>);
+
     const handleStockChange = (distributor: string, skuId: string, val: number) => {
       setStockOrders(prev => ({
         ...prev,
@@ -12869,12 +11681,15 @@ function App() {
       }
     };
 
+    // Group by town for sub-totals
+    const townsInStock = [...new Set(stockFilteredDists.map(d => d.town))].filter(Boolean).sort();
+
     return (
       <div className="min-h-screen bg-slate-50 pb-40">
         <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
         <RegionViewLabel userEmail={userEmail} />
         
-        <div className="p-4 space-y-6">
+        <div className="p-4 space-y-6 max-w-[1600px] mx-auto">
           <motion.div 
             initial={{ opacity: 0, y: -10 }}
             animate={{ opacity: 1, y: 0 }}
@@ -12888,26 +11703,23 @@ function App() {
             <div className="flex flex-wrap items-center gap-2">
               <button 
                 onClick={() => {
-                  const headers = ['Director', 'NSM', 'RSM', 'Region', 'TSM', 'Town', 'Distributor', 'OB ID', ...SKUS.map(s => s.name)];
-                  const rows = filteredDistributors.map(d => {
+                  const headers = ['Region', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name)];
+                  const rows = stockFilteredDists.map(d => {
                     const stocks = stockOrders[d.distributor] || {};
-                    const obInfo = obAssignments.find(ob => ob.distributor === d.distributor) || {} as any;
                     return [
-                      obInfo.director || '', obInfo.nsm || '', obInfo.rsm || '', d.region || '', d.tsm, d.town, d.distributor, d.ob_id || '',
+                      d.region || '', d.tsm, d.town, d.distributor, 
                       ...SKUS.map(sku => stocks[sku.id]?.ctn || 0)
                     ];
                   });
-                  const csv = Papa.unparse([headers, ...rows]);
+                  const csv = Papa.unparse({ fields: headers, data: rows });
                   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                   const url = URL.createObjectURL(blob);
-                  const link = document.createElement('a');
-                  link.href = url;
-                  link.setAttribute('download', `Stock_Report_${new Date().toISOString().split('T')[0]}.csv`);
-                  document.body.appendChild(link);
-                  link.click();
-                  document.body.removeChild(link);
+                  const a = document.createElement('a');
+                  a.href = url;
+                  a.download = `Stock_Report_${new Date().toISOString().split('T')[0]}.csv`;
+                  a.click();
                 }}
-                className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200/50"
+                className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 bg-emerald-600 hover:bg-emerald-700 shadow-lg shadow-emerald-200/50 rounded-xl"
               >
                 <Download className="w-3.5 h-3.5" />
                 Export CSV
@@ -12915,20 +11727,64 @@ function App() {
               <button 
                 onClick={handleSubmitAllStocks}
                 disabled={isSubmittingStocks || Object.keys(stockOrders).length === 0}
-                className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 shadow-lg shadow-seablue/20"
+                className="btn-seablue px-4 py-2 text-[10px] flex items-center gap-2 shadow-lg shadow-seablue/20 rounded-xl"
               >
                 {isSubmittingStocks ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
                 Submit All
               </button>
             </div>
           </motion.div>
+
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+             {stockCategories.map(cat => (
+               <div key={cat} className="card-clean p-4 bg-white border border-slate-100 shadow-sm">
+                 <div className="flex items-center justify-between mb-2">
+                   <div className="flex items-center gap-2">
+                     <div className="w-2 h-2 rounded-full" style={{ backgroundColor: CATEGORY_COLORS[cat] }}></div>
+                     <h3 className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{cat}</h3>
+                   </div>
+                 </div>
+                 <div className="grid grid-cols-2 gap-2">
+                   <div>
+                     <p className="text-[8px] font-bold text-slate-400 uppercase">Ctns/Bags</p>
+                     <p className="text-sm font-black text-slate-800">{overallStockTotals[cat].ctn.toLocaleString()}</p>
+                   </div>
+                   {cat === 'Match' ? (
+                     <div>
+                       <p className="text-[8px] font-bold text-slate-400 uppercase">Gross</p>
+                       <p className="text-sm font-black text-indigo-600">{overallStockTotals[cat].gross.toLocaleString()}</p>
+                     </div>
+                   ) : (
+                     <div>
+                       <p className="text-[8px] font-bold text-slate-400 uppercase">Tonnage</p>
+                       <p className="text-sm font-black text-emerald-600">{overallStockTotals[cat].tons.toFixed(3)} TO</p>
+                     </div>
+                   )}
+                 </div>
+               </div>
+             ))}
+             <div className="card-clean p-4 bg-indigo-600 text-white border-none shadow-lg shadow-indigo-200">
+                <p className="text-[8px] font-bold text-indigo-200 uppercase tracking-widest mb-1">TOTAL FILTERED</p>
+                <div className="flex justify-between items-end">
+                   <div>
+                      <p className="text-lg font-black leading-none">{stockCategories.reduce((s, c) => s + overallStockTotals[c].ctn, 0).toLocaleString()} <span className="text-[10px] font-bold text-indigo-300 uppercase">Units</span></p>
+                      <p className="text-[10px] font-bold text-indigo-200 mt-1">{stockCategories.reduce((s, c) => s + overallStockTotals[c].tons, 0).toFixed(3)} Total Tons</p>
+                   </div>
+                   <TrendingUp className="w-8 h-8 text-indigo-400/30" />
+                </div>
+             </div>
+          </div>
+
           <section className="card-clean bg-white overflow-hidden rounded-3xl border-none shadow-xl shadow-slate-200/40">
             <div className="px-6 py-5 border-b border-slate-50 bg-slate-50/30 flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-3 mr-auto">
                 <div className="w-8 h-8 bg-seablue/10 rounded-xl flex items-center justify-center text-seablue">
                   <Store className="w-4 h-4" />
                 </div>
-                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest">Inventory Matrix</h3>
+                <div>
+                  <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest leading-none">Inventory Matrix</h3>
+                  <p className="text-[9px] font-bold text-slate-400 mt-1 uppercase tracking-tighter">Expand Category cards at top to toggle column views</p>
+                </div>
               </div>
               
               <div className="flex flex-wrap gap-2">
@@ -12956,56 +11812,82 @@ function App() {
                   <option value="">All Towns</option>
                   {stockTowns.map(t => <option key={t} value={t}>{t}</option>)}
                 </select>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                   {stockCategories.map(cat => (
+                     <button 
+                       key={cat}
+                       onClick={() => setStockExpandedBrands(prev => ({ ...prev, [cat]: prev[cat] === false }))}
+                       className={`px-2 py-1 text-[8px] font-black uppercase rounded-md transition-all ${stockExpandedBrands[cat] !== false ? 'bg-white text-seablue shadow-sm' : 'text-slate-400'}`}
+                     >
+                       {cat === 'Washing Powder' ? 'WP' : cat}
+                     </button>
+                   ))}
+                </div>
               </div>
             </div>
 
             <div className="overflow-x-auto scrollbar-thin max-h-[70vh]">
               <table className="w-full text-left border-collapse">
                 <thead className="sticky top-0 z-20">
-                  <tr className="bg-slate-50/90 backdrop-blur-sm text-[9px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                    <th className="px-6 py-4 sticky left-0 bg-slate-50/90 z-10 border-r border-slate-100">Distributor</th>
-                    <th className="px-6 py-4 border-r border-slate-100/50">Town</th>
-                    <th className="px-6 py-4 border-r border-slate-100/50">OB ID</th>
-                    {SKUS.map(sku => (
-                      <th key={sku.id} className="px-4 py-4 text-center min-w-[100px] border-r border-slate-100/50">{sku.name}</th>
+                  <tr className="bg-slate-50/95 backdrop-blur-sm text-[8px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                    <th className="px-6 py-4 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Hierarchy</th>
+                    <th className="px-6 py-4 border-r border-slate-100/50">Details</th>
+                    {SKUS.filter(s => stockExpandedBrands[s.category] !== false).map(sku => (
+                      <th key={sku.id} className="px-4 py-4 text-center min-w-[80px] border-r border-slate-100/50">
+                        <span className="block text-indigo-500 mb-1">{sku.category === 'Washing Powder' ? 'WP' : sku.category}</span>
+                        {sku.name}
+                      </th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-50">
-                  {filteredDistributors.map((dist, idx) => (
-                    <tr key={`${dist.distributor}-${idx}`} className="group hover:bg-slate-50/80 transition-all">
-                      <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
-                        <p className="text-xs font-black text-slate-700">{dist.distributor}</p>
-                        <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{dist.tsm}</p>
-                      </td>
-                      <td className="px-6 py-4 text-[10px] font-bold text-slate-500 border-r border-slate-100/30">{dist.town}</td>
-                      <td className="px-6 py-4 text-[10px] font-black text-seablue border-r border-slate-100/30">{dist.ob_id || '-'}</td>
-                      {SKUS.map(sku => (
-                        <td key={sku.id} className="px-4 py-3 border-r border-slate-100/30">
-                          <input 
-                            type="number" 
-                            min="0"
-                            value={stockOrders[dist.distributor]?.[sku.id]?.ctn || ''}
-                            onChange={(e) => handleStockChange(dist.distributor, sku.id, parseInt(e.target.value) || 0)}
-                            className="w-full bg-slate-50/50 border border-slate-100 rounded-lg px-2 py-1.5 text-xs font-black text-seablue text-center focus:bg-white focus:ring-2 focus:ring-seablue/20 outline-none transition-all"
-                            placeholder="0"
-                          />
-                        </td>
-                      ))}
-                    </tr>
-                  ))}
+                  {townsInStock.map(town => {
+                    const townDists = stockFilteredDists.filter(d => d.town === town);
+                    return (
+                      <React.Fragment key={town}>
+                        <tr className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-widest">
+                           <td colSpan={2} className="px-6 py-2 sticky left-0 bg-slate-50 z-10 border-r border-slate-100">Town: {town}</td>
+                           {SKUS.filter(s => stockExpandedBrands[s.category] !== false).map(sku => {
+                             const total = townDists.reduce((sum, d) => sum + (stockOrders[d.distributor]?.[sku.id]?.ctn || 0), 0);
+                             return <td key={sku.id} className="px-4 py-2 text-center text-slate-400 font-mono">{total > 0 ? total : '-'}</td>;
+                           })}
+                        </tr>
+                        {townDists.map((dist, idx) => (
+                          <tr key={`${dist.distributor}-${idx}`} className="group hover:bg-slate-50/50 transition-all">
+                            <td className="px-6 py-4 sticky left-0 bg-white group-hover:bg-slate-50 z-10 border-r border-slate-100 shadow-[2px_0_5px_rgba(0,0,0,0.02)]">
+                              <p className="text-xs font-black text-slate-700">{dist.distributor}</p>
+                              <p className="text-[9px] text-slate-400 font-bold uppercase tracking-tighter">{dist.tsm}</p>
+                            </td>
+                            <td className="px-6 py-4 text-[9px] border-r border-slate-100/30">
+                               <p className="font-bold text-slate-500 uppercase">{dist.region}</p>
+                               <p className="text-seablue font-black mt-1">ID: {dist.ob_id || '-'}</p>
+                            </td>
+                            {SKUS.filter(s => stockExpandedBrands[s.category] !== false).map(sku => (
+                              <td key={sku.id} className="px-4 py-3 border-r border-slate-100/30">
+                                <input 
+                                  type="number" 
+                                  min="0"
+                                  value={stockOrders[dist.distributor]?.[sku.id]?.ctn || ''}
+                                  onChange={(e) => handleStockChange(dist.distributor, sku.id, parseInt(e.target.value) || 0)}
+                                  className="w-full bg-slate-100/50 border border-slate-200/50 rounded-lg px-2 py-1.5 text-xs font-black text-seablue text-center focus:bg-white focus:ring-2 focus:ring-seablue/20 outline-none transition-all"
+                                  placeholder="0"
+                                />
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </React.Fragment>
+                    );
+                  })}
                 </tbody>
                 <tfoot className="sticky bottom-0 z-20">
-                  <tr className="bg-slate-100 font-black text-seablue border-t-2 border-seablue/20">
-                    <td className="px-6 py-3 sticky left-0 bg-slate-100 z-10 border-r border-slate-200 shadow-[2px_0_5px_rgba(0,0,0,0.05)] text-[10px] uppercase tracking-widest">Total Stock (Ctns)</td>
-                    <td className="px-6 py-3 border-r border-slate-200/30"></td>
-                    {SKUS.map(sku => {
-                      const total = filteredDistributors.reduce((sum, dist) => {
-                        return sum + (stockOrders[dist.distributor]?.[sku.id]?.ctn || 0);
-                      }, 0);
+                  <tr className="bg-slate-800 text-white font-black border-t-2 border-slate-700">
+                    <td className="px-6 py-4 sticky left-0 bg-slate-800 z-10 border-r border-slate-700 text-[10px] uppercase tracking-widest text-right" colSpan={2}>Grand Total (Filtered)</td>
+                    {SKUS.filter(s => stockExpandedBrands[s.category] !== false).map(sku => {
+                      const total = stockFilteredDists.reduce((sum, dist) => sum + (stockOrders[dist.distributor]?.[sku.id]?.ctn || 0), 0);
                       return (
-                        <td key={sku.id} className="px-4 py-3 text-center text-xs border-r border-slate-200/30">
-                          {total > 0 ? total : '-'}
+                        <td key={sku.id} className="px-4 py-4 text-center text-[10px] border-r border-slate-700/50 font-mono">
+                          {total > 0 ? total.toLocaleString() : '-'}
                         </td>
                       );
                     })}
@@ -13550,134 +12432,25 @@ function App() {
         )}
 
         {order.obContact && !order.isAbsent ? (
-          <>
-            {/* Categories Section */}
-            <div className="space-y-4">
-              {CATEGORIES.map(category => (
-                <section key={category} className="card-clean overflow-hidden">
-              <div className="bg-seablue/5 px-4 py-2 flex justify-between items-center border-b border-slate-100">
-                <h2 className="text-[11px] font-black text-seablue uppercase tracking-tighter w-20">{category}</h2>
-                
-                <div className="flex items-center gap-2 md:gap-4 flex-1 justify-end">
-                  {/* 2nd: Productive Shops */}
-                  <div className={`flex flex-col items-center bg-white border rounded-lg px-1.5 py-0.5 shadow-sm min-w-[40px] transition-colors ${categoryTotals[category] > 0 && (order.categoryProductiveShops[category] || 0) <= 0 ? 'border-red-500 bg-red-50' : 'border-slate-200'}`}>
-                    <span className={`text-[6px] font-black uppercase tracking-tighter ${categoryTotals[category] > 0 && (order.categoryProductiveShops[category] || 0) <= 0 ? 'text-red-600' : 'text-slate-400'}`}>Prod</span>
-                    <input 
-                      ref={el => inputRefs.current[`prod-${category}`] = el}
-                      type="number" 
-                      inputMode="numeric" 
-                      autoComplete="off" 
-                      placeholder="0"
-                      value={order.categoryProductiveShops[category] || ''} 
-                      onChange={(e) => setOrder(prev => ({ ...prev, categoryProductiveShops: { ...prev.categoryProductiveShops, [category]: parseInt(e.target.value) || 0 } }))} 
-                      onKeyDown={(e) => handleKeyDown(e, `prod-${category}`)}
-                      className={`w-6 text-center text-[10px] font-bold focus:outline-none bg-transparent ${categoryTotals[category] > 0 && (order.categoryProductiveShops[category] || 0) <= 0 ? 'text-red-700' : 'text-seablue'}`} 
-                    />
-                  </div>
-
-                  {/* 3rd: Today Sales */}
-                  <div className="flex flex-col items-center bg-slate-100 rounded-lg px-2 py-0.5 shadow-sm border border-slate-200 min-w-[45px]">
-                    <span className="text-[6px] font-black text-slate-400 uppercase tracking-tighter">Today</span>
-                    <span className="text-[10px] font-black text-slate-700 leading-tight">{categoryTotals[category].toFixed(2)}</span>
-                  </div>
-
-                  {/* 4th: MTD Ach */}
-                  <div className="flex flex-col items-center bg-emerald-50 border border-emerald-200 rounded-lg px-2 py-0.5 min-w-[45px]">
-                    <span className="text-[6px] font-black text-emerald-400 uppercase tracking-tighter">MTD Ach</span>
-                    <span className="text-[10px] font-black text-emerald-700 leading-tight">{mtdCategoryTotals[category].toFixed(2)}</span>
-                  </div>
-
-                  {/* 5th: Brand Target */}
-                  <div className="flex flex-col items-center bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 min-w-[50px]">
-                    <div className="flex items-center gap-1">
-                      <span className="text-[7px] font-black text-slate-400 uppercase tracking-tighter">Brand Target</span>
-                    </div>
-                    <input 
-                      ref={el => inputRefs.current[`target-${category}`] = el}
-                      type="number" 
-                      inputMode="decimal"
-                      autoComplete="off"
-                      value={order.targets[category] || ''} 
-                      onChange={(e) => handleTargetChange(category, parseFloat(e.target.value) || 0)}
-                      onKeyDown={(e) => handleKeyDown(e, `target-${category}`)}
-                      className="w-10 text-center text-[11px] font-bold text-slate-600 bg-transparent focus:outline-none"
-                      placeholder="0"
-                    />
-                  </div>
-                </div>
-              </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left">
-                  <thead>
-                    <tr className="bg-slate-50 text-[9px] uppercase font-bold text-slate-400">
-                      <th className="px-4 py-2">SKU</th>
-                      <th className="px-2 py-2 text-center w-20">Ctn</th>
-                      {category !== "Match" && <th className="px-2 py-2 text-center w-20">Dzn</th>}
-                      <th className="px-2 py-2 text-center w-20">Pks</th>
-                      <th className="px-4 py-2 text-right w-24">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-50">
-                    {SKUS.filter(s => s.category === category).map(sku => {
-                      const item = order.items[sku.id] || { ctn: 0, dzn: 0, pks: 0 };
-                      return (
-                        <tr key={sku.id} className="hover:bg-slate-50/50">
-                          <td className="px-2 py-1.5">
-                            <div className="text-[10px] font-bold text-slate-700 leading-tight">{sku.name}</div>
-                            <div className="text-[8px] text-slate-400 font-mono">{sku.unitsPerCarton}u</div>
-                          </td>
-                          <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-ctn`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.ctn || ''} onChange={(e) => handleInputChange(sku.id, 'ctn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-ctn`)} className="input-clean w-full py-3 text-center text-base" /></td>
-                          {category !== "Match" && (
-                            <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-dzn`] = el} type="number" inputMode="numeric" autoComplete="off" disabled={sku.unitsPerDozen === 0} value={item.dzn || ''} onChange={(e) => handleInputChange(sku.id, 'dzn', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-dzn`)} className="input-clean w-full py-3 text-center text-base disabled:opacity-30" /></td>
-                          )}
-                          <td className="px-1 py-1.5"><input ref={el => inputRefs.current[`${sku.id}-pks`] = el} type="number" inputMode="numeric" autoComplete="off" value={item.pks || ''} onChange={(e) => handleInputChange(sku.id, 'pks', e.target.value)} onKeyDown={(e) => handleKeyDown(e, `${sku.id}-pks`)} className="input-clean w-full py-3 text-center text-base" /></td>
-                          <td className="px-2 py-1.5 text-right font-mono text-sm font-bold text-seablue">{calculateTotalCartons(sku.id).toFixed(3)}</td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-              </section>
-            ))}
-            {/* MTD Target vs Achievement Summary */}
-            <section className="card-clean p-4 bg-white shadow-xl shadow-slate-200/40 mt-4">
-              <div className="flex items-center gap-2 mb-4">
-                <Target className="w-4 h-4 text-seablue" />
-                <h3 className="text-xs font-black text-slate-800 uppercase tracking-widest text-[10px]">MTD Target vs Achievement Summary</h3>
-              </div>
-              <div className="overflow-x-auto scrollbar-thin pb-2">
-                <div className="flex gap-4 min-w-max">
-                  {CATEGORIES.map(cat => {
-                    const ach = mtdCategoryTotals[cat] || 0;
-                    const target = order.targets[cat] || 0;
-                    const percent = target > 0 ? (ach / target) * 100 : 0;
-                    return (
-                      <div key={cat} className="flex flex-col p-3 rounded-2xl bg-slate-50 border border-slate-100 min-w-[140px]">
-                        <span className="text-[9px] font-black text-slate-400 uppercase mb-1">{cat}</span>
-                        <div className="flex items-end justify-between">
-                          <div className="flex flex-col">
-                            <span className="text-[12px] font-black text-seablue">{ach.toFixed(1)}</span>
-                            <span className="text-[8px] font-bold text-slate-400">Target: {target.toFixed(1)}</span>
-                          </div>
-                          <span className={`text-[10px] font-black ${percent >= 100 ? 'text-emerald-600' : percent >= 80 ? 'text-amber-500' : 'text-rose-500'}`}>
-                            {percent.toFixed(0)}%
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </section>
-          </div>
-        </>
-      ) : (
+          <EntryForm 
+            order={order}
+            setOrder={setOrder}
+            categoryTotals={categoryTotals}
+            mtdCategoryTotals={mtdCategoryTotals}
+            inputRefs={inputRefs}
+            handleKeyDown={handleKeyDown}
+            handleTargetChange={handleTargetChange}
+            handleInputChange={handleInputChange}
+            calculateTotalCartons={calculateTotalCartons}
+            currentDistributorStock={currentDistributorStock}
+          />
+        ) : (
           <div className="card-clean p-12 flex flex-col items-center justify-center text-slate-400 space-y-4">
             <Store className="w-12 h-12 opacity-20" />
             <p className="text-xs font-bold uppercase tracking-widest">Select an Order Booker to start</p>
           </div>
         )}
+
       </main>
 
       <AnimatePresence>
@@ -13786,6 +12559,7 @@ function App() {
         )}
       </AnimatePresence>
 
+      <FloatingQuickMenu />
       </div>
       </ErrorBoundary>
     );
