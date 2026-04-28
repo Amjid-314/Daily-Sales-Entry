@@ -29,6 +29,8 @@ import { EntryForm } from './components/EntryForm';
 import { MissingEntriesReport } from './components/MissingEntriesReport';
 import { SubmissionModals } from './components/SubmissionModals';
 import { MTDPerformance } from './components/MTDPerformance';
+import { SalesTrends } from './components/SalesTrends';
+import { AIChatBot } from './components/AIChatBot';
 import { Login } from './components/Login';
 import { WhatsAppIcon } from './components/WhatsAppIcon';
 import { 
@@ -63,6 +65,8 @@ import {
   ShoppingCart,
   Cloud,
   CloudDownload,
+  RotateCcw,
+  Layers,
   TrendingUp,
   TrendingDown,
   Target,
@@ -86,9 +90,7 @@ import {
   FileSpreadsheet,
   LogOut,
   Home,
-  ShoppingBag,
-  RotateCcw,
-  Layers
+  ShoppingBag
 } from 'lucide-react';
 import { SKUS, CATEGORIES, BRAND_GROUPS, BRAND_GROUP_NAMES, OrderState, OrderItem, SKU, OBAssignment, CATEGORY_COLORS } from './types';
 import { getPSTDate, getPSTTimestamp, getWorkingDays, isTSMEntry, calculateOrderAge, calculateTonnage, calculateGross } from './lib/utils';
@@ -459,6 +461,11 @@ interface NationalDashboardProps {
   setSelectedHeadCountDetail: (d: any) => void;
   obTargets?: any[];
 }
+
+const isSuperAdminUser = (email: string | null) => {
+  if (!email) return false;
+  return SUPER_ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email.toLowerCase());
+};
 
 const NationalDashboard = ({ 
   view, setView, stats, hierarchy, categories, skus, isSyncing, onRefresh,
@@ -2755,6 +2762,19 @@ const NationalDashboard = ({
           userRegion={userRegion}
         />
       )}
+
+      {view === 'sales_trends' && (
+        <SalesTrends 
+          history={history}
+          userRole={userRole}
+          userName={userName}
+          userRegion={userRegion}
+          selectedMonth={selectedMonth}
+        />
+      )}
+
+      {/* Global AI ChatBot - Restricted to Super Admin */}
+      {isSuperAdminUser(userEmail) && <AIChatBot />}
 
       {view === 'command_center' && (
       <div className="grid grid-cols-1 gap-6">
@@ -5666,6 +5686,25 @@ function App() {
   const [selectedHeadCountDetail, setSelectedHeadCountDetail] = useState<any>(null);
   const [primaryExpandedBrands, setPrimaryExpandedBrands] = useState<Record<string, boolean>>({});
   const [stockExpandedBrands, setStockExpandedBrands] = useState<Record<string, boolean>>({});
+  const [salesTrendsSubView, setSalesTrendsSubView] = useState<'ob' | 'brand'>('ob');
+  const [salesTrendsFilters, setSalesTrendsFilters] = useState<any>({ months: [], region: 'All', tsm: 'All', town: 'All', ob: 'All' });
+  const [isLoadingTrends, setIsLoadingTrends] = useState(false);
+
+  const handleUpdatePrimaryOrder = async (id: string, updates: any) => {
+    try {
+      await apiFetch(`/api/primary-orders/${id}`, {
+        method: 'PATCH',
+        body: JSON.stringify(updates)
+      });
+      setMessage({ text: 'Order updated successfully', type: 'success' });
+      fetchPrimaryOrders();
+    } catch (e) {
+      console.error(e);
+      setMessage({ text: 'Failed to update order', type: 'error' });
+    } finally {
+      setTimeout(() => setMessage(null), 3000);
+    }
+  };
 
   const handleLogin = (token: string, userData: any) => {
     const email = (userData.email || '').toLowerCase();
@@ -5962,7 +6001,7 @@ function App() {
 
   const apiFetch = async (url: string, options: any = {}) => {
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 sec timeout
+    const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 sec timeout
 
     try {
       const currentToken = token || localStorage.getItem('auth_token');
@@ -6012,7 +6051,7 @@ function App() {
     } catch (error: any) {
       clearTimeout(timeoutId);
       if (error.name === 'AbortError') {
-        const timeoutMsg = 'Request timed out (5s limit)';
+        const timeoutMsg = 'Request timed out (60s limit). Please try again later or check your connection.';
         setMessage({ text: timeoutMsg, type: 'error' });
         setTimeout(() => setMessage(null), 5000);
         throw new Error(timeoutMsg);
@@ -6196,6 +6235,7 @@ function App() {
   const [selectedStockTown, setSelectedStockTown] = useState<string>('');
   const [isSubmittingStocks, setIsSubmittingStocks] = useState(false);
   const [isSyncingGlobal, setIsSyncingGlobal] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<{ text: string; type: 'loading' | 'success' | 'error' | null }>({ text: '', type: null });
   const [isBackingUp, setIsBackingUp] = useState(false);
   const [backupLogs, setBackupLogs] = useState<any[]>([]);
   const [missingEntriesReport, setMissingEntriesReport] = useState<any[]>([]);
@@ -7070,6 +7110,7 @@ function App() {
   };
 
   const syncEverything = async () => {
+    setSyncStatus({ text: "Syncing latest data...", type: 'loading' });
     setIsSyncingGlobal(true);
     try {
       const res = await apiFetch('/api/admin/master-sync', { 
@@ -7079,16 +7120,25 @@ function App() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Sync failed');
       
-      setMessage({ text: data.message, type: 'success' });
+      setSyncStatus({ text: "Data Updated ✔", type: 'success' });
+      setMessage({ text: data.message || "Full System Sync Success!", type: 'success' });
       setAppConfig(prev => ({ ...prev, last_sync_at: data.last_sync_at }));
-      fetchAdminData();
-      fetchHistory(true);
-      fetchNationalData(); // Refresh national data after sync
+      
+      await Promise.all([
+        fetchAdminData(),
+        fetchHistory(true),
+        fetchNationalData(),
+        fetchTargetsData()
+      ]);
     } catch (err: any) {
+      setSyncStatus({ text: "Sync Error", type: 'error' });
       setMessage({ text: 'Sync Error: ' + err.message, type: 'error' });
     } finally {
       setIsSyncingGlobal(false);
-      setTimeout(() => setMessage(null), 5000);
+      setTimeout(() => {
+        setMessage(null);
+        setSyncStatus({ text: '', type: null });
+      }, 5000);
     }
   };
 
@@ -7116,7 +7166,56 @@ function App() {
     });
   };
 
-  // Removed auto-sync on mount to prevent startup delays
+  // Auto Sync on App Load with Retry System
+  useEffect(() => {
+    if (!token || token === 'null' || !appConfig.google_spreadsheet_id) return;
+
+    let retryCount = 0;
+    const maxRetries = 2;
+
+    const runAutoSync = async () => {
+      setSyncStatus({ text: "Syncing latest data...", type: 'loading' });
+      setIsSyncingGlobal(true);
+      
+      try {
+        const res = await apiFetch('/api/admin/master-sync', { 
+          method: 'POST',
+          body: JSON.stringify({ month: selectedMonth })
+        });
+        const data = await res.json();
+        
+        if (!res.ok) throw new Error(data.error || 'Sync failed');
+        
+        setAppConfig(prev => ({ ...prev, last_sync_at: data.last_sync_at }));
+        
+        // Refresh all datasets
+        await Promise.all([
+          fetchHistory(true),
+          fetchAdminData(),
+          fetchNationalData(),
+          fetchTargetsData()
+        ]);
+
+        setSyncStatus({ text: "Data Updated ✔", type: 'success' });
+        setTimeout(() => setSyncStatus({ text: '', type: null }), 3000);
+      } catch (err: any) {
+        console.error(`Sync attempt ${retryCount + 1} failed:`, err);
+        
+        if (retryCount < maxRetries) {
+          retryCount++;
+          setTimeout(runAutoSync, 2000); // Wait 2s before retry
+        } else {
+          setSyncStatus({ text: "Using last synced data", type: 'error' });
+          setTimeout(() => setSyncStatus({ text: '', type: null }), 5000);
+        }
+      } finally {
+        setIsSyncingGlobal(false);
+      }
+    };
+
+    // Run once on load
+    runAutoSync();
+  }, [token]);
 
   // Periodic refresh for NSM/RSM/SC/Director every 30 minutes
   useEffect(() => {
@@ -7135,7 +7234,7 @@ function App() {
 
   useEffect(() => {
     if (!token || token === 'null') return;
-    if (view === 'national' || view === 'dashboard' || view === 'reports' || view === 'stats') {
+    if (['national', 'dashboard', 'reports', 'stats', 'sales_trends', 'mtd_performance', 'insights', 'command_center'].includes(view)) {
       fetchNationalData();
       fetchHistory(true);
     }
@@ -8210,11 +8309,11 @@ function App() {
       const canEdit = ['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC'].includes((userRole || '').toUpperCase());
 
       // Use a more unified source for hierarchy filtering
-      const filteredDists = distributors.filter(d => 
+      const filteredDists = allDistributors.filter(d => 
         (!selectedRegion || d.region === selectedRegion) && 
         (!selectedTSM || d.tsm === selectedTSM) && 
         (!selectedTown || d.town === selectedTown) &&
-        (!targetSearch || d.name.toLowerCase().includes(targetSearch.toLowerCase()))
+        (!targetSearch || d.distributor.toLowerCase().includes(targetSearch.toLowerCase()))
       );
 
       const filteredObs = obAssignments.filter(ob => 
@@ -8224,9 +8323,9 @@ function App() {
         (!targetSearch || ob.name.toLowerCase().includes(targetSearch.toLowerCase()) || ob.contact.includes(targetSearch))
       );
 
-      const regions = [...new Set(distributors.map(d => d.region))].filter(Boolean).sort() as string[];
-      const tsms = [...new Set(distributors.filter(d => !selectedRegion || d.region === selectedRegion).map(d => d.tsm))].filter(Boolean).sort() as string[];
-      const townsList = [...new Set(distributors.filter(d => (!selectedRegion || d.region === selectedRegion) && (!selectedTSM || d.tsm === selectedTSM)).map(d => d.town))].filter(Boolean).sort() as string[];
+      const regions = [...new Set(allDistributors.map(d => d.region))].filter(Boolean).sort() as string[];
+      const tsms = [...new Set(allDistributors.filter(d => !selectedRegion || d.region === selectedRegion).map(d => d.tsm))].filter(Boolean).sort() as string[];
+      const townsList = [...new Set(allDistributors.filter(d => (!selectedRegion || d.region === selectedRegion) && (!selectedTSM || d.tsm === selectedTSM)).map(d => d.town))].filter(Boolean).sort() as string[];
       
       const distCategories = ["Washing Powder", "DWB", "Match"];
       const obCategories = ["Kite Glow", "Burq Action", "Vero", "DWB", "Match"];
@@ -8236,7 +8335,7 @@ function App() {
         const totals: Record<string, number> = {};
         distCategories.forEach(cat => {
           totals[cat] = dists.reduce((sum, d) => {
-            const t = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === d.name && pt.brand_name === cat);
+            const t = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === d.distributor && pt.brand_name === cat);
             return sum + (t?.target_ctn || 0);
           }, 0);
         });
@@ -8266,7 +8365,12 @@ function App() {
             const filtered = prev.filter(t => !(t.target_type === type && t.target_key === key && t.brand_name === brand));
             return [...filtered, { target_type: type, target_key: key, brand_name: brand, target_ctn: num, month: selectedMonth }];
           });
-        } catch (e) { alert("Error saving primary target"); }
+          setMessage({ text: "Primary target saved!", type: 'success' });
+        } catch (e) { 
+          setMessage({ text: "Error saving primary target", type: 'error' });
+        } finally {
+          setTimeout(() => setMessage(null), 3000);
+        }
       };
 
       const handleSaveOB = async (contact: string, brand: string, val: string) => {
@@ -8281,7 +8385,12 @@ function App() {
             const filtered = prev.filter(t => !(t.ob_contact === contact && t.brand_name === brand));
             return [...filtered, { ob_contact: contact, brand_name: brand, target_ctn: num, month: selectedMonth }];
           });
-        } catch (e) { alert("Error saving OB target"); }
+          setMessage({ text: "OB target saved!", type: 'success' });
+        } catch (e) { 
+          setMessage({ text: "Error saving OB target", type: 'error' });
+        } finally {
+          setTimeout(() => setMessage(null), 3000);
+        }
       };
 
       return (
@@ -8426,22 +8535,22 @@ function App() {
                         <tr className="bg-emerald-50/30 font-black text-[10px] text-emerald-600 uppercase tracking-widest"><td colSpan={distCategories.length + 1} className="px-6 py-2">By Distributor (Tons/Gross)</td></tr>
                       )}
                       {filteredDists.map(dist => (
-                        <tr key={`dist-${dist.name}`} className="hover:bg-slate-50/50 transition-colors">
+                        <tr key={`dist-${dist.distributor}`} className="hover:bg-slate-50/50 transition-colors">
                            <td className="px-6 py-4">
                               <div className="flex flex-col">
-                                <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{dist.name}</span>
+                                <span className="text-xs font-black text-slate-800 uppercase tracking-tight">{dist.distributor}</span>
                                 <span className="text-[8px] font-bold text-slate-400 uppercase">{dist.town}</span>
                               </div>
                            </td>
                            {distCategories.map(cat => {
-                             const target = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === dist.name && pt.brand_name === cat);
+                             const target = primaryTargets.find(pt => pt.target_type === 'Distributor' && pt.target_key === dist.distributor && pt.brand_name === cat);
                              return (
                                <td key={cat} className="px-2 py-2">
                                   <input 
                                     type="number" 
                                     disabled={!canEdit}
                                     defaultValue={target?.target_ctn || ''} 
-                                    onBlur={e => handleSavePrimary('Distributor', dist.name, cat, e.target.value)}
+                                    onBlur={e => handleSavePrimary('Distributor', dist.distributor, cat, e.target.value)}
                                     placeholder="0.00"
                                     className={`w-full bg-transparent border-b border-transparent text-center text-xs font-bold text-slate-700 py-1 transition-all ${canEdit ? 'hover:border-slate-200 focus:border-seablue focus:outline-none' : 'cursor-not-allowed opacity-70'}`}
                                   />
@@ -8514,7 +8623,7 @@ function App() {
   if (view === 'target_setting') {
     return (
       <div className="min-h-screen bg-slate-50 flex flex-col">
-        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} syncStatus={syncStatus} />
         <RegionViewLabel userEmail={userEmail} />
         <main className="flex-1 max-w-[1600px] mx-auto p-4 sm:p-6 w-full">
            <TargetSettingView />
@@ -8559,12 +8668,12 @@ function App() {
     );
   }
 
-  if (['dashboard', 'command_center', 'insights', 'missing_entries', 'stats', 'geo_map', 'target_setting', 'tsm_performance', 'reports', 'stock_reports', 'mtd_performance'].includes(view || '')) {
+  if (['dashboard', 'command_center', 'insights', 'missing_entries', 'stats', 'geo_map', 'target_setting', 'tsm_performance', 'reports', 'stock_reports', 'mtd_performance', 'sales_trends'].includes(view || '')) {
     try {
       if (isLoadingHistory || isLoadingAdmin) {
         return (
           <div className="min-h-screen bg-slate-50 flex flex-col">
-            <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+            <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} syncStatus={syncStatus} />
             <RegionViewLabel userEmail={userEmail} />
             <div className="flex-1 flex items-center justify-center">
               <div className="flex flex-col items-center gap-4">
@@ -8578,10 +8687,10 @@ function App() {
       }
 
       // If management role, show NationalDashboard (Management Dashboard)
-      if (['dashboard', 'command_center', 'insights', 'geo_map', 'missing_entries', 'mtd_performance', 'stats', 'reports'].includes(view) && ['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM', 'ASM', 'OB'].includes((userRole || '').toUpperCase())) {
+      if (['dashboard', 'command_center', 'insights', 'geo_map', 'missing_entries', 'mtd_performance', 'sales_trends', 'tsm_performance', 'stats', 'reports'].includes(view) && ['SUPER ADMIN', 'ADMIN', 'RSM', 'NSM', 'DIRECTOR', 'SC', 'TSM', 'ASM', 'OB'].includes((userRole || '').toUpperCase())) {
         return (
           <div className="min-h-screen bg-slate-50 pb-40">
-            <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+            <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} syncStatus={syncStatus} />
             <RegionViewLabel userEmail={userEmail} />
             {isLoadingNational ? (
               <div className="flex-1 flex items-center justify-center min-h-[80vh]">
@@ -8884,7 +8993,7 @@ function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} syncStatus={syncStatus} />
         <RegionViewLabel userEmail={userEmail} />
         <header className="bg-white border-b border-slate-200 p-4 shadow-sm">
           <div className="max-w-4xl mx-auto px-4 py-3 flex justify-between items-center">
@@ -11922,7 +12031,7 @@ function App() {
 
     return (
       <div className="min-h-screen bg-slate-50 pb-10">
-        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} syncStatus={syncStatus} />
         <RegionViewLabel userEmail={userEmail} />
         <header className="bg-white border-b border-slate-200 p-4 sticky top-12 z-20 shadow-sm">
           <div className="max-w-full mx-auto px-4 flex flex-col gap-4">
@@ -12195,7 +12304,7 @@ function App() {
       <ErrorBoundary>
         <PWAInstallPrompt />
         <div className="min-h-screen bg-slate-50 pb-40">
-        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} />
+        <MainNav view={view} setView={setView} role={userRole} userEmail={userEmail} onLogout={handleLogout} logo={appLogo} syncStatus={syncStatus} />
         <RegionViewLabel userEmail={userEmail} />
         <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
         <div className="max-w-6xl mx-auto px-3 py-2">

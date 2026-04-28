@@ -1,5 +1,5 @@
 import React from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   ClipboardEdit, 
   LayoutDashboard, 
@@ -32,6 +32,7 @@ export const APP_TABS = [
   { id: 'insights', label: 'Insights', icon: PieChart, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'stats', label: 'Stats', icon: TrendingUp, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
   { id: 'reports', label: 'Reports', icon: FileSpreadsheet, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
+  { id: 'sales_trends', label: 'Sales Trends', icon: TrendingUp, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM'] },
   { id: 'missing_entries', label: 'Missing Report', icon: ClipboardList, roles: ['Super Admin', 'Admin', 'RSM', 'NSM', 'Director', 'SC', 'TSM', 'ASM', 'OB'] },
   { id: 'history', label: 'History', icon: History, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'OB', 'RSM', 'NSM', 'Director', 'SC'] },
   { id: 'stocks', label: 'Stocks', icon: Box, roles: ['Super Admin', 'Admin', 'TSM', 'ASM', 'RSM', 'NSM', 'Director', 'SC'] },
@@ -41,6 +42,7 @@ export const APP_TABS = [
 ];
 
 import { Logo } from './Logo';
+import { RefreshCw, CheckCircle2, AlertTriangle, Loader2 } from 'lucide-react';
 
 interface MainNavProps {
   view: string;
@@ -49,9 +51,10 @@ interface MainNavProps {
   userEmail?: string | null;
   onLogout: () => void;
   logo?: string | null;
+  syncStatus?: { text: string; type: 'loading' | 'success' | 'error' | null };
 }
 
-export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail, onLogout, logo }) => {
+export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail, onLogout, logo, syncStatus }) => {
   const visibleTabs = APP_TABS.filter(tab => {
     const email = (userEmail || '').toLowerCase();
     const isSuperAdmin = SUPER_ADMIN_EMAILS.map(e => e.toLowerCase()).includes(email);
@@ -95,7 +98,29 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
   };
 
   return (
-    <nav className="bg-white border-b border-slate-100 px-4 h-14 flex justify-between items-center sticky top-0 z-40 shadow-sm overflow-x-auto no-scrollbar gap-2">
+    <div className="flex flex-col sticky top-0 z-40">
+      <AnimatePresence>
+        {syncStatus?.type && (
+          <motion.div 
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className={`w-full py-1 text-center text-[9px] font-black uppercase tracking-[0.2em] transition-colors border-b shadow-sm ${
+              syncStatus.type === 'loading' ? 'bg-amber-500 text-white border-amber-600 animate-pulse' : 
+              syncStatus.type === 'success' ? 'bg-emerald-500 text-white border-emerald-600' : 
+              'bg-rose-500 text-white border-rose-600'
+            }`}
+          >
+            <div className="flex items-center justify-center gap-2">
+              {syncStatus.type === 'loading' && <Loader2 className="w-3 h-3 animate-spin" />}
+              {syncStatus.type === 'success' && <CheckCircle2 className="w-3 h-3" />}
+              {syncStatus.type === 'error' && <AlertTriangle className="w-3 h-3" />}
+              {syncStatus.text}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <nav className="bg-white border-b border-slate-100 px-4 h-14 flex justify-between items-center shadow-sm overflow-x-auto no-scrollbar gap-2">
       <div className="flex items-center gap-4">
         <div className="flex-shrink-0 flex items-center justify-center">
           {logo ? (
@@ -145,5 +170,6 @@ export const MainNav: React.FC<MainNavProps> = ({ view, setView, role, userEmail
         </button>
       </div>
     </nav>
+    </div>
   );
 };

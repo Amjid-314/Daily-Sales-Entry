@@ -1504,6 +1504,7 @@ async function startServer() {
       "Users": ['Username', 'Email', 'Role', 'Name', 'Contact', 'Region', 'Town'],
       "Stock_Reports": ['Date', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Submitted At'],
       "Primary_Orders": ['Order ID', 'Order Date', 'Region', 'TSM', 'Town', 'Distributor', ...SKUS.map(s => s.name), 'Total Val', 'Tonnage', 'Gross (Match)', 'Status', 'Remarks', 'Dispatched Date', 'Submitted At'],
+      "Sales_Trends": ['Year', 'Month', 'Region', 'TSM', 'OB', 'OB Contact', 'Kite Glow', 'Burq', 'Vero', 'Total WP', 'DWB', 'Match', 'Total Sales'],
       "Error_Log": ['Timestamp', 'Error Message', 'Context', 'User', 'Role']
     };
 
@@ -3986,6 +3987,8 @@ async function startServer() {
         });
 
         const stmt = db.prepare("INSERT INTO tsm_assignments (tsm_name, town, routes) VALUES (?, ?, ?)");
+        const distStmt = db.prepare("INSERT OR IGNORE INTO distributors (name, town, tsm) VALUES (?, ?, ?)");
+        
         for (const a of assignments) {
           let routes = a.routes;
           if (obRoutesMap[a.tsm_name]) {
@@ -3995,6 +3998,10 @@ async function startServer() {
              routes = combined.join(', ');
           }
           stmt.run(a.tsm_name, a.town, routes);
+          
+          // Also ensure this town exists in distributors table if it looks like a distributor location
+          // Often Distributor Name = Town Name if not specified
+          distStmt.run(a.town, a.town, a.tsm_name);
         }
       });
       transaction();
@@ -4228,6 +4235,14 @@ async function startServer() {
             item.town, item.distributor, item.distributor_code, item.name, hierarchyObId, 
             item.region, item.target_ctn, targetMonth, item.email
           );
+
+          // [FIX] Update distributors table to ensure all distributors are listed in Target/Primary/Stocks tabs
+          if (item.distributor && item.town) {
+            db.prepare(`
+              INSERT OR REPLACE INTO distributors (name, town, tsm, region, zone)
+              VALUES (?, ?, ?, ?, ?)
+            `).run(item.distributor, item.town, item.tsm, item.region, item.zone || '');
+          }
         }
       });
       transaction();
@@ -4459,6 +4474,83 @@ async function startServer() {
       });
     } catch (e) {
       console.error("pushStockReports Error:", e);
+    }
+  }
+
+  async function pushSalesTrends(sheets: any, spreadsheetId: string) {
+    try {
+      const orders = db.prepare("SELECT date, region, tsm, order_booker as ob, order_data FROM submitted_orders").all() as any[];
+      const userList = db.prepare("SELECT name, phone FROM users").all() as any[];
+      const userPhoneMap = Object.fromEntries(userList.map(u => [(u.name || '').trim().toUpperCase(), u.phone]));
+      
+      const trends: Record<string, any> = {};
+
+      orders.forEach(o => {
+        if (!o.date) return;
+        
+        // Clean & Normalize
+        const obName = (o.ob || 'N/A').trim().toUpperCase();
+        if (obName.startsWith('*TSM') || obName === 'N/A') return; // Skip TSM rows and N/A
+
+        const tsmName = (o.tsm || 'N/A').trim().toUpperCase();
+        const regionName = (o.region || 'N/A').trim().toUpperCase();
+        const dateObj = new Date(o.date);
+        const year = dateObj.getFullYear();
+        const month = dateObj.toLocaleString('default', { month: 'long' }).toUpperCase();
+        
+        const key = `${year}-${month}-${regionName}-${tsmName}-${obName}`;
+
+        if (!trends[key]) {
+          trends[key] = {
+            year,
+            month,
+            region: regionName,
+            tsm: tsmName,
+            ob: obName,
+            contact: userPhoneMap[obName] || '',
+            kiteGlow: 0,
+            burqAction: 0,
+            vero: 0,
+            dwb: 0,
+            match: 0
+          };
+        }
+
+        const orderData = JSON.parse(o.order_data || '{}');
+        Object.entries(orderData).forEach(([skuId, val]: [string, any]) => {
+          const sku = SKUS.find(s => s.id === skuId);
+          if (!sku) return;
+          const qty = val.ctn || 0;
+          if (sku.category === 'Kite Glow') trends[key].kiteGlow += qty;
+          else if (sku.category === 'Burq Action') trends[key].burqAction += qty;
+          else if (sku.category === 'Vero') trends[key].vero += qty;
+          else if (sku.category === 'DWB') trends[key].dwb += qty;
+          else if (sku.category === 'Match') trends[key].match += qty;
+        });
+      });
+
+      const headers = ['Year', 'Month', 'Region', 'TSM', 'OB', 'OB Contact', 'Kite Glow', 'Burq', 'Vero', 'Total WP', 'DWB', 'Match', 'Total Sales'];
+      const rows = Object.values(trends).map((t: any) => {
+        const totalWP = t.kiteGlow + t.burqAction + t.vero;
+        const totalSales = totalWP + t.dwb + t.match;
+        return [t.year, t.month, t.region, t.tsm, t.ob, t.contact, t.kiteGlow, t.burqAction, t.vero, totalWP, t.dwb, t.match, totalSales];
+      });
+
+      console.log(`[SYNC] Pushing ${rows.length} Cleaned Sales Trends to Google Sheets (Sales_Trends)...`);
+      
+      await sheets.spreadsheets.values.clear({
+        spreadsheetId,
+        range: 'Sales_Trends!A:ZZ',
+      });
+
+      await sheets.spreadsheets.values.update({
+        spreadsheetId,
+        range: "Sales_Trends!A1",
+        valueInputOption: "USER_ENTERED",
+        requestBody: { values: [headers, ...rows] },
+      });
+    } catch (e) {
+      console.error("pushSalesTrends Error:", e);
     }
   }
 
@@ -4867,10 +4959,11 @@ async function startServer() {
       await refreshSummarySheets(sheets, spreadsheetId, targetMonth);
 
       // 8. Push Local Data (Secondary Sales & Stocks)
-      console.log("[SYNC] Step 8/8: Pushing Secondary Sales & Stocks...");
+      console.log("[SYNC] Step 8/8: Pushing Secondary Sales, Stocks & Trends...");
       await repushSalesData(sheets, spreadsheetId);
       await pushStockReports(sheets, spreadsheetId);
       await pushPrimaryOrders(sheets, spreadsheetId);
+      await pushSalesTrends(sheets, spreadsheetId);
 
       // Update Last Sync
       const now = new Date().toLocaleString("en-US", { timeZone: "Asia/Karachi" });
@@ -5090,11 +5183,25 @@ async function startServer() {
       }
 
       const { month } = req.body;
+      
+      // 1. PULL: Pull Team, Users, Targets and Sales from Sheets
       const result = await performFullSync(sheets, spreadsheetId, month);
+
+      // 2. PUSH: Push the latest local state back to Sheets (Sales, Stocks, Primary Targets, Trends)
+      try {
+        await Promise.all([
+          repushSalesData(sheets, spreadsheetId),
+          pushStockReports(sheets, spreadsheetId),
+          pushPrimaryOrders(sheets, spreadsheetId),
+          pushSalesTrends(sheets, spreadsheetId)
+        ]);
+      } catch (pushErr) {
+        console.error("Master Sync Push phase failed:", pushErr);
+      }
 
       res.json({ 
         success: true, 
-        message: `Master Sync Complete! Pulled ${result.pulledTeam} team, ${result.pulledUsers} users & ${result.pulledSales} sales records.`,
+        message: `Master Sync Complete! Pulled ${result.pulledTeam} team, ${result.pulledUsers} users & ${result.pulledSales} sales records. Also pushed latest Sales, Stocks & Primary Orders.`,
         last_sync_at: result.lastSync
       });
     } catch (err: any) {
